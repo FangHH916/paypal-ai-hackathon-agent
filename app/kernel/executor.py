@@ -2,8 +2,8 @@
 
 Out of the model's reach: the Agent's tool gateway can only call create_draft (a draft, no side effects).
 authorize / commit can only be called by the frontend over HTTP after the user's own device has signed. Even then,
-commit does not write to the ledger itself: it hands the signed instruction to the execution gateway
-(app/wallet/gateway.py), which verifies the signature again on its own before posting.
+commit does not call PayPal itself: it hands the signed instruction to the execution gateway
+(app/wallet/gateway.py), which verifies the signature again on its own before the first request goes out.
 """
 from __future__ import annotations
 
@@ -13,20 +13,39 @@ import secrets
 import time
 import uuid
 
-from app.wallet.gateway import ExecutionGateway, GatewayError
-from app.wallet.ledger import Wallet
 from app.config import settings
-from app.kernel import crosscheck, p256, rules, webauthn
-from app.kernel import changes, contract
+from app.kernel import changes, contract, crosscheck, p256, rules, trust, webauthn
 from app.kernel import protection as prot
 from app.kernel.audit import AuditLog
 from app.kernel.credentials import CredentialRegistry
 from app.kernel.evidence import confirmed_proposal, ground, user_utterances
-from app.kernel.signing import (DEFAULT_SITE, MockAuthenticator, SignatureError, Site, TokenService,
-                                build_challenge, build_settings_challenge, canonical, check_signature, compute_digest,
-                                BIOMETRIC_REQUIRED, browser_key_allowed)
+from app.kernel.signing import (BIOMETRIC_REQUIRED, DEFAULT_SITE, MockAuthenticator, SignatureError, Site, TokenService,
+                                browser_key_allowed, build_challenge, build_settings_challenge, canonical,
+                                check_signature, compute_digest)
 from app.kernel.state import Session
 from app.models import Draft, Phase, RiskLevel, fmt_money
+from app.wallet import catalogue, payments
+from app.wallet.gateway import ExecutionGateway, GatewayError
+from app.wallet.ledger import WALLET_ACCOUNT, Wallet
+
+_RAIL = {"transfer": "payouts", "bill": "invoice", "purchase": "orders", "money_request": "money_request"}
+# The rule that stopped something, in words for the Activity grid
+_STOP_NAMES = {"R03_OVER_ALLOWANCE": "Over the allowance", "R04_HARD_LIMIT": "Over Star's limit", "R09_RAIL_UNAVAILABLE": "PayPal not configured",
+               "R13_DAILY_LIMIT": "Over the daily limit", "R14_WALLET_FROZEN": "Payments frozen", "R21_VELOCITY": "Too many payments",
+               "R52_NOT_REQUESTED": "Nobody asked for this", "R53_WRONG_SHARE": "Wrong share of an amount",
+               "R60_UNKNOWN_OUTCOME": "Earlier payment still unknown", "R80_INVOICE_PHONE": "Phone number in the invoice",
+               "R84_INSTRUCTION_IN_DATA": "Hidden instruction in the text", "R91_PRICE_ANOMALY": "Price far too high", "R92_MERCHANT_FLAGGED": "Flagged seller",
+               "R93_NOT_IN_CATALOGUE": "Not the catalogue's offer", "R94_GIFT_CARD": "Gift card scam signs", "R95_REFUND_INVALID": "Refund not possible",
+               "R96_REFUND_SCAM": "Refund scam signs", "R00_UNKNOWN_PAYEE": "Unknown person"}
+
+
+def stop_name(codes: list[str], frozen: bool = False) -> str:
+    if frozen:
+        return "Didn't match what she said"
+    for code, name in _STOP_NAMES.items():
+        if code in codes:
+            return name
+    return "Safety rules"
 
 
 class KernelError(Exception):
@@ -48,8 +67,9 @@ class Kernel:
         # The demo-string authenticator is OFF unless explicitly allowed: payments need a device signature.
         self.allow_mock = (settings.auth_mode == "mock") if allow_mock is None else allow_mock
         self.registry = registry or CredentialRegistry()
+        # No gateway passed: an isolated in-memory simulator. app/runtime.py is the only place that builds a real one.
         self.gateway = gateway or ExecutionGateway(wallet, self.registry, audit, allow_unsigned=self.allow_mock)
-        self.reviews = self.gateway.reviews
+        self.approvals = self.gateway.approvals
         # No independent-verifier verdict -> the draft can't be signed (fail closed)
         self.require_verification = require_verification
 
@@ -84,7 +104,7 @@ class Kernel:
         s.passkey_reg = {"challenge": webauthn.b64u(challenge), "expires_at": time.time() + settings.challenge_ttl,
                          "rp_id": site.rp_id}
         user = self.wallet.user(s.user_id)
-        return {"challenge": s.passkey_reg["challenge"], "rp_id": site.rp_id, "rp_name": "Star · the bank concept",
+        return {"challenge": s.passkey_reg["challenge"], "rp_id": site.rp_id, "rp_name": "Star family payments",
                 "user_id": webauthn.b64u(hashlib.sha256(s.user_id.encode()).digest()[:16]),
                 "user_name": s.user_id, "display_name": user["name"],
                 "exclude": self.passkey_status(s.user_id, site)["credential_ids"]}
@@ -139,10 +159,52 @@ class Kernel:
         return rec
 
     # ------------------------------------------------------------------ Draft
-    def create_draft(self, s: Session, *, kind: str, payee_id: str, amount_cents: int,
-                     from_account: str | None = None, bill_id: str | None = None,
-                     taint: list[str] | None = None, local_hour: int | None = None,
-                     evidence: str = "", verification: dict | None = None, schedule: dict | None = None,
+    def _target(self, s: Session, kind: str, payee_id: str, offer_id, quantity, invoice_id, parent_payment_id, amount_cents):
+        """Whatever the card is about, resolved by code from authoritative records. What the model may pass is only an id.
+        Returns (who, name, handle, fields, ground_kwargs)."""
+        if kind == "purchase":
+            offer = catalogue.offer(offer_id or "")
+            merchant = catalogue.merchant(offer["merchant_id"]) if offer else None
+            if not offer or not merchant:
+                raise KernelError(f"offer_id={offer_id} is not in the catalogue. Call search_catalogue first.")
+            qty = max(1, int(quantity or 1))
+            cents = offer["price_cents"] * qty
+            item = {"offer_id": offer["offer_id"], "name": offer["name"], "quantity": qty, "unit_cents": offer["price_cents"]}
+            who = {"name": merchant["name"], "aliases": offer["aliases"]}
+            return who, merchant["name"], "", {"payee_id": merchant["merchant_id"], "merchant_id": merchant["merchant_id"],
+                                               "merchant_name": merchant["name"], "items": [item], "amount_cents": cents}, \
+                {"catalogue_cents": cents}
+        if kind == "refund":
+            parent = self.wallet.payment(parent_payment_id or "")
+            if not parent or parent["user_id"] != s.user_id:
+                raise KernelError(f"payment_id={parent_payment_id} is not one of this customer's payments. Call list_refundable.")
+            left = parent["amount_cents"] - parent.get("refunded_cents", 0)
+            cents = left if amount_cents is None else amount_cents
+            names = [i["name"] for i in parent["card"].get("items", [])]
+            aliases = [a for i in parent["card"].get("items", []) for a in (catalogue.offer(i.get("offer_id", "")) or {}).get("aliases", [])]
+            payee = self.wallet.payee(s.user_id, parent["card"].get("payee_id", "")) or {}
+            who = {"name": parent["counterparty_name"], "aliases": names + aliases + payee.get("aliases", [])}
+            rail = "payout_cancel" if parent["rail"] == "payouts" else "refund"
+            return who, parent["counterparty_name"], "", {
+                "payee_id": parent["card"].get("payee_id", ""), "parent_payment_id": parent["payment_id"], "rail": rail,
+                "capture_id": parent["paypal"].get("capture_id") or None, "amount_cents": cents}, {"payment_cents": left}
+        if kind == "bill":
+            inv = self.wallet.invoice(s.user_id, invoice_id or "")
+            if not inv:
+                raise KernelError(f"invoice_id={invoice_id} is not one of this customer's invoices. Call list_invoices.")
+            who = self.wallet.payee(s.user_id, inv["payee_id"]) or {"name": inv["invoicer_name"], "aliases": []}
+            return who, inv["invoicer_name"], "", {"payee_id": inv["payee_id"], "invoice_id": inv["invoice_id"],
+                                                   "invoice_number": inv["number"], "amount_cents": inv["amount_cents"]}, {"bill": inv}
+        who = self.wallet.payee(s.user_id, payee_id)
+        name = who["name"] if who else "(unknown payee)"
+        handle = (who or {}).get("paypal_email", "")
+        return who, name, self.gateway.receiver_for(who) if who and kind in ("transfer", "money_request") else handle, \
+            {"payee_id": payee_id, "amount_cents": amount_cents}, {}
+
+    def create_draft(self, s: Session, *, kind: str, payee_id: str = "", amount_cents: int | None = None,
+                     invoice_id: str | None = None, offer_id: str | None = None, quantity: int | None = None,
+                     parent_payment_id: str | None = None, note: str = "", taint: list[str] | None = None,
+                     local_hour: int | None = None, evidence: str = "", verification: dict | None = None,
                      heard: tuple[str, str] | None = None) -> Draft:
         s.settle()
         if s.phase != Phase.IDLE:
@@ -152,39 +214,26 @@ class Kernel:
             error = problem(utterance)
             if error:
                 raise KernelError(error, "REQUEST_UNSUPPORTED")
-        accounts = self.wallet.accounts(s.user_id)
-        from_account = from_account or accounts[0]["account_id"]
-        if kind == "investment":
-            target = self.wallet.product(payee_id)
-            name, asset = (target["name"], target["asset_class"]) if target else ("(unknown product)", "Unknown")
-        else:
-            target = self.wallet.payee(s.user_id, payee_id)
-            name, asset = (target["name"] if target else "(unknown payee)"), "Cash"
+        who, name, handle, fields, ground_kw = self._target(s, kind, payee_id, offer_id, quantity, invoice_id, parent_payment_id, amount_cents)
         now = time.time()
-        draft = Draft(
-            draft_id="d_" + uuid.uuid4().hex[:10], user_id=s.user_id, kind=kind,
-            from_account=from_account, payee_id=payee_id, payee_name=name, asset_class=asset,
-            amount_cents=amount_cents, bill_id=bill_id, created_at=now,
-            expires_at=now + settings.draft_ttl, nonce=secrets.token_hex(6), taint=taint or [], schedule=schedule,
-            plan_id=s.plan_id)
-        bill = self.wallet.bill(s.user_id, bill_id) if bill_id else None
-        g = ground(user_utterances(s.messages), target, amount_cents, kind, bill=bill, model_quote=evidence,
-                   accounts=self.wallet.accounts(s.user_id), from_account=from_account, heard=heard,
-                   proposal=confirmed_proposal(s.messages))
+        draft = Draft(draft_id="d_" + uuid.uuid4().hex[:10], user_id=s.user_id, kind=kind, rail=fields.pop("rail", _RAIL.get(kind, "")),
+                      from_account=WALLET_ACCOUNT, payee_name=name, payee_handle=handle, note=note[:120], created_at=now,
+                      expires_at=now + settings.draft_ttl, nonce=secrets.token_hex(6), taint=taint or [],
+                      plan_id=s.plan_id, scam_level=s.scam_level.value, **fields)
+        amount_cents = draft.amount_cents
+        utterances = user_utterances(s.messages)
+        g = ground(utterances, who, amount_cents, kind, model_quote=evidence, heard=heard,
+                   proposal=confirmed_proposal(s.messages), **ground_kw)
         latest_user = next((m for m in reversed(s.messages) if m.get("role") == "user"), {})
         parent_id = latest_user.get("reference_parent_id")
         parent = next((r for r in s.receipts if parent_id and r.get("card", {}).get("draft_id") == parent_id), None)
         if parent and parent.get("status") == "SUCCESS" and parent["card"]["amount_cents"] == amount_cents * 2:
             g.amount_source = "derived"
-            g.derived = f"Half of the signed transaction {parent_id}"
+            g.derived = f"Half of the signed payment {parent_id}"
             g.quote = latest_user.get("raw_content", g.quote)[:160]
-        # A model-planner step whose amount the code worked out ("half of it", "whatever is left"): the draft must use
-        # exactly that number, and take the money from the account the plan resolved
+        # A model-planner step whose amount the code worked out ("half of it"): the draft must use exactly that number
         resolved = latest_user.get("resolved") or {}
         draft.dependency_ids = list(dict.fromkeys(([parent_id] if parent_id else []) + resolved.get("dependency_ids", [])))
-        if resolved.get("from_account") and from_account != resolved["from_account"]:
-            raise KernelError(f"This step's money comes from the {resolved['from_account']} account; draft it with "
-                              f"from_account={resolved['from_account']}.", "WRONG_SOURCE")
         if resolved.get("amount_cents") is not None:
             if amount_cents == resolved["amount_cents"]:
                 g.amount, g.amount_source, g.derived = True, "derived", resolved["why"]
@@ -195,10 +244,13 @@ class Kernel:
         draft.grounding, draft.you_said = g.as_dict(), g.quote
         from app.kernel.voice import task_audio
         draft.you_said_audio = task_audio(s)            # the recordings behind these words, signed with the card
-        draft.digest = compute_digest(draft)
         level = prot.effective(self.wallet, s.user_id, now)
-        ctx = rules.RuleContext(now=now, scam_level=s.scam_level, scam_reasons=list(s.scam_reasons),
-                                local_hour=local_hour if local_hour is not None else self.risk_hour, grounding=g, protection=level)
+        said = " ".join(s.task_utterances()[-6:])
+        draft.trust = trust.check(draft, self.wallet, protection=level, scam_level=s.scam_level.value, said=said)
+        draft.digest = compute_digest(draft)
+        ctx = rules.RuleContext(now=now, scam_level=s.scam_level, scam_reasons=list(s.scam_reasons), said=said,
+                                local_hour=local_hour if local_hour is not None else self.risk_hour, grounding=g, protection=level,
+                                rail_error=self.gateway.rail_error())
         draft.risk = rules.evaluate(draft, self.wallet, ctx)
 
         # Dual-engine audit: compare with what the independent verifier heard (deterministic comparison)
@@ -234,49 +286,95 @@ class Kernel:
                                   f"{'MISMATCH → frozen' if frozen else v['status'].upper()} · {marks}", v)
         s.add_trace("rule", f"Rule grading: {draft.risk.level.value} (protection: {level})",
                     {"hits": draft.risk.rule_hits, "ruleset": rules.RULESET_VERSION})
+        if draft.trust.get("codes"):
+            self.audit.append("trust.check", s.session_id, {"draft_id": draft.draft_id, "codes": draft.trust["codes"],
+                                                             "level": draft.trust["level"]})
         self.audit.append("draft.created", s.session_id, {
-            "draft": draft.card_fields(), "digest": draft.digest, "risk": draft.risk.model_dump(mode="json"),
+            "draft": payments.masked_card(draft.card_fields()), "digest": draft.digest, "risk": draft.risk.model_dump(mode="json"),
             "grounding": draft.grounding, "verification": draft.verification, "protection": level,
             "ruleset": rules.RULESET_VERSION})
         if frozen:
             self.audit.append("draft.frozen", s.session_id, {"draft_id": draft.draft_id,
                                                              "mismatches": draft.verification["mismatches"]})
         self.record_decision(s, draft)
+        self._family_side(s, draft, frozen)
         return draft
 
+    def _family_side(self, s: Session, draft: Draft, frozen: bool) -> None:
+        """What Anna sees: a stop raises an alert; a payment that needs her waits on her device with the exact card."""
+        codes = set(draft.risk.rule_hits)
+        if draft.risk.level == RiskLevel.BLOCK or frozen:
+            self.wallet.add_stop(s.user_id, kind=draft.kind, to=draft.payee_name, amount_cents=draft.amount_cents,
+                                 status="FROZEN" if frozen else "STOPPED", stopped_by=stop_name(draft.risk.rule_hits, frozen),
+                                 why=" ".join((draft.verification.get("mismatches") if frozen else draft.risk.blocking) or draft.risk.reasons),
+                                 codes=draft.risk.rule_hits, draft_id=draft.draft_id, digest=draft.digest, session_id=s.session_id)
+        if draft.risk.level == RiskLevel.BLOCK and codes & {"R84_INSTRUCTION_IN_DATA", "R80_INVOICE_PHONE", "R91_PRICE_ANOMALY",
+                                                            "R92_MERCHANT_FLAGGED", "R94_GIFT_CARD", "R96_REFUND_SCAM"}:
+            self.alert(s, "stop", "stopped", f"Star stopped {fmt_money(draft.amount_cents)} to {draft.payee_name}. "
+                       + " ".join(draft.risk.blocking[:1]), draft.draft_id)
+        if draft.risk.level == RiskLevel.BLOCK or frozen or not contract.guardian_required(draft.card_fields(), self.wallet):
+            return
+        self.gateway.guardian.request(s, draft)
+        s.add_trace("guard", "This payment needs the family guardian's approval on their own device", {"draft_id": draft.draft_id})
+
+    def alert(self, s: Session, level: str, kind: str, text: str, draft_id: str = "") -> None:
+        self.wallet.add_alert(s.user_id, level, kind, text, draft_id)
+        self.audit.append("guardian.alert", s.session_id, {"level": level, "kind": kind, "draft_id": draft_id})
+
     def record_decision(self, s, draft, **kwargs):
-        result = contract.decision(draft, s, self.wallet, self.reviews, **kwargs)
+        result = contract.decision(draft, s, self.wallet, self.approvals, **kwargs)
         draft.decision = result
         self.audit.append("contract.decision", s.session_id, result)
         return result
 
-    def approve_secondary(self, s, draft_id, digest):
-        """Only the authenticated demo-reviewer HTTP endpoint may call this; never an agent tool."""
+    def approve_guardian(self, s, draft_id, digest, signed: dict | None = None):
+        """Only the guardian's signed HTTP endpoint may call this; never an agent tool. It can't unlock a BLOCK or FROZEN
+        draft (those are refused here and by every later gate) and it can't start anything (I9)."""
         draft = self._get_draft(s, draft_id)
         if s.phase not in (Phase.COOLING, Phase.AWAITING_AUTH) or draft.expires_at <= time.time():
-            raise KernelError("This draft is no longer awaiting approval.", "REVIEW_NOT_PENDING")
+            raise KernelError("This payment is no longer waiting for approval.", "GUARDIAN_NOT_PENDING")
         if digest != draft.digest or compute_digest(draft) != digest:
-            raise KernelError("Review is for a different card.", "DIGEST_MISMATCH")
+            raise KernelError("This approval is for a different card.", "DIGEST_MISMATCH")
         if draft.verification.get("status") != "match":
             raise KernelError("The intent check must pass first.", "NOT_VERIFIED")
+        if draft.risk and draft.risk.level == RiskLevel.BLOCK:
+            raise KernelError("A stopped payment can't be approved.", "BLOCKED")
         self._recheck_risk(s, draft)
-        if not contract.secondary_required(draft.card_fields(), self.wallet):
-            raise KernelError("This payment does not need secondary approval.", "REVIEW_NOT_REQUIRED")
-        rec = self.reviews.approve(s.user_id, s.session_id, draft_id, digest, draft.expires_at)
+        if not contract.guardian_required(draft.card_fields(), self.wallet):
+            raise KernelError("This payment does not need family approval.", "GUARDIAN_NOT_REQUIRED")
+        rec = self.approvals.approve(s.user_id, s.session_id, draft_id, digest, draft.expires_at, signed)
         try:
-            self.audit.append("review.approved", s.session_id, rec)
+            self.audit.append("guardian.approved", s.session_id, {k: rec[k] for k in ("approval_id", "draft_id", "digest", "method")})
             self.record_decision(s, draft)
         except Exception:
-            self.reviews.revoke(s.session_id, draft_id)
+            self.approvals.revoke(s.session_id, draft_id)
             raise
+        return rec
+
+    def deny_guardian(self, s, draft_id, digest, signed: dict | None = None):
+        draft = self._get_draft(s, draft_id)
+        if digest != draft.digest:
+            raise KernelError("This decision is for a different card.", "DIGEST_MISMATCH")
+        rec = self.approvals.deny(s.user_id, s.session_id, draft_id, digest, signed)
+        self.audit.append("guardian.denied", s.session_id, {k: rec[k] for k in ("approval_id", "draft_id", "digest")})
+        if s.phase in (Phase.DRAFTED, Phase.COOLING, Phase.AWAITING_AUTH):
+            s.challenges.pop(draft_id, None)
+            s.transition(Phase.CANCELLED)
+            self.record_decision(s, draft, stage="cancelled", rejection="GUARDIAN_DENIED")
+            self.wallet.add_stop(s.user_id, kind=draft.kind, to=draft.payee_name, amount_cents=draft.amount_cents, status="DENIED",
+                                 stopped_by="Your family said no", why="The family guardian denied this exact card on their own device.",
+                                 codes=["GUARDIAN_DENIED"], draft_id=draft.draft_id, digest=draft.digest, session_id=s.session_id)
         return rec
 
     def _contract_gate(self, s, draft, *, signature=False, verify_answer=False, stage="before_authorization"):
         record = self.record_decision(s, draft, signature=signature, verify_answer=verify_answer, stage=stage)
         if record["checks"]["plan"]["status"] == "fail":
-            raise KernelError("An earlier transaction has not completed. Nothing can move.", "DEPENDENCY_NOT_COMPLETED")
-        if record["checks"]["secondary_approval"]["status"] == "pending":
-            raise KernelError("A separate demo reviewer must approve this exact payment first.", "SECONDARY_APPROVAL_REQUIRED")
+            raise KernelError("An earlier payment has not completed. Nothing can move.", "DEPENDENCY_NOT_COMPLETED")
+        status = record["checks"]["guardian_approval"]["status"]
+        if status == "fail":
+            raise KernelError("Your family said no to this payment.", "GUARDIAN_DENIED")
+        if status == "pending":
+            raise KernelError("Your family guardian must approve this exact payment first.", "GUARDIAN_APPROVAL_REQUIRED")
 
     # ------------------------------------------------------------------ Challenge
     def issue_challenge(self, s: Session, draft_id: str, shown_digest: str,
@@ -356,7 +454,7 @@ class Kernel:
         return rec["method"]
 
     # ------------------------------------------------------------------ Commit
-    def commit(self, s: Session, draft_id: str, token: str) -> dict:
+    def commit(self, s: Session, draft_id: str, token: str, return_base: str = "") -> dict:
         draft = self._get_draft(s, draft_id)
         if s.phase != Phase.AWAITING_AUTH:
             raise KernelError(self._phase_message(s, draft), "NOT_AWAITING_AUTH")
@@ -366,41 +464,44 @@ class Kernel:
             self.audit.append("commit.rejected", s.session_id, {"draft_id": draft_id, "reason": why})
             self.record_decision(s, draft, stage="rejected", rejection="TOKEN_INVALID")
             raise KernelError(why, "TOKEN_INVALID")
-        # Re-run the rules before executing (the balance may have changed; prevents time-of-check vs time-of-use gaps)
+        # Re-run the rules before executing (the allowance may have changed; prevents time-of-check vs time-of-use gaps)
         self._recheck_risk(s, draft)
         self._contract_gate(s, draft, signature=bool(s.signatures.get(draft_id)), verify_answer=True, stage="pre_execution")
-        # The ledger is behind a zero-trust gateway that re-verifies the device signature itself
+        # PayPal is behind a zero-trust gateway that re-verifies the device signature itself
         try:
             receipt = self.gateway.execute(user_id=s.user_id, session_id=s.session_id, card=draft.card_fields(),
                                            digest=recomputed, auth=s.signatures.get(draft_id),
-                                           idempotency_key=draft.draft_id,
                                            verification={k: draft.verification.get(k) for k in ("status", "fields", "engine")},
-                                           decision=draft.decision)
+                                           decision=draft.decision, return_base=return_base)
         except GatewayError as e:
             s.transition(Phase.CANCELLED)
             self.record_decision(s, draft, stage="rejected", rejection=e.code)
             raise KernelError(str(e), e.code) from e
         receipt = dict(receipt)
-        receipt.setdefault("verifiable", self._verifiable_receipt(s, draft, receipt))
         s.transition(Phase.EXECUTED)
-        draft.decision = receipt.get("verifiable", {}).get("decision", draft.decision)
-        self.reviews.revoke(s.session_id, draft_id)
-        s.add_trace("gateway", "Execution gateway re-verified the device signature on its own, then " +
-                    ("set up the standing instruction (the bank Standing Instructions · POST /standing-instructions)"
-                     if draft.schedule else "posted to the ledger"),
-                    {"txn_id": receipt["txn_id"]})
-        s.add_trace("exec", f"Executed {fmt_money(draft.amount_cents)} → {draft.payee_name}",
-                    {"txn_id": receipt["txn_id"]})
-        # The signed ledger receipt and audit outbox were committed atomically with the debit.
+        draft.decision = receipt["verifiable"].get("decision", draft.decision)
+        self.approvals.revoke(s.session_id, draft_id)
+        s.add_trace("gateway", f"Execution gateway re-verified the device signature on its own, then called PayPal "
+                               f"({receipt['paypal_mode']})", {"payment_id": receipt["txn_id"], "state": receipt["state"]})
+        s.add_trace("exec", f"{receipt['state']}: {fmt_money(draft.amount_cents)} → {draft.payee_name}",
+                    {"payment_id": receipt["txn_id"], "verified": receipt["verified"]})
         if not any(r["txn_id"] == receipt["txn_id"] for r in s.receipts):
             s.receipts.insert(0, receipt["verifiable"])
-
         return receipt
+
+    def refresh_receipts(self, s: Session) -> None:
+        """A receipt's status follows the record: a step counts as done only once PayPal's state is verified."""
+        mode = self.gateway.mode_status()["mode"]
+        for i, r in enumerate(s.receipts):
+            rec = self.wallet.payment(r.get("txn_id", ""))
+            if rec:
+                s.receipts[i] = payments.receipt_body(rec, mode)
 
     def _recheck_risk(self, s: Session, draft: Draft) -> None:
         current = rules.evaluate(draft, self.wallet, rules.RuleContext(
             scam_level=s.scam_level, scam_reasons=list(s.scam_reasons), local_hour=self.risk_hour,
-            protection=prot.effective(self.wallet, s.user_id)))
+            protection=prot.effective(self.wallet, s.user_id), rail_error=self.gateway.rail_error(),
+            said=" ".join(s.task_utterances()[-6:])))
         old_hits = set(draft.risk.rule_hits if draft.risk else [])
         new_risk = current.level.rank > draft.risk.level.rank or bool(set(current.rule_hits) - old_hits)
         if current.level == RiskLevel.BLOCK or new_risk:
@@ -408,20 +509,11 @@ class Kernel:
             s.signatures.pop(draft.draft_id, None)
             s.transition(Phase.CANCELLED)
             draft.risk = current
-            self.reviews.revoke(s.session_id, draft.draft_id)
+            self.approvals.revoke(s.session_id, draft.draft_id)
             self.record_decision(s, draft, stage="rejected", rejection="RECHECK_BLOCKED")
             self.audit.append("commit.rejected", s.session_id,
                               {"draft_id": draft.draft_id, "reason": current.rule_hits})
             raise KernelError("The payment conditions changed. Please prepare and review a new payment.", "RECHECK_BLOCKED")
-
-    def _verifiable_receipt(self, s: Session, draft: Draft, receipt: dict) -> dict:
-        """A receipt anyone can check offline (scripts/verify_receipt.py): card -> digest -> signed payload -> key."""
-        body = {"receipt_version": 2, "txn_id": receipt["txn_id"], "status": receipt["status"],
-                "executed_at": int(receipt["executed_at"]), "card": draft.card_fields(), "digest": draft.digest,
-                "verification": {k: draft.verification.get(k) for k in ("status", "fields", "engine")},
-                "authorization": s.signatures.get(draft.draft_id) or {"method": "demo authenticator (unsigned)"}}
-        body["receipt_sha256"] = hashlib.sha256(canonical(body).encode()).hexdigest()
-        return body
 
     # ------------------------------------------------------------------ Signed account settings
     def protection_challenge(self, s: Session, to: str) -> str:
@@ -451,6 +543,38 @@ class Kernel:
                            "method": rec["method"], "key_id": rec["key_id"]})
         return st
 
+    # ------------------------------------------------------------------ Freeze: instant on, two people off
+    def freeze(self, s: Session, by: str = "customer") -> dict:
+        f = self.wallet.set_frozen(s.user_id, True, by)
+        self.audit.append("wallet.frozen", s.session_id, {"by": by})
+        self.alert(s, "stop", "freeze", f"Payments were frozen by {by}. Nothing can be sent until the freeze is lifted.")
+        s.add_trace("guard", f"Payments frozen by {by} (protective, takes effect now)")
+        return f
+
+    def lift_freeze_challenge(self, s: Session) -> str:
+        payload = build_settings_challenge(s.session_id, s.user_id, {"lift_freeze": True})
+        s.setting_challenges["lift_freeze"] = payload
+        return payload
+
+    def lift_freeze(self, s: Session, assertion: dict | None, site: Site = DEFAULT_SITE) -> dict:
+        """Lifting needs her signature and, when a guardian is paired, the guardian's too (either order)."""
+        issued = s.setting_challenges.get("lift_freeze")
+        if not issued or not isinstance(assertion, dict) or assertion.get("payload") != issued:
+            raise KernelError("Please confirm this with your fingerprint.", "PAYLOAD_MISMATCH")
+        if json.loads(issued)["expires_at"] < time.time():
+            raise KernelError("This confirmation expired. Please try again.", "EXPIRED")
+        self._signature(s, issued, assertion, site)
+        s.setting_challenges.pop("lift_freeze", None)
+        return self.finish_lift(s.user_id, s.session_id, "owner")
+
+    def finish_lift(self, user_id: str, session_id: str, who: str) -> dict:
+        f = self.wallet.mark_lift(user_id, who)
+        paired = self.wallet.user(user_id)["guardian"]["status"] == "paired"
+        if f["lift"]["owner"] and (f["lift"]["guardian"] or not paired):
+            f = self.wallet.set_frozen(user_id, False, "")
+            self.audit.append("wallet.unfrozen", session_id, {"by": "customer and guardian" if paired else "customer"})
+        return f
+
     # ------------------------------------------------------------------ Account changes (kernel/changes.py)
     def _wrap(self, fn, *a):
         try:
@@ -473,19 +597,14 @@ class Kernel:
     def lower_limit(self, s: Session, cents: int) -> dict:
         return self._wrap(changes.lower_limit, s, cents)
 
-    def cancel_standing_instruction(self, s: Session, si_id: str) -> dict:
-        return self._wrap(changes.cancel_standing_instruction, s, si_id)
-
-    def cancel_giro(self, s: Session, giro_id: str) -> dict:
-        return self._wrap(changes.cancel_giro, s, giro_id)
-
     # ------------------------------------------------------------------ Cancel
     def cancel(self, s: Session, draft_id: str, reason: str = "user") -> None:
         draft = self._get_draft(s, draft_id)
         if s.phase in (Phase.DRAFTED, Phase.COOLING, Phase.AWAITING_AUTH, Phase.FROZEN):
             s.transition(Phase.CANCELLED)
-            self.reviews.revoke(s.session_id, draft_id)
-            self.record_decision(s, draft, stage="cancelled", rejection="Cancelled by user; nothing posted.")
+            self.approvals.revoke(s.session_id, draft_id)
+            self.gateway.guardian.clear_request(s.user_id, draft_id)
+            self.record_decision(s, draft, stage="cancelled", rejection="Cancelled by user; nothing was sent.")
             self.audit.append("draft.cancelled", s.session_id, {"draft_id": draft.draft_id, "reason": reason})
 
     # ------------------------------------------------------------------ Helpers
@@ -512,4 +631,4 @@ class Kernel:
         return "This payment can't be confirmed right now."
 
 
-__all__ = ["Kernel", "KernelError"]
+__all__ = ["Kernel", "KernelError", "canonical"]

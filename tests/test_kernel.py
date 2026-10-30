@@ -32,7 +32,7 @@ class KernelTestBase(unittest.TestCase):
 
     def draft(self, payee="p_daughter", cents=20000, said=True, **kw):
         # By default the user actually asked for this payment (evidence grounding needs the user's words)
-        p = self.wallet.payee("u_chen", payee)
+        p = self.wallet.payee("u_lee", payee)
         if said and p:
             self.say(f"Send {cents / 100:g} to {p['name']}")
         kw.setdefault("verification", Verifier(None, self.wallet).verdict(self.s))   # the independent check
@@ -50,7 +50,7 @@ class TestRules(KernelTestBase):
         self.assertIsNotNone(d.risk.verify_question)
 
     def test_high_above_threshold_has_cooldown(self):
-        d = self.draft(cents=150000)
+        d = self.draft(cents=60000)
         self.assertEqual(d.risk.level, RiskLevel.HIGH)
         self.assertEqual(self.s.phase, Phase.COOLING)
 
@@ -86,7 +86,7 @@ class TestSigningAndExecution(KernelTestBase):
         tok = self.kernel.authorize(self.s, d.draft_id, d.digest, "demo-fingerprint")
         r = self.kernel.commit(self.s, d.draft_id, tok)
         self.assertEqual(r["status"], "SUCCESS")
-        self.assertEqual(self.wallet.account("u_chen", "SAV-001")["balance_cents"], 325000 - 20000)
+        self.assertEqual(self.wallet.account("u_lee", "WALLET")["balance_cents"], 150000 - 20000)
 
     def test_digest_mismatch_rejected(self):
         d = self.draft()
@@ -100,7 +100,7 @@ class TestSigningAndExecution(KernelTestBase):
         d.amount_cents = 999900
         with self.assertRaises(KernelError):
             self.kernel.commit(self.s, d.draft_id, tok)
-        self.assertEqual(self.wallet.executed, {})
+        self.assertEqual(self.wallet.payments, {})
 
     def test_token_replay_rejected_by_token_service(self):
         ts = TokenService(b"k")
@@ -116,11 +116,11 @@ class TestSigningAndExecution(KernelTestBase):
         self.assertFalse(ts.verify_and_consume(forged, "d1", "h")[0])
 
     def test_cooling_blocks_authorize_then_allows(self):
-        d = self.draft(cents=150000)
+        d = self.draft(cents=60000)
         with self.assertRaises(KernelError):
             self.kernel.authorize(self.s, d.draft_id, d.digest, "demo-fingerprint")
         d.cooling_until = time.time() - 1
-        # family the customer has paid before: no second reviewer (see test_contract.WhoNeedsAReviewer)
+        # family the customer has paid before: no guardian (see test_contract.WhoNeedsTheGuardian)
         tok = self.kernel.authorize(self.s, d.draft_id, d.digest, "demo-fingerprint")
         self.assertEqual(self.kernel.commit(self.s, d.draft_id, tok)["status"], "SUCCESS")
 
@@ -132,10 +132,14 @@ class TestSigningAndExecution(KernelTestBase):
         self.kernel.authorize(self.s, d.draft_id, d.digest, "demo-fingerprint", verify_answer=True)
 
     def test_idempotent_execution(self):
-        r1 = self.wallet.execute_payment("u_chen", "SAV-001", "p_son", 100, "same-key")
-        r2 = self.wallet.execute_payment("u_chen", "SAV-001", "p_son", 100, "same-key")
+        d = self.draft(cents=10000)
+        tok = self.kernel.authorize(self.s, d.draft_id, d.digest, "demo-fingerprint")
+        r1 = self.kernel.commit(self.s, d.draft_id, tok)
+        r2 = self.kernel.gateway.execute(user_id="u_lee", session_id=self.s.session_id, card=d.card_fields(), digest=d.digest, auth=None)
         self.assertEqual(r1["txn_id"], r2["txn_id"])
-        self.assertEqual(self.wallet.account("u_chen", "SAV-001")["balance_cents"], 325000 - 100)
+        self.assertTrue(r2["idempotent_replay"])
+        self.assertEqual(self.wallet.allowance_left("u_lee"), 150000 - 10000)
+        self.assertEqual(len(self.kernel.gateway.simulator.st["batches"]), 1)
 
     def test_second_draft_while_pending_rejected(self):
         self.draft()
@@ -175,8 +179,7 @@ class TestEvidenceGrounding(KernelTestBase):
 
     def test_bill_amount_comes_from_the_bill(self):
         self.say("Pay my utilities bill")
-        d = self.kernel.create_draft(self.s, kind="bill", payee_id="p_sp", amount_cents=8640, bill_id="b_sp_oct",
-                                     local_hour=14)
+        d = self.kernel.create_draft(self.s, kind="bill", invoice_id="inv_power_oct", local_hour=14)
         self.assertEqual(d.grounding["amount_source"], "bill")
         self.assertEqual(d.risk.level, RiskLevel.LOW)
 
@@ -251,7 +254,7 @@ class TestDeviceKeySigning(KernelTestBase):
         with self.assertRaises(KernelError) as e:
             self.kernel.authorize(self.s, d.draft_id, d.digest, self.signed(d, priv=attacker))
         self.assertEqual(e.exception.code, "INVALID_SIGNATURE")
-        self.assertEqual(self.wallet.executed, {})
+        self.assertEqual(self.wallet.payments, {})
 
     def test_tampered_payload_rejected(self):
         import json

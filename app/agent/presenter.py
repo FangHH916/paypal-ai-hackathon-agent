@@ -8,77 +8,89 @@ from __future__ import annotations
 import time
 
 from app.agent.textparse import amount_digits_spoken, amount_words_en
-from app.wallet.ledger import Wallet, price_sgd_cents
 from app.models import Draft, Phase, RiskLevel, fmt_money
+from app.wallet.ledger import Wallet
+from app.wallet.payments import mask_email
+
+_TITLES = {"transfer": "Confirm sending money", "bill": "Confirm paying this bill", "purchase": "Confirm this purchase",
+           "refund": "Confirm getting your money back", "money_request": "Confirm asking for this money"}
 
 
-def product_line(p: dict, amount_cents: int) -> str:
-    """One line under the product name on the card: what exactly is being bought."""
-    if p.get("rate_pa"):
-        return f"{p['rate_pa']:.2f}% a year for {p['tenor_months']} months · a deposit (demo rate)"
-    unit = price_sgd_cents(p)
-    units = amount_cents / unit if unit else 0
-    if p.get("ticker"):
-        px = f"US${p['price']:,.2f}" if p.get("currency") == "USD" else f"S${p['price']:,.2f}"
-        return (f"{p['ticker']} on {p['exchange']} · about {units:,.2f} shares at {px} (demo price) · "
-                f"risk {p['risk']} of 5, can lose value")
-    if p["price"] != 1.0:
-        return f"about {units:,.2f} units at S${p['price']:,.4g} (demo price) · risk {p['risk']} of 5, can lose value"
-    return f"Risk {p['risk']} of 5 · not a deposit, can lose value"
+def _readback(d: Draft, payee: dict, words: str) -> str:
+    m = fmt_money(d.amount_cents)
+    if d.kind == "purchase":
+        item = d.items[0] if d.items else {"name": "this", "quantity": 1}
+        return f"You want to buy {item['quantity']} {item['name']} from {d.merchant_name} for {words} ({m}). Is that right?"
+    if d.kind == "refund":
+        if d.rail == "payout_cancel":
+            return f"You want to stop your payment of {words} ({m}) to {d.payee_name}, so the money comes back to you. Is that right?"
+        return f"You want your money back: {words} ({m}) from {d.payee_name}. Is that right?"
+    if d.kind == "money_request":
+        return f"You want to ask {d.payee_name} to pay you {words} ({m}). Is that right?"
+    relation = payee.get("relation", "")
+    who = f"your {relation} {d.payee_name}" if relation and payee.get("type") == "person" else d.payee_name
+    verb = "send" if d.kind == "transfer" else "pay"
+    return f"You want to {verb} {words} ({m}) to {who}. Is that right?"
 
 
-def build_card(d: Draft, wallet: Wallet, phase: Phase, care: bool = True) -> dict:
-    invest = d.kind == "investment"
-    payee = (wallet.product(d.payee_id) if invest else wallet.payee(d.user_id, d.payee_id)) or {}
-    acct = wallet.account(d.user_id, d.from_account) or {}
+def _short_readback(d: Draft) -> str:
+    m = fmt_money(d.amount_cents)
+    if d.kind == "refund":
+        return f"{m} back from {d.payee_name}."
+    if d.kind == "money_request":
+        return f"Ask {d.payee_name} for {m}."
+    return f"{m} to {d.payee_name}."
+
+
+def _next_step_words(d: Draft) -> str:
+    return {"purchase": "After you confirm, PayPal asks you to approve it. It is only paid once PayPal says so.",
+            "bill": "After you confirm, you pay it on PayPal's own page.",
+            "transfer": "After you confirm, PayPal sends it. I'll tell you when PayPal says it arrived.",
+            "refund": "After you confirm, I ask PayPal for it back and tell you when it is done.",
+            "money_request": "After you confirm, PayPal sends them a request in your name."}[d.kind]
+
+
+def build_card(d: Draft, wallet: Wallet, phase: Phase, care: bool = True, offers: list | None = None, mode_label: str = "") -> dict:
+    payee = wallet.payee(d.user_id, d.payee_id) or {}
     relation = payee.get("relation", "")
     is_person = payee.get("type") == "person"
-    own = payee.get("type") == "own"
-    who = f"your {relation} {d.payee_name}" if relation and is_person else f"your {d.payee_name}" if own else d.payee_name
-    bill = wallet.bill(d.user_id, d.bill_id) if d.bill_id else None
-    sched = d.schedule or {}
     words = amount_words_en(d.amount_cents)
-    if invest:
-        readback = (f"You want to invest {words} ({fmt_money(d.amount_cents)}) in the {d.payee_name}, "
-                    f"a {d.asset_class.lower()}, from your {acct.get('name', 'account')}. Is that right?")
-    else:
-        verb = "move" if own else "send" if d.kind == "transfer" else "pay"
-        when = f" {sched['label'][0].lower()}{sched['label'][1:]}" if sched else ""
-        readback = (f"You want to {verb} {words} ({fmt_money(d.amount_cents)}) to {who}{when}, "
-                    f"from your {acct.get('name', 'account')}. Is that right?")
-    if not care:                                    # standard mode: the same card, a shorter read-back
-        when = f", {sched['label'][0].lower()}{sched['label'][1:]}" if sched else ""
-        readback = (f"{fmt_money(d.amount_cents)} {'in' if invest else 'to'} {d.payee_name}{when}, "
-                    f"from {acct.get('name', 'your account')}.")
     risk = d.risk
     v = d.verification or {}
+    checks = d.decision.get("checks", {})
+    invoice = wallet.invoice(d.user_id, d.invoice_id) if d.invoice_id else None
     return {
         "draft_id": d.draft_id,
         "digest": d.digest,
         "kind": d.kind,
-        "title": ("Confirm regular transfer" if sched else "Move money between your accounts" if own else
-                  {"transfer": "Confirm transfer", "bill": "Confirm bill payment", "investment": "Confirm investment"}[d.kind]),
-        "schedule": sched.get("label", ""),
+        "rail": d.rail,
+        "title": ("Confirm stopping this payment" if d.rail == "payout_cancel" else _TITLES[d.kind]),
+        "paypal_mode": mode_label,
         "amount_note": (f"{d.grounding['heard'][0].upper()}{d.grounding['heard'][1:]}. Please check the amount."
                         if d.grounding.get("heard") else
-                        f"{d.grounding['derived']}, worked out by the bank" if d.grounding.get("amount_source") == "derived"
-                        else ("minimum payment due" if d.amount_cents == bill.get("min_due_cents") else
-                         "full statement balance" if d.amount_cents == bill["amount_cents"] else
-                         f"part of your statement of {fmt_money(bill['amount_cents'])}")
-                        if bill and "min_due_cents" in bill else ""),
+                        f"{d.grounding['derived']}, worked out by Star" if d.grounding.get("amount_source") == "derived"
+                        else "the price in the catalogue" if d.grounding.get("amount_source") == "catalogue"
+                        else "the amount on the invoice" if d.grounding.get("amount_source") == "bill"
+                        else "what you paid" if d.grounding.get("amount_source") == "payment" else ""),
         "payee_name": d.payee_name,
-        "payee_relation": relation if is_person or own else "",
-        "payee_account": product_line(payee, d.amount_cents) if invest else payee.get("masked_account", ""),
-        "asset_class": d.asset_class,
-        "from_account_id": d.from_account,
+        "payee_relation": relation if is_person else "",
+        "payee_account": mask_email(d.payee_handle) if d.payee_handle else payee.get("masked_account", ""),
+        "items": d.items,
+        "invoice": {"number": invoice["number"], "title": invoice["title"], "due": invoice["due"]} if invoice else None,
+        "merchant": d.merchant_name,
+        "trust": {k: d.trust.get(k) for k in ("level", "codes", "reasons", "guardian")} if d.trust else {},
+        "offers_checked": offers or [],
+        "next_step_words": _next_step_words(d),
         "verification": {"status": v.get("status", "missing"), "fields": v.get("fields", {}),
                          "mismatches": v.get("mismatches", []), "engine": v.get("engine", "")},
         "decision": d.decision,
-        "secondary_required": d.decision.get("checks", {}).get("secondary_approval", {}).get("status") == "pending",
+        "guardian_required": checks.get("guardian_approval", {}).get("status") == "pending",
+        "guardian_denied": checks.get("guardian_approval", {}).get("status") == "fail",
+        "guardian_approved": checks.get("guardian_approval", {}).get("status") == "pass",
         "amount": fmt_money(d.amount_cents),
         "amount_words": words,
         "amount_spoken_digits": amount_digits_spoken(d.amount_cents),
-        "from_account": f"{acct.get('name', '')} ({d.from_account})",
+        "from_account": "Star allowance",
         "risk_level": risk.level.value if risk else "LOW",
         "reasons": risk.reasons if risk else [],
         "verify_question": risk.verify_question if risk else None,
@@ -86,9 +98,9 @@ def build_card(d: Draft, wallet: Wallet, phase: Phase, care: bool = True) -> dic
         "cooldown_left": max(0, int(d.cooling_until - time.time())) if phase == Phase.COOLING else 0,
         "can_confirm": phase in (Phase.AWAITING_AUTH, Phase.COOLING) and (not risk or risk.level != RiskLevel.BLOCK)
                        and v.get("status") == "match"
-                       and d.decision.get("checks", {}).get("secondary_approval", {}).get("status") != "pending"
-                       and d.decision.get("checks", {}).get("plan", {}).get("status") != "fail",
-        "readback": readback,
+                       and checks.get("guardian_approval", {}).get("status") not in ("pending", "fail")
+                       and checks.get("plan", {}).get("status") != "fail",
+        "readback": _readback(d, payee, words) if care else _short_readback(d),
         "expires_at": int(d.expires_at),
         "you_said": d.you_said,
         "you_said_audio": d.you_said_audio,
@@ -99,20 +111,27 @@ def build_card(d: Draft, wallet: Wallet, phase: Phase, care: bool = True) -> dic
 
 
 def receipt_text(d: Draft, receipt: dict) -> str:
-    who = d.payee_name
-    if d.kind == "investment":
-        after = f"Your account now has {fmt_money(receipt['balance_after_cents'])}."
-        if d.asset_class == "Fixed deposit":
-            return f"Done. {fmt_money(d.amount_cents)} is now in your {who}. {after}"
-        if d.asset_class.startswith("Shares"):
-            return f"Done. You bought about {receipt.get('units', 0):,.2f} {who} for {fmt_money(d.amount_cents)}. {after}"
-        return f"Done. You've invested {fmt_money(d.amount_cents)} in the {who}. {after}"
-    if d.schedule:
-        return (f"Done. {fmt_money(d.amount_cents)} will go to {who} {d.schedule['label'][0].lower()}"
-                f"{d.schedule['label'][1:]}. Nothing has been taken today.")
-    if d.kind == "transfer" and d.payee_id.startswith("own:"):
-        return f"Done. {fmt_money(d.amount_cents)} is now in your {who}."
-    if d.kind == "transfer":
-        return (f"Done. {who} will receive it right away. "
-                f"Your account now has {fmt_money(receipt['balance_after_cents'])}.")
-    return f"{who} has been paid. Your account now has {fmt_money(receipt['balance_after_cents'])}."
+    """What Star says after signing. Success words only from verified state: a redirect or a promise is never enough."""
+    state, who, m = receipt["state"], d.payee_name, fmt_money(d.amount_cents)
+    verified = receipt.get("verified")
+    if state == "UNKNOWN":
+        return "I can't confirm that went through yet. Please don't pay again. I'm checking with PayPal."
+    if state == "ANOMALY":
+        return "PayPal's answer didn't match what you signed, so I've stopped and told your family. Nothing will be reported as paid."
+    if state == "AWAITING_APPROVAL":
+        return f"Signed. Now please approve {m} to {who} on PayPal."
+    if state == "AWAITING_PAYMENT":
+        return f"Signed. Now please pay {m} to {who} on PayPal's page."
+    if state == "SENT_TO_PAYER":
+        return f"Done. PayPal sent {who} your request for {m}."
+    if state == "SENT" and verified:
+        return f"Done. PayPal confirms {who} has received {m}."
+    if state == "UNCLAIMED":
+        return f"PayPal has sent {m}, and it's waiting for {who} to claim it. You can still stop this."
+    if state == "PROCESSING":
+        return f"Sent to PayPal: {m} to {who}. Checking with PayPal now."
+    if state == "REFUNDED" and verified:
+        return f"Done. PayPal confirms {m} is on its way back to you."
+    if state == "REFUND_PENDING":
+        return f"PayPal is working on your {m}. I'll tell you when it's done."
+    return f"{who}: {state.replace('_', ' ').lower()}."

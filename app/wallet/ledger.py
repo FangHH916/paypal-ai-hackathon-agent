@@ -1,161 +1,90 @@
-"""Mock wallet: a fixed "test world". For a real integration, replace only this module; the Agent code stays the same.
+"""The household wallet: Mrs. Lee's fixed demo world, her spending allowance and her payment records.
 
-Note: the Agent (model) never calls this directly. The tool gateway reads; writes go only through the execution
-gateway (app/wallet/gateway.py), which re-verifies the customer's signature before posting to the ledger.
+PayPal holds the money; this module holds what Star needs in order to decide and to remember. Star can't see a PayPal
+balance, so the "account" here is an allowance she and her daughter set: rule R03 stops anything over it.
+
+Note: the Agent (model) never calls this directly. The tool gateway reads; writes that move money go only through the
+execution gateway (app/wallet/gateway.py), which re-verifies the customer's signature before PayPal hears anything.
 """
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
-
-from app.wallet.storage import LedgerStorage, atomic_write
+import secrets
 import threading
 import time
 import uuid
 
-DEMO_USER = "u_chen"
+from app.config import settings
+from app.wallet import catalogue, payments
+from app.wallet.storage import LedgerStorage, atomic_write
 
-_WORLD = {
-    "users": {
-        "u_chen": {
-            "name": "Mdm Chen",
-            "lang": "en",
-            # MAS-style suitability: products riskier than this need extra care (rules R70)
-            "risk_profile": {"label": "Conservative", "max_product_risk": 2},
-            # Protection level is an ACCOUNT setting, not a screen setting (see kernel/protection.py)
-            "protection": {"level": "enhanced", "pending": None},
-            # the bank Deposit API: savings, current and a joint account (with her daughter)
-            "accounts": [
-                {"account_id": "SAV-001", "name": "Savings Account", "balance_cents": 325000, "currency": "SGD",
-                 "type": "savings", "product": "savings bank Passbook Savings", "masked": "savings bank ••••3307",
-                 "interest_pct": 0.05, "holders": ["Mdm Chen"]},
-                {"account_id": "CUR-002", "name": "Current Account", "balance_cents": 82000, "currency": "SGD",
-                 "type": "current", "product": "the bank Current Account", "masked": "the bank ••••7712",
-                 "interest_pct": 0.0, "holders": ["Mdm Chen"]},
-                {"account_id": "JNT-003", "name": "Joint Account", "balance_cents": 150000, "currency": "SGD",
-                 "type": "joint", "product": "the bank Multiplier (joint)", "masked": "the bank ••••0451",
-                 "interest_pct": 0.08, "holders": ["Mdm Chen", "Chen Mei Ling"]},
-            ],
-            # the bank Limits API: daily limit for transfers to other people (own-account moves and bills don't count)
-            "limits": {"daily_transfer_cents": 300000, "pending": None},
-            # the bank Standing Instructions API: scheduled transfers to saved payees
-            "standing_instructions": [
-                {"si_id": "SI-0001", "payee_id": "p_daughter", "amount_cents": 20000, "frequency": "monthly",
-                 "day": 28, "from_account": "SAV-001", "next_date": "2026-10-28", "status": "active",
-                 "description": "Monthly allowance to Chen Mei Ling"},
-            ],
-            # the bank GIRO API: billing organisations allowed to deduct automatically
-            "giro": [
-                {"giro_id": "GIRO-01", "biller": "StarHub Mobile", "aliases": ["starhub", "mobile", "phone bill", "handphone"],
-                 "reference": "••••8821", "limit_cents": 8000, "frequency": "monthly", "from_account": "SAV-001",
-                 "last_deduction": "2026-09-15 · S$42.90", "status": "active"},
-                {"giro_id": "GIRO-02", "biller": "ActiveSG Gym", "aliases": ["gym", "activesg", "active sg", "fitness"],
-                 "reference": "••••1190", "limit_cents": 3000, "frequency": "monthly", "from_account": "SAV-001",
-                 "last_deduction": "2026-10-01 · S$25.00", "status": "active"},
-                {"giro_id": "GIRO-03", "biller": "Income Insurance", "aliases": ["income insurance", "insurance", "ntuc income"],
-                 "reference": "••••5536", "limit_cents": 15000, "frequency": "monthly", "from_account": "SAV-001",
-                 "last_deduction": "2026-10-05 · S$118.40", "status": "active"},
-            ],
-            "payees": [
-                {"payee_id": "p_daughter", "name": "Chen Mei Ling", "relation": "daughter", "type": "person",
-                 "aliases": ["daughter", "my girl", "ah girl", "mei ling", "meiling"],
-                 "masked_account": "the bank ••••4821"},
-                {"payee_id": "p_son", "name": "Chen Zhi Qiang", "relation": "son", "type": "person",
-                 "aliases": ["son", "zhi qiang", "ah keong"],
-                 "masked_account": "OCBC ••••1937"},
-                # Two grandsons: "my grandson" is ambiguous on purpose, so the agent must ask (with buttons)
-                {"payee_id": "p_grandson_wei", "name": "Chen Wei", "relation": "grandson", "type": "person",
-                 "aliases": ["grandson", "ah wei", "chen wei"], "masked_account": "savings bank ••••2290"},
-                {"payee_id": "p_grandson_jun", "name": "Chen Jun", "relation": "grandson", "type": "person",
-                 "aliases": ["grandson", "ah jun", "chen jun"], "masked_account": "the bank ••••6613"},
-                {"payee_id": "p_sp", "name": "SP Group Utilities", "relation": "bill", "type": "biller",
-                 "aliases": ["utilities", "utility", "electricity", "water", "sp", "sp group"],
-                 "masked_account": "Bill no. ••••5502"},
-                {"payee_id": "p_tc", "name": "Bukit Timah Town Council", "relation": "bill", "type": "biller",
-                 "aliases": ["s&cc", "town council", "conservancy"],
-                 "masked_account": "Bill no. ••••0718"},
-                {"payee_id": "p_cc", "name": "the bank Cards", "relation": "bill", "type": "biller",
-                 "aliases": ["credit card", "card bill", "live fresh", "credit card bill"],
-                 "masked_account": "Live Fresh Card ••••3304"},
-            ],
-            "bills": [
-                {"bill_id": "b_sp_oct", "payee_id": "p_sp", "title": "October utilities bill",
-                 "amount_cents": 8640, "due": "2026-10-20", "status": "unpaid"},
-                {"bill_id": "b_tc_oct", "payee_id": "p_tc", "title": "October town council charges (S&CC)",
-                 "amount_cents": 4200, "due": "2026-10-31", "status": "unpaid"},
-                # Credit card: pay the full statement, the minimum, or an amount in between (the bank Bill Payments API)
-                {"bill_id": "b_cc_oct", "payee_id": "p_cc", "title": "the bank Live Fresh Card statement",
-                 "amount_cents": 124050, "min_due_cents": 5000, "due": "2026-10-25", "status": "unpaid"},
-            ],
-            # units x current demo price = value; cost = what was paid
-            "holdings": [
-                {"product_id": "b_ssb", "units": 5000.0, "cost_cents": 500000},
-                {"product_id": "s_d05", "units": 50.0, "cost_cents": 160000},
-            ],
-            "cards": [
-                {"card_id": "c_debit", "name": "the bank Visa Debit Card", "masked": "•••• 7781", "status": "active"},
-                {"card_id": "c_credit", "name": "the bank Live Fresh Card", "masked": "•••• 3304", "status": "active"},
-            ],
-            # Transaction history: negative = outgoing, positive = incoming
-            "transactions": [
-                {"date": "2026-10-01", "desc": "Pension payout CPF LIFE", "amount_cents": 98000, "payee_id": None},
-                {"date": "2026-09-28", "desc": "Transfer to Chen Mei Ling", "amount_cents": -20000, "payee_id": "p_daughter"},
-                {"date": "2026-09-15", "desc": "Transfer to Chen Zhi Qiang", "amount_cents": -10000, "payee_id": "p_son"},
-                {"date": "2026-09-20", "desc": "Transfer to Chen Wei", "amount_cents": -5000, "payee_id": "p_grandson_wei"},
-                {"date": "2026-09-18", "desc": "Transfer to Chen Jun", "amount_cents": -5000, "payee_id": "p_grandson_jun"},
-                {"date": "2026-09-12", "desc": "SP Group Utilities", "amount_cents": -8230, "payee_id": "p_sp"},
-                {"date": "2026-09-01", "desc": "Pension payout CPF LIFE", "amount_cents": 98000, "payee_id": None},
-                {"date": "2026-08-27", "desc": "Transfer to Chen Mei Ling", "amount_cents": -20000, "payee_id": "p_daughter"},
-                {"date": "2026-08-20", "desc": "NTUC FairPrice purchase", "amount_cents": -6450, "payee_id": None},
-            ],
-        }
+DEMO_USER = "u_lee"
+WALLET_ACCOUNT = "WALLET"
+WEEK = 7 * 86400
+
+
+def _seed_invoice(seed: dict) -> dict:
+    return {**seed, "status": "SENT", "paypal_id": "", "view_url": "", "bill_id": seed["invoice_id"]}
+
+
+def _world_user() -> dict:
+    return {
+        "name": "Mrs. Lee", "full_name": "Margaret Lee", "lang": "en",
+        # Protection level is an ACCOUNT setting, not a screen setting (see kernel/protection.py)
+        "protection": {"level": "enhanced", "pending": None},
+        # One wallet. balance_cents is what is left of the allowance: spending reserves it, a failure gives it back.
+        "accounts": [{"account_id": WALLET_ACCOUNT, "name": "Star allowance", "balance_cents": settings.allowance_cents,
+                      "currency": settings.wallet_currency, "type": "allowance", "masked": "Set with your family"}],
+        "allowance": {"monthly_cents": settings.allowance_cents},
+        "limits": {"daily_transfer_cents": 100000, "pending": None},   # money to other people per day
+        "payees": [
+            {"payee_id": "p_daughter", "name": "Anna Lee", "relation": "daughter", "type": "person",
+             "aliases": ["daughter", "my girl", "anna"], "paypal_email": "anna.lee@family.example",
+             "masked_account": "a***@family.example"},
+            {"payee_id": "p_son", "name": "David Lee", "relation": "son", "type": "person",
+             "aliases": ["son", "david"], "paypal_email": "david.lee@family.example",
+             "masked_account": "d***@family.example"},
+            # Two grandsons: "my grandson" is ambiguous on purpose, so the agent must ask (with buttons)
+            {"payee_id": "p_grandson_ben", "name": "Ben Lee", "relation": "grandson", "type": "person",
+             "aliases": ["grandson", "ben"], "paypal_email": "ben.lee@family.example",
+             "masked_account": "b***@family.example"},
+            {"payee_id": "p_grandson_sam", "name": "Sam Lee", "relation": "grandson", "type": "person",
+             "aliases": ["grandson", "sam"], "paypal_email": "sam.lee@family.example",
+             "masked_account": "s***@family.example"},
+            {"payee_id": "p_power", "name": "Riverside Power", "relation": "bill", "type": "biller",
+             "aliases": ["electricity", "electric", "power", "power bill", "riverside", "utilities", "utility"],
+             "masked_account": "Bill account ••••5502"},
+            {"payee_id": "p_water", "name": "Maple County Water", "relation": "bill", "type": "biller",
+             "aliases": ["water", "water bill", "maple county"], "masked_account": "Bill account ••••0718"},
+        ],
+        "invoices": [_seed_invoice(s) for s in catalogue.INVOICE_SEEDS],
+        "invoice_tag": "star-" + secrets.token_hex(6),
+        # Transaction history: negative = outgoing, positive = incoming. All before this demo began.
+        "transactions": [
+            {"date": "2026-10-01", "desc": "Pension deposit", "amount_cents": 98000, "payee_id": None},
+            {"date": "2026-09-28", "desc": "Transfer to Anna Lee", "amount_cents": -20000, "payee_id": "p_daughter"},
+            {"date": "2026-09-15", "desc": "Transfer to David Lee", "amount_cents": -10000, "payee_id": "p_son"},
+            {"date": "2026-09-20", "desc": "Transfer to Ben Lee", "amount_cents": -5000, "payee_id": "p_grandson_ben"},
+            {"date": "2026-09-18", "desc": "Transfer to Sam Lee", "amount_cents": -5000, "payee_id": "p_grandson_sam"},
+            {"date": "2026-09-12", "desc": "Riverside Power", "amount_cents": -8230, "payee_id": "p_power"},
+            {"date": "2026-09-01", "desc": "Pension deposit", "amount_cents": 98000, "payee_id": None},
+            {"date": "2026-08-27", "desc": "Transfer to Anna Lee", "amount_cents": -20000, "payee_id": "p_daughter"},
+            {"date": "2026-08-20", "desc": "Green Basket Grocers", "amount_cents": -6450, "payee_id": None},
+        ],
+        "guardian": {"name": "Anna Lee", "relation": "daughter", "status": "not_paired", "key_jwk": None, "key_id": "",
+                     "token_sha256": "", "invite": None},
+        "pending_approvals": {},     # draft id -> what the guardian's page shows
+        "alerts": [],                # family alerts. In-app only: this demo sends no real texts or emails.
+        "stops": [],                 # what Star stopped: blocked, frozen, denied, scam. Rows of the Activity grid.
+        "frozen": {"on": False, "by": "", "at": None, "lift": {"owner": False, "guardian": False}},
     }
-}
-
-# What Star can buy, modelled on what the bank bank app offers (synthetic products, DEMO prices and rates).
-# risk: 1 (lowest) .. 5 (highest). price is per unit in `currency`; units can be fractional in this demo.
-USD_SGD = 1.30          # demo exchange rate
-_PRODUCTS = [
-    {"product_id": "d_fd12", "name": "the bank Fixed Deposit (12 months)", "asset_class": "Fixed deposit", "risk": 1,
-     "min_cents": 100000, "currency": "SGD", "price": 1.0, "rate_pa": 1.80, "tenor_months": 12,
-     "aliases": ["fixed deposit", "time deposit", "fd", "12 month deposit", "12-month deposit"]},
-    {"product_id": "b_ssb", "name": "Singapore Savings Bonds", "asset_class": "Government bond", "risk": 1,
-     "min_cents": 50000, "currency": "SGD", "price": 1.0,
-     "aliases": ["savings bond", "savings bonds", "ssb", "government bond", "bonds"]},
-    {"product_id": "f_income", "name": "the bank Income Fund", "asset_class": "Unit trust", "risk": 2,
-     "min_cents": 10000, "currency": "SGD", "price": 1.0234, "aliases": ["income fund", "bank income"]},
-    {"product_id": "f_asia_div", "name": "the bank Asia Dividend Fund", "asset_class": "Unit trust", "risk": 3,
-     "min_cents": 10000, "currency": "SGD", "price": 0.8712,
-     "aliases": ["asia dividend", "asia fund", "dividend fund", "asian fund"]},
-    {"product_id": "e_sti", "name": "SPDR STI ETF", "asset_class": "ETF", "risk": 4,
-     "min_cents": 10000, "currency": "SGD", "price": 3.85,
-     "aliases": ["sti", "sti etf", "straits times index", "singapore index", "etf"]},
-    {"product_id": "s_d05", "name": "the bank Group Holdings shares", "asset_class": "Shares (SGX)", "risk": 5,
-     "min_cents": 10000, "currency": "SGD", "price": 38.50, "ticker": "D05", "exchange": "SGX",
-     "aliases": ["bank shares", "bank share", "bank stock", "bank group", "d05"]},
-    {"product_id": "s_z74", "name": "Singtel shares", "asset_class": "Shares (SGX)", "risk": 5,
-     "min_cents": 10000, "currency": "SGD", "price": 3.20, "ticker": "Z74", "exchange": "SGX",
-     "aliases": ["singtel", "z74"]},
-    {"product_id": "s_aapl", "name": "Apple Inc. shares", "asset_class": "Shares (US)", "risk": 5,
-     "min_cents": 10000, "currency": "USD", "price": 228.40, "ticker": "AAPL", "exchange": "NASDAQ",
-     "aliases": ["apple", "aapl"]},
-    {"product_id": "s_msft", "name": "Microsoft Corp. shares", "asset_class": "Shares (US)", "risk": 5,
-     "min_cents": 10000, "currency": "USD", "price": 415.20, "ticker": "MSFT", "exchange": "NASDAQ",
-     "aliases": ["microsoft", "msft"]},
-]
-
-
-def price_sgd_cents(prod: dict) -> int:
-    """Demo price of one unit in SGD cents."""
-    return round(prod["price"] * (USD_SGD if prod.get("currency") == "USD" else 1) * 100)
 
 
 class Wallet(LedgerStorage):
     def __init__(self, path=None):
         self._lock = threading.RLock()
         self.path = None
-        self.world, self.executed, self.recent_exec_times, self.outbox = {}, {}, {}, []
+        self.world, self.payments, self.recent_exec_times, self.outbox, self.webhook_events = {}, {}, {}, [], {}
         self.reset()
         self.path = path
         self._load()
@@ -163,15 +92,15 @@ class Wallet(LedgerStorage):
     @atomic_write
     def reset(self):
         with self._lock:
-            self.world = copy.deepcopy(_WORLD)
-            self.products = copy.deepcopy(_PRODUCTS)
-            self.executed: dict[str, dict] = {}   # idempotency key -> receipt
+            self.world = {"users": {DEMO_USER: _world_user()}}
+            self.payments: dict[str, dict] = {}         # payment id -> record
             self.recent_exec_times: dict[str, list[float]] = {}
             self.outbox = []
+            self.webhook_events: dict[str, dict] = {}   # PayPal event id -> first seen (dedup survives a restart)
 
     # ---------- Demo customers per visitor ----------
-    # On a shared online demo every browser gets its own copy of Mdm Chen ("u_chen~<visitor id>"), so one tester's
-    # payments, resets and passkey never affect another's. Locally (no visitor id) everyone is plain "u_chen".
+    # On a shared online demo every browser gets its own copy of Mrs. Lee ("u_lee~<visitor id>"), so one tester's
+    # payments, resets and passkey never affect another's. Locally (no visitor id) everyone is plain "u_lee".
     MAX_VISITORS = 2000
 
     @staticmethod
@@ -187,62 +116,53 @@ class Wallet(LedgerStorage):
                 visitors = [u for u in users if "~" in u]
                 for old in visitors[:max(0, len(visitors) - self.MAX_VISITORS + 1)]:   # forget the oldest
                     users.pop(old, None)
-                users[user_id] = copy.deepcopy(_WORLD["users"][DEMO_USER])
+                users[user_id] = _world_user()
 
     @atomic_write
     def reset_user(self, user_id: str) -> None:
-        """Reset one demo customer's accounts, payees, bills, holdings and cards (nobody else's)."""
+        """Reset one demo customer's wallet, payees, invoices, guardian and records (nobody else's)."""
         with self._lock:
-            self.world["users"][user_id] = copy.deepcopy(_WORLD["users"][DEMO_USER])
+            self.world["users"][user_id] = _world_user()
             self.recent_exec_times.pop(user_id, None)
-            self.executed = {k: r for k, r in self.executed.items() if r.get("user_id") != user_id}
+            self.payments = {k: r for k, r in self.payments.items() if r.get("user_id") != user_id}
 
     # ---------- Read-only ----------
     def user(self, user_id: str) -> dict:
         self._ensure(user_id)
-        user = self.world["users"][user_id]
-        for field in ("limits", "standing_instructions", "giro"):
-            user.setdefault(field, copy.deepcopy(_WORLD["users"][DEMO_USER][field]))
-        templates = {a["account_id"]: a for a in _WORLD["users"][DEMO_USER]["accounts"]}
-        for account in user["accounts"]:
-            for key, value in templates.get(account["account_id"], {}).items():
-                if key != "balance_cents":
-                    account.setdefault(key, copy.deepcopy(value))
-        return user
+        return self.world["users"][user_id]
+
+    def users(self) -> dict:
+        return self.world["users"]
 
     def accounts(self, user_id: str) -> list[dict]:
-        accounts = self.user(user_id)["accounts"]
-        # Synthetic, single-signatory joint account for the competition example.
-        # This does not implement a real bank's joint-account mandate.
-        if not any(a["account_id"] == "JNT-003" for a in accounts):
-            accounts.append({"account_id": "JNT-003", "name": "Joint Account", "balance_cents": 0, "currency": "SGD"})
-        return accounts
+        return self.user(user_id)["accounts"]
 
     def account(self, user_id: str, account_id: str) -> dict | None:
         return next((a for a in self.accounts(user_id) if a["account_id"] == account_id), None)
 
-    _OWN_ALIASES = {"savings": ["savings account", "my savings account", "my savings"],
-                    "current": ["current account", "my current account"],
-                    "joint": ["joint account", "my joint account", "joint acc", "joint"]}
-
-    def own_accounts_as_payees(self, user_id: str) -> list[dict]:
-        """The customer's own accounts as transfer targets (the bank Fund Transfer API: own-account transfers)."""
-        return [{"payee_id": f"own:{a['account_id']}", "name": a["name"], "relation": "own account", "type": "own",
-                 "aliases": self._OWN_ALIASES.get(a.get("type", ""), []), "masked_account": a.get("masked", ""),
-                 "account_id": a["account_id"]} for a in self.accounts(user_id)]
+    def allowance_left(self, user_id: str) -> int:
+        return self.accounts(user_id)[0]["balance_cents"]
 
     def payees(self, user_id: str) -> list[dict]:
-        return self.user(user_id)["payees"] + self.own_accounts_as_payees(user_id)
+        return self.user(user_id)["payees"]
 
     def payee(self, user_id: str, payee_id: str) -> dict | None:
-        return next((p for p in self.payees(user_id) if p["payee_id"] == payee_id), None)
+        found = next((p for p in self.payees(user_id) if p["payee_id"] == payee_id), None)
+        if found or not str(payee_id).startswith("invoicer:"):
+            return found
+        # Someone who sent an invoice but whom the household doesn't know: the name comes from the invoice itself
+        inv = next((i for i in self.invoices(user_id, only_open=False) if i["payee_id"] == payee_id), None)
+        return {"payee_id": payee_id, "name": inv["invoicer_name"], "relation": "unknown sender", "type": "biller",
+                "aliases": [inv["invoicer_name"].lower(), inv["invoicer_name"].split()[0].lower(), inv["title"].lower()],
+                "masked_account": payments.mask_email(inv["invoicer_email"])} if inv else None
 
-    def bills(self, user_id: str, only_unpaid: bool = True) -> list[dict]:
-        bills = self.user(user_id)["bills"]
-        return [b for b in bills if b["status"] == "unpaid"] if only_unpaid else bills
+    # Invoices: `only_open` hides paid and cancelled ones. They arrive through PayPal (app/wallet/invoices.py).
+    def invoices(self, user_id: str, only_open: bool = True) -> list[dict]:
+        rows = self.user(user_id)["invoices"]
+        return [i for i in rows if i["status"] in ("SENT", "UNPAID")] if only_open else rows
 
-    def bill(self, user_id: str, bill_id: str) -> dict | None:
-        return next((b for b in self.user(user_id)["bills"] if b["bill_id"] == bill_id), None)
+    def invoice(self, user_id: str, invoice_id: str) -> dict | None:
+        return next((i for i in self.user(user_id)["invoices"] if i["invoice_id"] == invoice_id), None)
 
     def transactions(self, user_id: str, limit: int = 10) -> list[dict]:
         return self.user(user_id)["transactions"][:limit]
@@ -255,59 +175,17 @@ class Wallet(LedgerStorage):
         return lim
 
     def transferred_today(self, user_id: str) -> int:
-        """Sum of today's transfers to other people (what the daily limit counts)."""
+        """What the daily limit counts: today's payouts to other people, from write-ahead records, so a payment
+        still in flight (or unknown) already counts. Failed and returned ones don't."""
         today = time.strftime("%Y-%m-%d")
-        own = {f"own:{a['account_id']}" for a in self.accounts(user_id)}
-        people = {p["payee_id"] for p in self.user(user_id)["payees"] if p["type"] == "person"}
-        return sum(-t["amount_cents"] for t in self.user(user_id)["transactions"]
-                   if t["date"] == today and t["amount_cents"] < 0 and t.get("payee_id") in people
-                   and t.get("payee_id") not in own)
-
-    def standing_instructions(self, user_id: str) -> list[dict]:
-        return self.user(user_id)["standing_instructions"]
-
-    def giro(self, user_id: str) -> list[dict]:
-        return self.user(user_id)["giro"]
+        return sum(r["amount_cents"] for r in self.payments_for(user_id)
+                   if r["kind"] == "transfer" and time.strftime("%Y-%m-%d", time.localtime(r["created_at"])) == today
+                   and r["state"] not in payments.RELEASES)
 
     def payee_history(self, user_id: str, payee_id: str) -> list[int]:
         """Past amounts paid to this payee (positive, in cents). Used by the risk rules; never shown to the model."""
         return [-t["amount_cents"] for t in self.user(user_id)["transactions"]
                 if t["payee_id"] == payee_id and t["amount_cents"] < 0]
-
-    def product(self, product_id: str) -> dict | None:
-        return next((p for p in self.products if p["product_id"] == product_id), None)
-
-    def holdings(self, user_id: str) -> list[dict]:
-        return self.user(user_id)["holdings"]
-
-    def portfolio(self, user_id: str) -> list[dict]:
-        out = []
-        for h in self.holdings(user_id):
-            p = self.product(h["product_id"]) or {}
-            value = round(h["units"] * price_sgd_cents(p)) if p else h["cost_cents"]
-            out.append({"product_id": h["product_id"], "name": p.get("name", h["product_id"]),
-                        "asset_class": p.get("asset_class", ""), "units": h["units"], "value_cents": value,
-                        "cost_cents": h["cost_cents"], "gain_cents": value - h["cost_cents"]})
-        return out
-
-    def cards(self, user_id: str) -> list[dict]:
-        return self.user(user_id)["cards"]
-
-    def card(self, user_id: str, card_id: str) -> dict | None:
-        return next((c for c in self.cards(user_id) if c["card_id"] == card_id), None)
-
-    # Locking a card is a protective action: allowed straight away (unlocking is not offered through Star)
-    @atomic_write
-    def lock_card(self, user_id: str, card_id: str) -> dict:
-        with self._lock:
-            c = self.card(user_id, card_id)
-            if c is None:
-                raise ValueError("Card not found")
-            c["status"], c["locked_at"] = "locked", time.time()
-            return dict(c)
-
-    def risk_profile(self, user_id: str) -> dict:
-        return self.user(user_id)["risk_profile"]
 
     def protection(self, user_id: str) -> dict:
         return self.user(user_id)["protection"]
@@ -326,198 +204,149 @@ class Wallet(LedgerStorage):
         now = time.time()
         n = sum(1 for t in self.recent_exec_times.get(user_id, []) if now - t <= window_sec)
         if plan_id:
-            n -= sum(1 for r in self.executed.values() if r.get("user_id") == user_id
-                     and now - r.get("executed_at", 0) <= window_sec
-                     and r.get("verifiable", {}).get("card", {}).get("plan_id") == plan_id)
+            n -= sum(1 for r in self.payments.values() if r.get("user_id") == user_id
+                     and now - r.get("created_at", 0) <= window_sec and r["card"].get("plan_id") == plan_id)
         return max(0, n)
 
-    def _check_velocity(self, user_id, metadata: dict | None = None):
+    def _check_velocity(self, user_id, card: dict | None = None):
         # Called inside the atomic ledger lock: two signed requests cannot both take the last slot.
-        from app.config import settings
-        plan_id = ((metadata or {}).get("card") or {}).get("plan_id", "")
+        plan_id = (card or {}).get("plan_id", "")
         if self.recent_exec_count(user_id, settings.velocity_window_min * 60, plan_id=plan_id) >= settings.velocity_max:
             raise ValueError("R21_VELOCITY: transaction frequency limit reached; wait and prepare a new request")
 
-    # ---------- Write: only the execution gateway may call these ----------
-    @atomic_write
-    def execute_investment(self, user_id: str, from_account: str, product_id: str, amount_cents: int,
-                           idempotency_key: str, metadata: dict | None = None) -> dict:
+    # ---------- Payment records ----------
+    def payment(self, payment_id: str) -> dict | None:
         with self._lock:
-            if type(amount_cents) is not int or amount_cents <= 0:
+            return self.payments.get(payment_id)
+
+    def payment_by_draft(self, user_id: str, draft_id: str) -> dict | None:
+        with self._lock:
+            return next((r for r in self.payments.values() if r["user_id"] == user_id and r["draft_id"] == draft_id), None)
+
+    def payment_by_key(self, idempotency_key: str) -> dict | None:
+        with self._lock:
+            return next((r for r in self.payments.values() if r["idempotency_key"] == idempotency_key), None)
+
+    def payments_for(self, user_id: str) -> list[dict]:
+        with self._lock:
+            return sorted((r for r in self.payments.values() if r["user_id"] == user_id), key=lambda r: r["created_at"], reverse=True)
+
+    def open_unknown(self, user_id: str) -> list[dict]:
+        return [r for r in self.payments_for(user_id) if r["state"] == "UNKNOWN"]
+
+    def transaction(self, user_id: str, draft_id: str) -> dict | None:
+        """A signed earlier step, for dependency checks. status comes from verified state only."""
+        with self._lock:
+            r = self.payment_by_draft(user_id, draft_id)
+            return {**copy.deepcopy(r), "status": payments.status_of(r)} if r else None
+
+    # ---------- Write: only the execution gateway, reconcile and webhooks may call these ----------
+    @atomic_write
+    def begin_payment(self, rec: dict, *, reserve: bool) -> dict:
+        """Write-ahead (I3): checked and saved under the ledger lock, before any HTTP request goes out."""
+        with self._lock:
+            user, cents = rec["user_id"], rec["amount_cents"]
+            if type(cents) is not int or cents <= 0:
                 raise ValueError("Amount must be a positive integer number of cents")
-            if idempotency_key in self.executed:
-                previous = self.executed[idempotency_key]
-                if previous.get("user_id") != user_id or previous["amount_cents"] != amount_cents or (metadata and
-                    previous.get("verifiable", {}).get("digest") != metadata.get("digest")):
-                    raise ValueError("Idempotency key belongs to a different instruction")
-                return {**copy.deepcopy(previous), "idempotent_replay": True}
-            self._check_velocity(user_id, metadata)
-            acct, prod = self.account(user_id, from_account), self.product(product_id)
-            if acct is None or prod is None:
-                raise ValueError("Account or product not found")
-            if acct["balance_cents"] < amount_cents:
-                raise ValueError("Insufficient balance")
-            acct["balance_cents"] -= amount_cents
-            units = round(amount_cents / price_sgd_cents(prod), 4)
-            h = next((h for h in self.holdings(user_id) if h["product_id"] == product_id), None)
-            if h:
-                h["units"] += units
-                h["cost_cents"] += amount_cents
-            else:
-                self.holdings(user_id).append({"product_id": product_id, "units": units, "cost_cents": amount_cents})
-            self.user(user_id)["transactions"].insert(0, {
-                "date": time.strftime("%Y-%m-%d"), "desc": f"Buy {prod['name']} ({prod['asset_class']})",
-                "amount_cents": -amount_cents, "payee_id": product_id})
-            receipt = {"txn_id": "TXN-" + uuid.uuid4().hex[:10].upper(), "status": "SUCCESS",
-                       "amount_cents": amount_cents, "product_id": product_id, "units": units,
-                       "balance_after_cents": acct["balance_cents"], "executed_at": time.time()}
-            receipt.update(user_id=user_id, draft_id=idempotency_key)
-            if metadata:
-                body = {"receipt_version": 2, "txn_id": receipt["txn_id"], "status": receipt["status"],
-                        "executed_at": int(receipt["executed_at"]), **metadata}
-                body["receipt_sha256"] = hashlib.sha256(json.dumps(body, ensure_ascii=False,
-                    sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                receipt["verifiable"] = body
-                for event in ("gateway.posted", "commit.executed"):
-                    self.outbox.append({"event": event, "session_id": metadata.get("session_id", ""),
-                        "data": {"draft_id": idempotency_key, "txn_id": receipt["txn_id"], "receipt": body}})
-            self.executed[idempotency_key] = receipt
-            self.recent_exec_times.setdefault(user_id, []).append(time.time())
-            return receipt
+            if self.user(user)["frozen"]["on"]:
+                raise ValueError("R14_WALLET_FROZEN: payments are frozen")
+            self._check_velocity(user, rec["card"])
+            if reserve:
+                acct = self.accounts(user)[0]
+                if acct["balance_cents"] < cents:
+                    raise ValueError("Over the Star allowance")
+                acct["balance_cents"] -= cents
+            self.payments[rec["payment_id"]] = rec
+            self.recent_exec_times.setdefault(user, []).append(time.time())
+            for event in ("gateway.posted", "commit.executed"):
+                self.outbox.append({"event": event, "session_id": rec["session_id"], "data": {
+                    "draft_id": rec["draft_id"], "txn_id": rec["payment_id"], "digest": rec["digest"], "kind": rec["kind"],
+                    "rail": rec["rail"], "state": rec["state"], "idempotency_key": rec["idempotency_key"],
+                    "card": payments.masked_card(rec["card"])}})
+            return rec
 
     @atomic_write
-    def execute_payment(self, user_id: str, from_account: str, payee_id: str,
-                        amount_cents: int, idempotency_key: str, bill_id: str | None = None, metadata: dict | None = None) -> dict:
+    def update_payment(self, payment_id: str, to: str | None = None, *, paypal: dict | None = None, verified_by: str = "",
+                       source: str = "", event_type: str = "", note: str = "", event_id: str = "") -> dict:
+        """One atomic step of a record: its PayPal ids, its state, and the side effects that state brings."""
         with self._lock:
-            if type(amount_cents) is not int or amount_cents <= 0:
-                raise ValueError("Amount must be a positive integer number of cents")
-            if idempotency_key in self.executed:          # idempotent: a retry never debits twice
-                previous = self.executed[idempotency_key]
-                if previous.get("user_id") != user_id or previous["amount_cents"] != amount_cents or (metadata and
-                    previous.get("verifiable", {}).get("digest") != metadata.get("digest")):
-                    raise ValueError("Idempotency key belongs to a different instruction")
-                return {**copy.deepcopy(previous), "idempotent_replay": True}
-            self._check_velocity(user_id, metadata)
-            acct = self.account(user_id, from_account)
-            if acct is None:
-                raise ValueError("Account not found")
-            if acct["balance_cents"] < amount_cents:
-                raise ValueError("Insufficient balance")
-            payee = self.payee(user_id, payee_id)
-            if payee is None:
-                raise ValueError("Payee not found")
-            destination = None
-            if payee.get("type") == "own":
-                destination = self.account(user_id, payee["account_id"])
-                if destination is None or destination["account_id"] == from_account or bill_id:
-                    raise ValueError("Own-account transfer needs two different owned accounts and no bill")
-            if bill_id:
-                bill = self.bill(user_id, bill_id)
-                if not bill or bill["status"] != "unpaid":
-                    raise ValueError("This bill is already paid or unavailable")
-                valid_amount = (0 < amount_cents <= bill["amount_cents"] if "min_due_cents" in bill
-                                else bill["amount_cents"] == amount_cents)
-                if bill["payee_id"] != payee_id or not valid_amount:
-                    raise ValueError("Bill details changed; please prepare a new payment")
-            acct["balance_cents"] -= amount_cents
-            if destination is not None:
-                destination["balance_cents"] += amount_cents
-                self.user(user_id)["transactions"].insert(0, {
-                    "date": time.strftime("%Y-%m-%d"), "desc": f"Internal credit to {destination['name']}",
-                    "amount_cents": amount_cents, "payee_id": payee_id})
-            self.user(user_id)["transactions"].insert(0, {
-                "date": time.strftime("%Y-%m-%d"), "desc": f"Transfer to {payee['name']}" if payee["type"] in ("person", "own")
-                else payee["name"], "amount_cents": -amount_cents, "payee_id": payee_id})
-            if bill_id:
-                b = self.bill(user_id, bill_id)
-                if b and "min_due_cents" in b and amount_cents < b["amount_cents"]:
-                    b["amount_cents"] -= amount_cents              # card bill paid in part: the rest stays due
-                    b["min_due_cents"] = 0
-                    b["paid_cents"] = b.get("paid_cents", 0) + amount_cents
-                elif b:
-                    b["status"] = "paid"
-            receipt = {"txn_id": "TXN-" + uuid.uuid4().hex[:10].upper(), "status": "SUCCESS",
-                       "amount_cents": amount_cents, "payee_id": payee_id,
-                       "balance_after_cents": acct["balance_cents"], "executed_at": time.time()}
-            receipt.update(user_id=user_id, draft_id=idempotency_key)
-            if metadata:
-                body = {"receipt_version": 2, "txn_id": receipt["txn_id"], "status": receipt["status"],
-                        "executed_at": int(receipt["executed_at"]), **metadata}
-                body["receipt_sha256"] = hashlib.sha256(json.dumps(body, ensure_ascii=False,
-                    sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                receipt["verifiable"] = body
-                for event in ("gateway.posted", "commit.executed"):
-                    self.outbox.append({"event": event, "session_id": metadata.get("session_id", ""),
-                        "data": {"draft_id": idempotency_key, "txn_id": receipt["txn_id"], "receipt": body}})
-            self.executed[idempotency_key] = receipt
-            self.recent_exec_times.setdefault(user_id, []).append(time.time())
-            return receipt
+            rec = self.payments[payment_id]
+            for k, v in (paypal or {}).items():
+                if v:
+                    rec["paypal"][k] = v
+            if event_id and event_id not in rec["event_ids"]:
+                rec["event_ids"].append(event_id)
+            if to is None:
+                return rec
+            before = rec["state"]
+            if not payments.apply(rec, to, verified_by=verified_by, source=source, event_type=event_type, note=note):
+                return rec
+            self._on_state(rec, before, to)
+            self.outbox.append({"event": "payment.state", "session_id": rec["session_id"], "data": {
+                "payment_id": payment_id, "from": before, "to": to, "verified_by": verified_by,
+                "source": source, "event_type": event_type}})
+            return rec
+
+    def _on_state(self, rec: dict, before: str, to: str) -> None:
+        user = rec["user_id"]
+        if to in payments.RELEASES and not rec["released"] and rec["kind"] in payments.SPENDS:
+            rec["released"] = True
+            self.accounts(user)[0]["balance_cents"] += rec["amount_cents"]
+        if rec["kind"] == "bill" and rec["card"].get("invoice_id"):
+            inv = self.invoice(user, rec["card"]["invoice_id"])
+            if inv and to in ("PAID", "INVOICE_CANCELLED"):
+                inv["status"] = "PAID" if to == "PAID" else "CANCELLED"
+        if to in ("SENT", "PAID") and rec.get("verified") and rec["kind"] in payments.SPENDS:
+            self.user(user)["transactions"].insert(0, {
+                "date": time.strftime("%Y-%m-%d"), "desc": rec["counterparty_name"] if rec["kind"] != "transfer"
+                else f"Transfer to {rec['counterparty_name']}", "amount_cents": -rec["amount_cents"],
+                "payee_id": rec["card"].get("payee_id"), "payment_id": rec["payment_id"]})
+        if to == "PAID" and rec["kind"] == "purchase":
+            user_world = self.user(user)
+            user_world.setdefault("merchant_orders", {})
+            mid = rec["card"].get("merchant_id") or ""
+            user_world["merchant_orders"][mid] = user_world["merchant_orders"].get(mid, 0) + 1
+        if rec["kind"] == "refund" and to == "REFUNDED":
+            self._money_back(rec)
+        if rec["kind"] == "money_request" and to == "PAID":
+            self.user(user)["transactions"].insert(0, {
+                "date": time.strftime("%Y-%m-%d"), "desc": f"Paid back by {rec['counterparty_name']}",
+                "amount_cents": rec["amount_cents"], "payee_id": None, "payment_id": rec["payment_id"]})
+
+    def _money_back(self, rec: dict) -> None:
+        """A verified refund or returned payout: the parent's allowance comes back, and its record says so."""
+        parent = self.payments.get(rec.get("parent_payment_id") or "")
+        if not parent:
+            return
+        parent["refunded_cents"] = parent.get("refunded_cents", 0) + rec["amount_cents"]
+        self.accounts(parent["user_id"])[0]["balance_cents"] += rec["amount_cents"]
+        self.user(parent["user_id"])["transactions"].insert(0, {
+            "date": time.strftime("%Y-%m-%d"), "desc": f"Refund from {parent['counterparty_name']}",
+            "amount_cents": rec["amount_cents"], "payee_id": None, "payment_id": rec["payment_id"]})
+        if parent["rail"] == "payouts" and parent["state"] in ("UNCLAIMED", "SENT"):
+            payments.apply(parent, "RETURNED", verified_by=rec.get("verified_by", ""), source="refund record")
+            parent["released"] = True
+        elif parent["refunded_cents"] >= parent["amount_cents"] and parent["state"] == "PAID":
+            payments.apply(parent, "REFUNDED", verified_by=rec.get("verified_by", ""), source="refund record")
 
     @atomic_write
-    def create_standing_instruction(self, user_id: str, from_account: str, payee_id: str, amount_cents: int,
-                                    schedule: dict, idempotency_key: str, metadata: dict | None = None) -> dict:
-        """Set up a scheduled transfer (the bank Standing Instructions API). No money moves until the first date."""
+    def note_webhook_event(self, event_id: str, event_type: str) -> bool:
+        """Insert-or-ignore. True the first time this id is seen."""
         with self._lock:
-            if idempotency_key in self.executed:
-                return {**self.executed[idempotency_key], "idempotent_replay": True}
-            payee = self.payee(user_id, payee_id)
-            if payee is None or self.account(user_id, from_account) is None:
-                raise ValueError("Payee or account not found")
-            si = {"si_id": "SI-" + uuid.uuid4().hex[:4].upper(), "payee_id": payee_id, "amount_cents": amount_cents,
-                  "frequency": schedule["frequency"], "day": schedule["day"], "from_account": from_account,
-                  "next_date": schedule["first_date"], "status": "active",
-                  "description": f"{schedule['frequency'].capitalize()} transfer to {payee['name']}"}
-            self.standing_instructions(user_id).append(si)
-            receipt = {"txn_id": si["si_id"], "status": "SCHEDULED", "amount_cents": amount_cents, "payee_id": payee_id,
-                       "first_date": si["next_date"], "balance_after_cents": self.account(user_id, from_account)["balance_cents"],
-                       "executed_at": time.time()}
-            receipt.update(user_id=user_id, draft_id=idempotency_key)
-            if metadata:
-                body = {"receipt_version": 2, "txn_id": receipt["txn_id"], "status": receipt["status"],
-                        "executed_at": int(receipt["executed_at"]), **metadata}
-                body["receipt_sha256"] = hashlib.sha256(json.dumps(body, ensure_ascii=False,
-                    sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                receipt["verifiable"] = body
-                for event in ("gateway.posted", "commit.executed"):
-                    self.outbox.append({"event": event, "session_id": metadata.get("session_id", ""),
-                        "data": {"draft_id": idempotency_key, "txn_id": receipt["txn_id"], "receipt": body}})
-            self.executed[idempotency_key] = receipt
-            return receipt
+            if event_id in self.webhook_events:
+                return False
+            self.webhook_events[event_id] = {"type": event_type, "received_at": time.time()}
+            if len(self.webhook_events) > 20000:
+                self.webhook_events.pop(next(iter(self.webhook_events)))
+            return True
 
-    # Protective and signed account changes (called by the kernel only)
+    # ---------- Protective and signed account changes (called by the kernel only) ----------
     @atomic_write
-    def cancel_standing_instruction(self, user_id: str, si_id: str) -> dict:
-        with self._lock:
-            si = next((x for x in self.standing_instructions(user_id) if x["si_id"] == si_id), None)
-            if si is None:
-                raise ValueError("Standing instruction not found")
-            si["status"] = "cancelled"
-            return dict(si)
-
-    @atomic_write
-    def cancel_giro(self, user_id: str, giro_id: str) -> dict:
-        with self._lock:
-            g = next((x for x in self.giro(user_id) if x["giro_id"] == giro_id), None)
-            if g is None:
-                raise ValueError("GIRO arrangement not found")
-            g["status"] = "cancelled"
-            return dict(g)
-
-    @atomic_write
-    def add_giro(self, user_id: str, biller: str, aliases: list[str], limit_cents: int | None, from_account: str) -> dict:
-        with self._lock:
-            g = {"giro_id": "GIRO-" + uuid.uuid4().hex[:3].upper(), "biller": biller, "aliases": aliases,
-                 "reference": "pending", "limit_cents": limit_cents, "frequency": "per bill", "from_account": from_account,
-                 "last_deduction": "none yet", "status": "pending approval"}
-            self.giro(user_id).append(g)
-            return dict(g)
-
-    @atomic_write
-    def add_payee(self, user_id: str, name: str, bank_name: str, account_number: str, relation: str) -> dict:
+    def add_payee(self, user_id: str, name: str, email: str, relation: str) -> dict:
         with self._lock:
             p = {"payee_id": "p_" + uuid.uuid4().hex[:6], "name": name, "relation": relation or "payee",
                  "type": "person", "aliases": [name.lower(), *([relation.lower()] if relation else [])],
-                 "masked_account": f"{bank_name} ••••{account_number[-4:]}", "added_at": time.time()}
+                 "paypal_email": email, "masked_account": payments.mask_email(email), "added_at": time.time()}
             self.user(user_id)["payees"].append(p)
             return dict(p)
 
@@ -530,6 +359,51 @@ class Wallet(LedgerStorage):
             else:
                 lim["pending"] = {"to_cents": cents, "effective_at": effective_at}
             return dict(lim)
+
+    @atomic_write
+    def add_alert(self, user_id: str, level: str, kind: str, text: str, draft_id: str = "") -> dict:
+        with self._lock:
+            alert = {"alert_id": "al_" + uuid.uuid4().hex[:8], "at": time.time(), "level": level, "kind": kind,
+                     "text": text, "draft_id": draft_id, "read": False}
+            rows = self.user(user_id)["alerts"]
+            rows.insert(0, alert)
+            del rows[100:]
+            return dict(alert)
+
+    @atomic_write
+    def add_stop(self, user_id: str, *, kind: str, to: str, amount_cents: int, status: str, stopped_by: str, why: str,
+                 codes: list[str] | None = None, draft_id: str = "", digest: str = "", session_id: str = "") -> dict:
+        with self._lock:
+            row = {"row_id": "stop_" + uuid.uuid4().hex[:10], "time": time.time(), "kind": kind, "to": to, "amount_cents": amount_cents,
+                   "status": status, "stopped_by": stopped_by, "why": why, "codes": codes or [], "draft_id": draft_id,
+                   "digest": digest, "session_id": session_id}
+            rows = self.user(user_id)["stops"]
+            rows.insert(0, row)
+            del rows[200:]
+            return dict(row)
+
+    def stops(self, user_id: str) -> list[dict]:
+        return self.user(user_id)["stops"]
+
+    @atomic_write
+    def set_frozen(self, user_id: str, on: bool, by: str) -> dict:
+        with self._lock:
+            f = self.user(user_id)["frozen"]
+            f.update(on=on, by=by if on else "", at=time.time() if on else None, lift={"owner": False, "guardian": False})
+            return dict(f)
+
+    @atomic_write
+    def mark_lift(self, user_id: str, who: str) -> dict:
+        with self._lock:
+            f = self.user(user_id)["frozen"]
+            f["lift"][who] = True
+            return copy.deepcopy(f)
+
+    @atomic_write
+    def update_user(self, user_id: str, fn) -> object:
+        """A small atomic change to one customer's world (guardian pairing, invoice sync)."""
+        with self._lock:
+            return fn(self.user(user_id))
 
 
 wallet = Wallet()

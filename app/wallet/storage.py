@@ -24,7 +24,7 @@ def atomic_write(fn):
 
 class LedgerStorage:
     def _snapshot(self):
-        return {k: getattr(self, k) for k in ('world', 'executed', 'recent_exec_times', 'outbox')}
+        return {k: getattr(self, k) for k in ('world', 'payments', 'recent_exec_times', 'outbox', 'webhook_events')}
 
     def _restore(self, data):
         for k, v in data.items():
@@ -38,18 +38,15 @@ class LedgerStorage:
             db.execute('CREATE TABLE IF NOT EXISTS ledger (id INTEGER PRIMARY KEY, data TEXT NOT NULL)')
             row = db.execute('SELECT data FROM ledger WHERE id=1').fetchone()
         if row:
-            self._restore(json.loads(row[0]))
+            data = json.loads(row[0])
+            if 'payments' in data:          # a ledger file from an older version is simply ignored
+                self._restore(data)
 
     def _save(self):
         if self.path:
             with closing(sqlite3.connect(self.path)) as db, db:
                 db.execute('INSERT OR REPLACE INTO ledger VALUES (1, ?)',
                            (json.dumps(self._snapshot(), ensure_ascii=False),))
-
-    def transaction(self, user_id, draft_id):
-        with self._lock:
-            r = self.executed.get(draft_id)
-            return copy.deepcopy(r) if r and r.get('user_id') == user_id else None
 
     def flush_audit(self, audit):
         # Posting remains successful if the audit sink is unavailable. Events stay durable for retry.

@@ -36,7 +36,7 @@ class IllegalTransition(Exception):
 @dataclass
 class Session:
     session_id: str
-    user_id: str = "u_chen"
+    user_id: str = "u_lee"
     lang: str = "en"
     phase: Phase = Phase.IDLE
     messages: list[dict] = field(default_factory=list)       # conversation history for the model
@@ -69,7 +69,9 @@ class Session:
     care_mode: bool = False                                  # easier "care" mode: bigger text, simpler words, read aloud
     care_offer_pending: bool = False                         # Star just asked "would you like the easier version?"
     care_changed: bool | None = None                         # set this turn (by the user's answer or set_care_mode)
-    amount_hint: tuple | None = None                         # (cents, "half of your Savings Account (S$...)") this turn
+    amount_hint: tuple | None = None                         # (cents, "half of $200.00") this turn
+    last_offers: list[dict] = field(default_factory=list)    # what search_catalogue checked this turn (shown on the card)
+    task_started_at: float = field(default_factory=time.time)  # the ticker counts PayPal calls since this moment
     created_at: float = field(default_factory=time.time)
 
     # ---------- State machine ----------
@@ -92,6 +94,8 @@ class Session:
         task's own: an earlier, finished payment's story must never be read out as the reason for a new one."""
         self.task_start = len(self.messages)
         self.scam_reasons = []
+        self.task_started_at = time.time()
+        self.last_offers = []
 
     @property
     def current_draft(self) -> Draft | None:
@@ -175,7 +179,7 @@ class SessionStore:
     def get(self, session_id: str | None) -> Session:
         with self._lock:
             if session_id is None:
-                return self._create(uuid.uuid4().hex, "u_chen")
+                return self._create(uuid.uuid4().hex, "u_lee")
             if not isinstance(session_id, str) or not session_id:
                 raise ValueError("session_id must be a non-empty string")
             if session_id not in self._s:
@@ -192,7 +196,7 @@ class SessionStore:
     def new_for_visitor(self, visitor: str) -> Session:
         # A client-chosen visitor label is not an identity or a credential.
         with self._lock:
-            return self._create(uuid.uuid4().hex, "u_chen~" + uuid.uuid4().hex)
+            return self._create(uuid.uuid4().hex, "u_lee~" + uuid.uuid4().hex)
 
 
 sessions = SessionStore()

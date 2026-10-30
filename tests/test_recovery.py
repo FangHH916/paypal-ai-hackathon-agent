@@ -17,6 +17,7 @@ from app.kernel.executor import Kernel, KernelError
 from app.kernel.signing import Site
 from app.kernel.state import Session, SessionStore, UnknownSession
 from app.kernel import p256, webauthn
+from app.wallet import payments
 from scripts.verify_receipt import check
 
 
@@ -52,18 +53,24 @@ class RecoveryTest(unittest.TestCase):
         d, receipt = self.pay()
         reopened = Wallet(self.path)
         saved = reopened.transaction(self.s.user_id, d.draft_id)
-        self.assertEqual(saved, receipt)
-        self.assertEqual(reopened.account('u_chen', 'SAV-001')['balance_cents'], 320000)
-        self.assertTrue(all(ok for _, ok in check(saved['verifiable'])))
+        self.assertEqual(saved['payment_id'], receipt['txn_id'])
+        self.assertEqual(reopened.allowance_left('u_lee'), 145000)
+        self.assertTrue(all(ok for _, ok in check(payments.receipt_body(saved, 'simulator'))))
         self.assertIsNone(reopened.transaction('another-customer', d.draft_id))
 
-    def test_storage_failure_rolls_back_balance_and_bill(self):
+    def _record(self, n=1, cents=8640):
+        digest = f"{n:x}".rjust(64, "0")
+        card = {"draft_id": f"d{n}", "kind": "bill", "currency": "USD", "amount_cents": cents, "payee_name": "Riverside Power",
+                "plan_id": "", "payee_id": "p_power", "invoice_id": "inv_power_oct"}
+        return payments.new_record(payment_id=f"pay_{n}", user_id="u_lee", session_id="s", card=card, digest=digest, rail="invoice",
+                                   idempotency_key=f"key{n}", authorization=None, verification=None, decision=None)
+
+    def test_storage_failure_rolls_back_the_write_ahead_record_and_allowance(self):
         with patch.object(self.wallet, '_save', side_effect=OSError('disk full')):
             with self.assertRaises(OSError):
-                self.wallet.execute_payment('u_chen', 'SAV-001', 'p_sp', 8640, 'bill', 'b_sp_oct')
-        self.assertEqual(self.wallet.account('u_chen', 'SAV-001')['balance_cents'], 325000)
-        self.assertEqual(self.wallet.bill('u_chen', 'b_sp_oct')['status'], 'unpaid')
-        self.assertFalse(self.wallet.executed)
+                self.wallet.begin_payment(self._record(), reserve=True)
+        self.assertEqual(self.wallet.allowance_left('u_lee'), 150000)
+        self.assertFalse(self.wallet.payments)
 
     def test_audit_failure_keeps_durable_outbox_then_recovers(self):
         original = self.audit.append
@@ -74,29 +81,30 @@ class RecoveryTest(unittest.TestCase):
         with patch.object(self.audit, 'append', side_effect=fail_posting):
             d, receipt = self.pay()
         reopened = Wallet(self.path)
-        self.assertEqual(len(reopened.outbox), 2)
-        self.assertEqual(reopened.transaction('u_chen', d.draft_id), receipt)
+        self.assertEqual(sum(1 for e in reopened.outbox if e['event'] in ('gateway.posted', 'commit.executed')), 2)
+        self.assertEqual(reopened.transaction('u_lee', d.draft_id)['payment_id'], receipt['txn_id'])
         reopened.flush_audit(self.audit)
         self.assertFalse(Wallet(self.path).outbox)
         events = self.audit.for_session(self.s.session_id)
         self.assertTrue(any(e['event'] == 'commit.executed' for e in events))
         self.assertTrue(self.audit.verify()['ok'])
 
-    def test_parallel_bill_posting_only_debits_once(self):
+    def test_parallel_spending_cannot_overdraw_the_allowance(self):
+        self.wallet.accounts('u_lee')[0]['balance_cents'] = 8640
         def post(i):
             try:
-                return self.wallet.execute_payment('u_chen', 'SAV-001', 'p_sp', 8640, f'bill-{i}', 'b_sp_oct')['status']
+                return self.wallet.begin_payment(self._record(i), reserve=True)['state']
             except ValueError:
                 return 'REJECTED'
         with ThreadPoolExecutor(2) as pool:
-            results = list(pool.map(post, range(2)))
-        self.assertEqual(sorted(results), ['REJECTED', 'SUCCESS'])
-        self.assertEqual(self.wallet.account('u_chen', 'SAV-001')['balance_cents'], 316360)
+            results = list(pool.map(post, range(1, 3)))
+        self.assertEqual(sorted(results), ['REJECTED', 'SUBMITTING'])
+        self.assertEqual(self.wallet.allowance_left('u_lee'), 0)
 
-    def test_invalid_bill_amount_does_not_debit(self):
+    def test_invalid_amount_never_reaches_paypal(self):
         with self.assertRaises(ValueError):
-            self.wallet.execute_payment('u_chen', 'SAV-001', 'p_sp', 8641, 'bad', 'b_sp_oct')
-        self.assertFalse(self.wallet.executed)
+            self.wallet.begin_payment(self._record(cents=0), reserve=True)
+        self.assertFalse(self.wallet.payments)
 
     def test_passkey_removal_requires_fresh_signed_approval(self):
         auth = self.enroll()
@@ -113,7 +121,7 @@ class RecoveryTest(unittest.TestCase):
         payload = self.kernel.passkey_remove_challenge(self.s, Site())
         with self.assertRaises(KernelError):
             self.kernel.passkey_remove(self.s, Site(), auth.sign(payload, uv=False))
-        self.assertTrue(self.kernel.passkey_status('u_chen', Site())['enrolled'])
+        self.assertTrue(self.kernel.passkey_status('u_lee', Site())['enrolled'])
 
     def test_extra_passkey_cannot_bypass_removal_authentication(self):
         self.enroll()
@@ -124,7 +132,7 @@ class RecoveryTest(unittest.TestCase):
         attacker = webauthn.SoftAuthenticator()
         with self.assertRaises(KernelError):
             self.kernel.passkey_register(self.s, Site(), **attacker.register(b'old challenge'))
-        self.assertTrue(self.kernel.passkey_status('u_chen', Site())['enrolled'])
+        self.assertTrue(self.kernel.passkey_status('u_lee', Site())['enrolled'])
 
     def test_client_visitor_label_cannot_restore_another_identity(self):
         store = SessionStore(self.path)

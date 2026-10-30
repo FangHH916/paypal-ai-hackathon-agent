@@ -2,8 +2,8 @@
 
 * OpenAICompatLLM: any OpenAI-compatible /chat/completions API, with Function Calling.
 * OfflineLLM: a rule-based "model" that needs no key and has exactly the same interface (it also returns tool_calls).
-  Uses: (1) run the whole pipeline before you have a key; (2) fallback when the online model times out or errors;
-  (3) evaluation baseline.
+  It is NOT an AI model and the app says so. Uses: (1) run the whole pipeline before you have a key; (2) fallback when
+  the online model times out or errors; (3) evaluation baseline.
 """
 from __future__ import annotations
 
@@ -14,11 +14,13 @@ import uuid
 import requests
 
 from app.agent import fraud
-from app.agent.textparse import (account_id_for, fix_asr, find_account, find_raw_account, frequency_in, match_payees,
-                                 parse_amount, repeat_day_in)
+from app.agent.textparse import fix_asr, match_payees, parse_amount
 from app.config import settings
 from app.kernel.evidence import confirmed_proposal
+from app.kernel.hotline import hotline_words
 from app.models import fmt_money
+from app.wallet.catalogue import known_item_words
+from app.wallet.payments import EMAIL
 
 
 class LLMError(Exception):
@@ -56,7 +58,6 @@ class OpenAICompatLLM:
         return {"role": "assistant", "content": msg.get("content") or "",
                 "tool_calls": msg.get("tool_calls") or []}
 
-
     def _post(self, body: dict):
         try:
             return requests.post(f"{self.base_url}/chat/completions", json=body, timeout=self.timeout,
@@ -68,26 +69,24 @@ class OpenAICompatLLM:
 # ====================================================================== Offline model
 _RX = {
     "handoff": r"human|real person|customer service|(talk|speak) to (someone|a person|staff|an officer)",
-    "card": r"\b(lock|block|freeze|stop|cancel)\b.{0,30}\bcards?\b|\bcards?\b.{0,30}\b(lost|stolen|missing)\b|"
-            r"\b(lost|lose|stole|stolen|missing|took|snatched)\b.{0,25}\b(wallet|purse|cards?)\b|\bmy cards?\b",
-    "portfolio": r"\bportfolio\b|\bholdings?\b|\bmy investments\b|\binvestments? (doing|worth)\b|"
-                 r"how (much|many) .{0,25}\b(invested|shares|units)\b",
-    "invest": r"\binvest|\bbuy\b.*\b(fund|etf|bonds?|shares?|stocks?|units)\b|unit trust|savings bonds?|"
-              r"\b(top up|put)\b.*\b(fund|etf|bonds?|deposit)\b|fixed deposit|time deposit|"
-              r"\b(buy|put|top up)\b.{0,30}\b(apple|microsoft|singtel|bank shares|bank stock)\b",
-    "bill": r"\bbills?\b|utilit|electric|water|s&cc|town council|conservancy|credit card|card statement",
+    "freeze": r"\bfreeze\b|\b(stop|block|lock)\b.{0,20}\b(everything|all (my )?payments|my (wallet|account|paypal))\b|"
+              r"\b(lost|stolen)\b.{0,20}\b(phone|wallet|device)\b",
+    "stop_payout": r"\b(stop|cancel|take back|call back)\b.{0,25}\b(that|the|my)\s+(payment|payout|transfer)\b",
+    "refund": r"\bmoney back\b|\brefund\b|\breturn (it|this|the)\b|\bsend (it|this) back\b",
+    "money_request": r"\b(ask|request)\b.{0,40}\b(pay me|pay back|paying me|money|to pay)\b|\bowes? me\b|\bpay me back\b",
+    "disputes": r"\bdisputes?\b|\b(paypal )?cases?\b|\bcomplaints?\b",
+    "status": r"\b(go|gone|went) through\b|\bdid (it|that|my|the)\b.{0,25}\b(arrive|work|send|sent|pay|paid)\b|\bstatus\b|"
+              r"\bwhere is my (payment|money|refund)\b",
+    "invoice_ask": r"\bwhat('?s| is| are)\b.{0,25}\b(bill|bills|invoice|invoices)\b|\b(new|strange|funny|odd) (bill|invoice)\b|"
+                   r"\bdo i (have|owe)\b.{0,25}\b(bill|bills|invoice)|\bexplain\b.{0,25}\b(bill|invoice)\b|\bthis (bill|invoice)\b.{0,20}\?",
+    "buy": r"\b(buy|order|purchase|get me|i need a|i need some|shop for|pick up)\b",
+    "bill": r"\bbills?\b|\binvoices?\b|\belectric|\bwater\b|\bpower\b|\butilit|securetech|riverside|maple county",
     "pay": r"\b(?:pay|settle)\b",
-    "transfer": r"\b(transfer|send|wire|remit|move|paynow)\b|\bgive\b(?! me\b)",
-    # the bank Limits / Payees / GIRO / Standing Instructions APIs
+    "transfer": r"\b(transfer|send|wire|remit)\b|\bgive\b(?! me\b)",
     "limits": r"\blimits?\b",
-    "add_payee": r"\b(add|register|save|new)\b.{0,25}\bpayees?\b|\badd\b.{0,60}\b(account (number|no)|as a payee)",
-    "giro_setup": r"\b(set ?up|start|apply( for)?|arrange|use|pay (it |them )?by)\b.{0,30}\bgiro\b",
-    "regular": r"\bgiro\b|standing (instruction|order)s?|regular (payment|transfer)s?|recurring|"
-               r"automatic (payment|deduction)s?|direct debit|subscriptions?|\b(monthly|weekly) (transfer|allowance|payment)",
-    "stop": r"\b(stop|cancel|end|terminate|remove)\b",
-    "income": r"pension|\bcpf\b|payout|(come|came|gone) in|arrived|received",
-    "balance": r"balance|how much (money )?(do i have|have i got|is (there )?in|is left|left)|"
-               r"\b(what|which|my) (wallet )?accounts\b",
+    "add_payee": r"\b(add|register|save|new)\b.{0,25}\b(payee|person|contact)\b|\badd\b.{0,80}@",
+    "income": r"pension|(come|came|gone) in|arrived|received",
+    "balance": r"balance|allowance|how much (money )?(do i have|have i got|is (there )?in|is left|left|can i spend)",
     "spending": r"\bspen[dt]|spending|expenses|transactions|history",
 }
 
@@ -101,26 +100,30 @@ def detect_intent(text: str) -> str:
         return "spending"
     if _has("handoff", text):
         return "handoff"
-    if _has("card", text):
-        return "card"
+    if _has("freeze", text):
+        return "freeze"
+    if _has("stop_payout", text):
+        return "stop_payout"
+    if _has("refund", text):
+        return "refund"
+    if _has("money_request", text):
+        return "money_request"
     if _has("limits", text):
         return "limits"
     if _has("add_payee", text):
         return "add_payee"
-    if _has("giro_setup", text):
-        return "giro_setup"
-    if _has("regular", text) and _has("stop", text):
-        return "regular_cancel"
-    if _has("regular", text) and not (_has("transfer", text) and parse_amount(text)):
-        return "regular"
-    if _has("portfolio", text):
-        return "portfolio"
-    if _has("invest", text):
-        return "invest"
+    if _has("status", text):
+        return "status"
+    if _has("disputes", text):
+        return "disputes"
+    if _has("invoice_ask", text):
+        return "bill_query"
     if _has("bill", text) and _has("pay", text):
         return "bill_pay"
-    if _has("transfer", text):
+    if _has("transfer", text) or (_has("pay", text) and not _has("bill", text)):
         return "transfer"
+    if _has("buy", text) or any(re.search(rf"(?<![a-z]){re.escape(w)}(?![a-z])", text, re.I) for w in known_item_words()):
+        return "purchase"
     if _has("bill", text):
         return "bill_query"
     if _has("income", text):
@@ -133,7 +136,8 @@ def detect_intent(text: str) -> str:
 
 
 class OfflineLLM:
-    """A deterministic "model": works in the shape of ReAct (Thought first, then Action) so the trace panel can show it."""
+    """A deterministic stand-in: works in the shape of ReAct (Thought first, then Action) so the trace panel can show it.
+    It has no intelligence; it reads known sentence shapes. Everything after it is the same code a real model goes through."""
     name = "offline"
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None, json_mode: bool = False,
@@ -159,36 +163,13 @@ class OfflineLLM:
             if "handoff_to_human" not in results:
                 return self._call("handoff_to_human", {"reason": "User asked for a human"},
                                   "The user wants a real person; hand off.")
-            return self._say("This demo has no live staff service. Please use the official banking app or your bank contact channel to speak with a person.")
+            return self._say("This demo has no live staff service. Please talk to your family, or contact PayPal's customer service directly.")
 
-        if intent == "card":
-            if "get_cards" not in results:
-                return self._call("get_cards", {}, "The user wants a card locked; look up their cards.")
-            if "lock_card" in results:
-                done = results["lock_card"]["data"]["locked"]
-                return self._say("Done. I've locked your " + " and ".join(f"{c['name']} ({c['number']})" for c in done)
-                                 + f" straight away. To unlock {'them' if len(done) > 1 else 'it'} later, use the the bank app"
-                                 " or call 1800 111 1111.")
-            cards = results["get_cards"]["data"]
-            low = text.lower()
-            if re.search(r"\b(all|both|wallet|purse|every)\b", low):
-                pick = "all"
-            else:
-                pick = next((c["card_id"] for c in cards if c["name"].lower() in low
-                             or c["number"][-4:] in low), None) or \
-                    next((c["card_id"] for c in cards if ("credit" in low and "credit" in c["card_id"])
-                          or (re.search(r"debit|atm", low) and "debit" in c["card_id"])), None)
-            if not pick:
-                names = " or ".join(f"your {c['name']} ({c['number']})" for c in cards)
-                return self._say(f"Which card should I lock: {names}, or both?")
-            return self._call("lock_card", {"card_id": pick}, "Lock the card now; it's a protective action.")
-
-        if intent == "portfolio":
-            if "get_portfolio" not in results:
-                return self._call("get_portfolio", {}, "The user asks about their investments.")
-            p = results["get_portfolio"]["data"]
-            parts = "; ".join(f"{h['name']} {h['value']} ({h['gain_or_loss']})" for h in p["holdings"])
-            return self._say(f"Your investments are worth {p['total_value']} in total: {parts}.")
+        if intent == "freeze":
+            if "freeze_payments" not in results:
+                return self._call("freeze_payments", {"reason": "The user asked to freeze payments"},
+                                  "Freeze now; it's a protective action.")
+            return self._say("Done. All payments are frozen. Nothing can be sent until you and your family lift the freeze.")
 
         if intent == "limits":
             amt = parse_amount(text)
@@ -197,96 +178,42 @@ class OfflineLLM:
                     if "set_daily_limit" not in allowed:
                         return self._say("I can't change limits right now. Please finish what's on the card first.")
                     return self._call("set_daily_limit", {"amount": amt, "evidence": self._last_user(messages)},
-                                      "The user wants a different daily transfer limit; lowering is instant, raising "
+                                      "The user wants a different daily limit; lowering is instant, raising "
                                       "needs their signature.")
                 if "change_id" in results["set_daily_limit"]["data"]:
-                    return self._say(f"A higher limit needs your fingerprint, and for your safety it only starts after "
-                                     f"a waiting time. Please check the card.")
-                return self._say(f"Done. Your daily transfer limit is now S${amt:,.0f}, starting right away.")
+                    return self._say("A higher limit needs your fingerprint, and for your safety it only starts after "
+                                     "a waiting time. Please check the card.")
+                return self._say(f"Done. Your daily limit is now ${amt:,.0f}, starting right away.")
             if "get_limits" not in results:
-                return self._call("get_limits", {}, "The user asks about their transfer limit.")
+                return self._call("get_limits", {}, "The user asks about their limit.")
             d = results["get_limits"]["data"]
-            return self._say(f"Your daily limit for transfers to other people is {d['daily_transfer_limit']}. "
+            return self._say(f"Your daily limit for money to other people is {d['daily_transfer_limit']}. "
                              f"You've used {d['used_today']} today, so {d['left_today']} is left.")
-
-        if intent in ("regular", "regular_cancel"):
-            if "list_standing_instructions" not in results:
-                return self._call("list_standing_instructions", {}, "Look up the user's regular transfers.")
-            if "list_giro" not in results:
-                return self._call("list_giro", {}, "And their GIRO arrangements.")
-            sis, giros = results["list_standing_instructions"]["data"], results["list_giro"]["data"]
-            low = text.lower()
-            if intent == "regular":
-                parts = [f"{x['amount']} to your {x['relation']} {x['to']} {x['when']}" for x in sis]
-                parts += [f"GIRO for {g['biller']}" for g in giros]
-                if not parts:
-                    return self._say("You have no regular payments set up.")
-                return self._say("Your regular payments are: " + "; ".join(parts) + ". Would you like to change any?")
-            for done in ("cancel_giro", "cancel_standing_instruction"):
-                if done in results:
-                    what = results[done]["data"]["cancelled"]
-                    what = f"the {what[0].lower()}{what[1:]}" if done == "cancel_standing_instruction" else f"the GIRO for {what}"
-                    return self._say(f"Done. I've stopped {what}. You can set it up again any time.")
-            g_hits = [g for g in giros if any(re.search(rf"(?<![a-z]){re.escape(a)}(?![a-z])", low)
-                                              for a in [g["biller"].lower(), *g.get("aliases", [])])]
-            s_hits = [x for x in sis if x["relation"] and re.search(rf"\b{re.escape(x['relation'])}\b", low)
-                      or x["to"].lower() in low]
-            if len(g_hits) == 1 and ("giro" in low or not s_hits):
-                return self._call("cancel_giro", {"giro_id": g_hits[0]["giro_id"]}, "Cancel the GIRO the user named.")
-            if len(s_hits) == 1:
-                return self._call("cancel_standing_instruction", {"si_id": s_hits[0]["si_id"]},
-                                  "Stop the regular transfer the user named.")
-            opts = [f"the {x['amount']} {x['when']} to {x['to']}" for x in sis] + [f"GIRO for {g['biller']}" for g in giros]
-            return self._say("Which one should I stop: " + ", or ".join(opts) + "?")
 
         if intent == "add_payee":
             if "request_add_payee" in results:
-                return self._say("Please check the card and every digit of the account number. If it's right, "
-                                 "confirm with your fingerprint.")
+                return self._say("Please check the card and every letter of the email. If it's right, confirm with your fingerprint.")
             raw = " ".join(m["content"] for m in messages if m["role"] == "user")[-400:]
-            num = find_raw_account(text)
-            bank_m = re.search(r"\b(the bank|savings bank|OCBC|UOB|Maybank|Citibank|HSBC|Standard Chartered|Trust|GXS)\b", raw, re.I)
-            name_m = re.search(r"\bpayee[:,]?\s+(?:called |named )?([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){0,3})", raw) or \
+            email = EMAIL.search(raw)
+            name_m = re.search(r"\b(?:person|payee|contact)[:,]?\s+(?:called |named )?([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){0,3})", raw) or \
                 re.search(r"\badd\s+(?:my \w+\s+)?([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){0,3})", raw)
             name = name_m.group(1) if name_m else ""
-            name = re.sub(r"\s+(the bank|savings bank|OCBC|UOB|Maybank|Citibank|HSBC)$", "", name)
-            if not (num and name and bank_m):
-                return self._say("To add a new payee I need their name, their bank and their account number. "
-                                 "What are they?")
+            if not (email and name):
+                return self._say("To add a new person I need their name and their PayPal email. What are they?")
             if "request_add_payee" not in allowed:
-                return self._say("For your safety I can't add a payee in this conversation.")
+                return self._say("For your safety I can't add anyone in this conversation.")
             rel = re.search(r"\bmy (friend|neighbou?r|niece|nephew|cousin|sister|brother|helper|doctor)\b", raw, re.I)
-            return self._call("request_add_payee", {"name": name, "bank": bank_m.group(1).upper() if len(bank_m.group(1)) <= 5
-                                                    else bank_m.group(1), "account_number": num,
+            return self._call("request_add_payee", {"name": name, "email": email.group(0).lower(),
                                                     "relation": rel.group(1).lower() if rel else "",
                                                     "evidence": self._last_user(messages)},
-                              "Ask to add the payee the user described; they must sign it.")
-
-        if intent == "giro_setup":
-            if "request_giro_setup" in results:
-                return self._say("Please check the card. If it's right, confirm with your fingerprint.")
-            if "list_payees" not in results:
-                return self._call("list_payees", {}, "Find the billing organisation the user means.")
-            billers = [p for p in results["list_payees"]["data"] if p.get("type") == "biller"]
-            hits = match_payees(text, billers)
-            if len(hits) != 1:
-                return self._say("Which bill should be paid by GIRO: " + ", ".join(p["name"] for p in billers) + "?")
-            if "request_giro_setup" not in allowed:
-                return self._say("For your safety I can't set up GIRO in this conversation.")
-            args = {"biller_payee_id": hits[0]["payee_id"], "evidence": self._last_user(messages)}
-            if parse_amount(text):
-                args["max_amount"] = parse_amount(text)
-            return self._call("request_giro_setup", args, "Ask to set up GIRO for this biller; the user signs it.")
+                              "Ask to add the person the user described; they must sign it.")
 
         if intent == "balance":
-            if "get_balance" not in results:
-                return self._call("get_balance", {}, "The user wants their balance; look up the account.")
-            accts = results["get_balance"]["data"]
-            if re.search(r"\baccounts\b", text, re.I):
-                return self._say("You have " + "; ".join(f"your {a['name']} ({a['number']}) with {a['balance']}"
-                                                          for a in accts) + ".")
-            a = accts[0]
-            return self._say(f"Your {a['name']} has {a['balance']}.")
+            if "get_allowance" not in results:
+                return self._call("get_allowance", {}, "The user wants to know what's left; look up the allowance.")
+            a = results["get_allowance"]["data"]
+            return self._say(f"You have {a['left']} left of your {a['monthly_allowance']} Star allowance. "
+                             "That's the limit you and your family set. I can't see your PayPal balance.")
 
         if intent in ("income", "spending"):
             if "get_recent_transactions" not in results:
@@ -299,70 +226,101 @@ class OfflineLLM:
                 return self._say(f"Yes — {inc['desc']} of {inc['amount'][1:]} arrived on {inc['date']}.")
             month = txns[0]["date"][:7] if txns else ""
             outs = [t for t in txns if t["amount"].startswith("-") and t["date"].startswith(month)]
-            total = sum(float(t["amount"].replace("-S$", "").replace(",", "")) for t in outs)
-            return self._say(f"In {month} you've spent S${total:,.2f} across {len(outs)} payments so far.")
+            total = sum(-t["amount_cents"] for t in outs)
+            return self._say(f"In {month} you've spent {fmt_money(total)} across {len(outs)} payments so far.")
 
-        if intent in ("bill_query", "bill_pay"):
-            if "get_bills" not in results:
-                return self._call("get_bills", {}, "First check which bills are unpaid.")
-            bills = results["get_bills"]["data"]
+        if intent == "status":
+            if "payment_status" not in results:
+                return self._call("payment_status", {}, "Look up what PayPal has verified.")
+            rows = results["payment_status"]["data"]
+            if not rows:
+                return self._say("You haven't made any payments with me yet.")
+            r = rows[0]
+            word = {"SENT": "was received", "PAID": "is paid", "REFUNDED": "was refunded"}.get(r["state"])
+            if word and r["verified"]:
+                return self._say(f"Yes. PayPal confirms your {r['amount']} for {r['what']} {word}.")
+            if r["state"] == "UNKNOWN":
+                return self._say(f"I can't confirm your {r['amount']} for {r['what']} yet. Please don't pay again. I'm checking with PayPal.")
+            return self._say(f"Your {r['amount']} for {r['what']} is not finished yet: {r['state'].replace('_', ' ').lower()}.")
+
+        if intent == "disputes":
+            if "list_disputes" not in results:
+                return self._call("list_disputes", {}, "Read the PayPal cases.")
+            d = results["list_disputes"]["data"]
+            if not d.get("available"):
+                return self._say("I can't read your PayPal cases right now.")
+            if not d["cases"]:
+                return self._say("You have no open PayPal cases.")
+            return self._say(f"You have {len(d['cases'])} PayPal case{'s' if len(d['cases']) > 1 else ''}: "
+                             + "; ".join(f"{c['reason'].replace('_', ' ').lower()}, {c['state'].replace('_', ' ').lower()}" for c in d["cases"]) + ".")
+
+        if intent == "bill_query":
+            return self._invoice_query(text, results)
+
+        if intent == "bill_pay":
+            if "list_invoices" not in results:
+                return self._call("list_invoices", {}, "First check which invoices are unpaid.")
+            bills = results["list_invoices"]["data"]
             if not bills:
                 return self._say("You have no unpaid bills right now.")
-            if intent == "bill_query":
-                lst = "; ".join(f"{b['title']} {b['amount']} (due {b['due']})" for b in bills)
-                return self._say(f"You have {len(bills)} unpaid bills: {lst}. Shall I prepare a payment?")
             picked = self._pick_bill(text, bills)
             if picked is None:
                 lst = ", ".join(b["title"] for b in bills)
                 return self._say(f"You have these bills: {lst}. Which one would you like to pay?")
             if "draft_bill_payment" not in results:
                 if "draft_bill_payment" not in allowed:
-                    return self._say("You still have a payment waiting for confirmation. "
-                                     "Please confirm or cancel it first.")
-                pay = "full"
-                if picked.get("minimum_due"):                       # credit card: full, minimum or an amount
-                    amt = parse_amount(text)
-                    if re.search(r"\bmin(imum)?\b", text, re.I):
-                        pay = "minimum"
-                    elif re.search(r"\b(full|whole|everything|all of it|statement balance|in full)\b", text, re.I):
-                        pay = "full"
-                    elif amt and f"S${amt:,.2f}" != picked["amount"]:
-                        pay = "amount"
-                    elif not amt:
-                        return self._say(f"Your {picked['title']} is {picked['amount']}, and the minimum payment is "
-                                         f"{picked['minimum_due']}. Would you like to pay the full amount or the minimum?")
-                acct = self._account(text, results)
-                if acct == "LOOKUP":
-                    return self._call("get_balance", {}, "The user named an account to pay from; look it up.")
-                args = {"bill_id": picked["bill_id"], "evidence": self._last_user(messages)}
-                if pay != "full":
-                    args["pay"] = pay
-                if pay == "amount":
-                    args["amount"] = parse_amount(text)
-                if acct:
-                    args["from_account"] = acct
-                return self._call("draft_bill_payment", args,
-                                  f"Found the bill {picked['title']}; draft a payment for the user to confirm.")
+                    return self._say("You still have a payment waiting for confirmation. Please confirm or cancel it first.")
+                return self._call("draft_bill_payment", {"invoice_id": picked["invoice_id"], "evidence": self._last_user(messages)},
+                                  f"Found the invoice {picked['title']}; draft a payment for the user to confirm.")
             return self._draft_done(results["draft_bill_payment"])
 
-        if intent == "transfer":
-            raw_acct = find_raw_account(text)
+        if intent == "purchase":
+            return self._purchase(text, results, messages, allowed)
+
+        if intent == "refund":
+            return self._refund(text, results, messages, allowed, "draft_refund", "refund")
+
+        if intent == "stop_payout":
+            return self._refund(text, results, messages, allowed, "draft_stop_payout", "stop")
+
+        if intent == "money_request":
             if "list_payees" not in results:
-                return self._call("list_payees", {}, "The user wants to transfer; first get the saved payees "
+                return self._call("list_payees", {}, "Who should pay her back?")
+            people = [p for p in results["list_payees"]["data"] if p["type"] == "person"]
+            hits = match_payees(text, people)
+            if len(hits) != 1:
+                opts = " or ".join(p["name"] for p in (hits or people))
+                return self._say(f"Who should I ask: {opts}?")
+            amount, _ = self._amount(text, messages)
+            if amount is None:
+                return self._say(f"How much should I ask {hits[0]['name']} for?")
+            if "draft_money_request" not in results:
+                if "draft_money_request" not in allowed:
+                    return self._say("You still have something waiting for confirmation. Please confirm or cancel it first.")
+                reason = re.search(r"\bfor (the |my )?([a-z ]{3,40})$", text, re.I)
+                return self._call("draft_money_request", {"payee_id": hits[0]["payee_id"], "amount": amount, "evidence": self._last_user(messages),
+                                                          "reason": reason.group(2) if reason else ""},
+                                  f"Ask {hits[0]['name']} for {amount:g}; she signs it because it goes out in her name.")
+            return self._draft_done(results["draft_money_request"])
+
+        if intent == "transfer":
+            raw_email = EMAIL.search(text)
+            if "list_payees" not in results:
+                return self._call("list_payees", {}, "The user wants to send money; first get the saved people "
                                                      "to see who they mean.")
-            payees = [p for p in results["list_payees"]["data"] if p["relation"] != "bill"]
+            payees = [p for p in results["list_payees"]["data"] if p["type"] == "person"]
             hits = match_payees(text, payees)
             if not hits:
-                if raw_acct:
-                    return self._say("For your safety I can only send money to saved payees. Please add a new "
-                                     "payee at the bank first. If someone asked you to send money to an unfamiliar "
-                                     "account, please talk to your family first.")
+                if raw_email:
+                    return self._say("For your safety I can only send money to people you've saved. Please add them "
+                                     "first. If someone asked you to send money to an unfamiliar account, please talk "
+                                     "to your family first.")
                 names = ", ".join(f"your {p['relation']} {p['name']}" for p in payees)
-                return self._say(f"Your saved payees are {names}. Who would you like to send money to?")
+                return self._say(f"Your saved people are {names}. Who would you like to send money to?")
             if len(hits) > 1:
-                rel = hits[0]["relation"] if len({p["relation"] for p in hits}) == 1 else "payees"
+                rel = hits[0]["relation"] if len({p["relation"] for p in hits}) == 1 else "people"
                 opts = " or ".join(f"{p['name']} ({p['account']})" for p in hits)
-                return self._say(f"You have {len(hits)} {rel}s saved. Do you mean {opts}?" if rel != "payees"
+                return self._say(f"You have {len(hits)} {rel}s saved. Do you mean {opts}?" if rel != "people"
                                  else f"Which one do you mean: {opts}?")
             payee = hits[0]
             amount, slip = self._amount(text, messages)
@@ -377,80 +335,88 @@ class OfflineLLM:
                     amount = -previous["amount_cents"] / 100
             if amount is None:
                 return self._say(f"How much would you like to send to your {payee['relation']} {payee['name']}?")
-            acct = self._account(text, results)
-            if acct == "LOOKUP":
-                return self._call("get_balance", {}, "The user named an account to pay from; look up the account ids.")
-            freq = frequency_in(text)
-            tool = "draft_standing_instruction" if freq else "draft_transfer"   # "every month" -> its own API
-            if tool not in results:
-                if tool not in allowed:
-                    return self._say("For your safety I can't set up a transfer in this conversation. If someone "
-                                     "claiming to be the police or the bank asked you to send money, please hang up "
-                                     "and call the ScamShield helpline 1799.")
+            if "draft_transfer" not in results:
+                if "draft_transfer" not in allowed:
+                    return self._say("For your safety I can't set up a payment in this conversation. If someone "
+                                     "claiming to be the police or a company asked you to send money, please hang up "
+                                     f"and call {hotline_words()}.")
                 args = {"payee_id": payee["payee_id"], "amount": amount, "evidence": self._last_user(messages)}
                 if slip:
                     args.update(misheard=slip["heard"], meant=slip["meant"])
-                if acct:
-                    args["from_account"] = acct
-                if freq:
-                    args["frequency"] = freq
-                    if repeat_day_in(text, freq):
-                        args["day"] = repeat_day_in(text, freq)
-                return self._call(tool, args,
-                                  f"\"{payee['relation']}\" is {payee['name']} ({payee['payee_id']}), amount "
-                                  f"{amount:g}{' from ' + acct if acct else ''}"
-                                  f"{', ' + freq if freq else ''}; draft the {'standing instruction' if freq else 'transfer'}.")
-            return self._draft_done(results[tool])
+                return self._call("draft_transfer", args, f"\"{payee['relation']}\" is {payee['name']} ({payee['payee_id']}), "
+                                                          f"amount {amount:g}; draft the transfer.")
+            return self._draft_done(results["draft_transfer"])
 
-        if intent == "invest":
-            if "list_investments" not in results:
-                return self._call("list_investments", {}, "The user wants to invest; look up the products first.")
-            data = results["list_investments"]["data"]
-            hits = match_payees(text, data["products"])
-            if not hits and re.search(r"\b(stocks?|shares?|equit(y|ies))\b", text, re.I):
-                opts = ", ".join(re.sub(r"( Inc\.| Corp\.| Group Holdings)? shares$", "", p["name"])
-                                 for p in data["products"] if p["asset_class"].startswith("Shares"))
-                return self._say(f"I can buy shares in {opts}. Which company would you like, and how much?")
-            if len(hits) != 1:
-                opts = ", ".join(f"{p['name']} ({p['asset_class']})" for p in (hits or data["products"]))
-                return self._say(f"Which would you like to invest in: {opts}?")
-            prod = hits[0]
-            amount, slip = self._amount(text, messages)
-            if slip and not slip["sure"]:
-                return self._say(f"Did you mean {slip['meant']}, {fmt_money(round(amount * 100))}?")
-            if amount is None:
-                return self._say(f"How much would you like to invest in the {prod['name']}?")
-            acct = self._account(text, results)
-            if acct == "LOOKUP":
-                return self._call("get_balance", {}, "The user named an account to pay from; look up the account ids.")
-            if "draft_investment" not in results:
-                if "draft_investment" not in allowed:
-                    return self._say("For your safety I can't set up an investment in this conversation. Promises of "
-                                     "guaranteed or very high returns are a common scam. Please talk to your family or "
-                                     "call the ScamShield helpline 1799.")
-                args = {"product_id": prod["product_id"], "amount": amount, "evidence": self._last_user(messages)}
-                if slip:
-                    args.update(misheard=slip["heard"], meant=slip["meant"])
-                if acct:
-                    args["from_account"] = acct
-                return self._call("draft_investment", args,
-                                  f"Product {prod['name']} ({prod['asset_class']}), amount {amount:g}; draft the investment.")
-            return self._draft_done(results["draft_investment"])
-
-        return self._say("I can check your balance, pay your bills, send money to family or between your accounts, "
-                         "set up or stop regular payments and GIRO, change your daily limit, or invest. "
-                         "What would you like to do?")
+        return self._say("I can send money to your family, buy what you need from sellers I've checked, pay your bills, get "
+                         "your money back, or ask someone to pay you. What would you like to do?")
 
     # ------------------------------------------------------------------ helpers
-    @staticmethod
-    def _account(text: str, results: dict) -> str | None:
-        """account_id the user named ("from my current account"), "LOOKUP" if we still need get_balance, or None."""
-        phrase = find_account(text)
-        if not phrase:
-            return None
-        if "get_balance" not in results:
-            return "LOOKUP"
-        return account_id_for(phrase, results["get_balance"]["data"])
+    def _invoice_query(self, text: str, results: dict) -> dict:
+        if "list_invoices" not in results:
+            return self._call("list_invoices", {}, "See which invoices have arrived.")
+        bills = results["list_invoices"]["data"]
+        if not bills:
+            return self._say("You have no unpaid bills right now.")
+        wrong = [b for b in bills if b["looks_wrong"]]
+        named = self._pick_bill(text, bills)
+        target = named or (wrong[0] if wrong and re.search(r"\b(this|that|new|strange|funny|odd|the)\s+(bill|invoice)\b", text, re.I) else None)
+        if target and "explain_invoice" not in results:
+            return self._call("explain_invoice", {"invoice_id": target["invoice_id"]}, "Check this invoice before saying anything about it.")
+        if "explain_invoice" in results:
+            d = results["explain_invoice"]["data"]
+            if d["warnings"]:
+                advice = "Please don't pay it or call any number in it." if not d["can_pay"] else "Your family will need to agree before this can be paid."
+                return self._say(f"Please be careful. This bill from {d['from']} for {d['amount']} looks wrong. "
+                                 + " ".join(d["warnings"][:3]) + f" {advice}")
+            return self._say(f"This is your {d['title']} from {d['from']}: {d['amount']}, due {d['due']}. It looks normal. Shall I prepare it for you to pay?")
+        lst = "; ".join(f"{b['title']} from {b['from']}, {b['amount']}" + (" (this one looks wrong)" if b["looks_wrong"] else "") for b in bills)
+        return self._say(f"You have {len(bills)} unpaid bill{'s' if len(bills) > 1 else ''}: {lst}.")
+
+    def _purchase(self, text: str, results: dict, messages: list[dict], allowed: set) -> dict:
+        if "search_catalogue" not in results:
+            return self._call("search_catalogue", {"query": text[:120]}, "Look up offers and let Star's checks grade them.")
+        data = results["search_catalogue"]["data"]
+        offers = data["offers"]
+        if not offers:
+            return self._say("I can't find that from the sellers I've checked. I can find a blood pressure monitor, a weekly groceries box or a gift card.")
+        named = [o for o in offers if o["merchant"].lower() in text.lower()]
+        pick = named[0] if named else next((o for o in offers if o["verdict"] != "stop"), None)
+        if pick is None:
+            return self._say("I stopped this: " + " ".join(offers[0]["reasons"][:2]))
+        if "draft_purchase" not in results:
+            if "draft_purchase" not in allowed:
+                return self._say("For your safety I can't buy anything in this conversation. Please talk to your family.")
+            args = {"offer_id": pick["offer_id"], "evidence": self._last_user(messages)}
+            many = re.search(r"\b(two|three|four|five|[2-9])\s+(?:of\s+)?(?:blood|box|boxes|bp|monitors?|grocer)", text, re.I)
+            if many:
+                args["quantity"] = {"two": 2, "three": 3, "four": 4, "five": 5}.get(many[1].lower()) or int(many[1])
+            return self._call("draft_purchase", args, f"Offer {pick['offer_id']} from {pick['merchant']} is the one the checks like best.")
+        d = results["draft_purchase"]["data"]
+        stopped = [o for o in offers if o["verdict"] == "stop" and o["offer_id"] != pick["offer_id"]]
+        done = self._draft_done(results["draft_purchase"])
+        if stopped and not d.get("frozen") and d["risk_level"] != "BLOCK":
+            done["content"] = f"I found {len(offers)} offers and stopped {stopped[0]['merchant']}: {stopped[0]['reasons'][0]} " + done["content"]
+        return done
+
+    def _refund(self, text: str, results: dict, messages: list[dict], allowed: set, tool: str, how: str) -> dict:
+        if "list_refundable" not in results:
+            return self._call("list_refundable", {}, "See which verified payments can come back.")
+        rows = [r for r in results["list_refundable"]["data"] if (r["how"] == "refund") == (how == "refund")]
+        if not rows:
+            return self._say("I don't see a payment I can get back right now." if how == "refund"
+                             else "I don't see a payment that can still be stopped. Once someone has received it, it can't be stopped.")
+        low = text.lower()
+        hits = [r for r in rows if r["what"].lower() in low or r["to"].lower() in low]
+        if not hits and len(rows) == 1:
+            hits = rows
+        if len(hits) != 1:
+            return self._say("Which one do you mean: " + " or ".join(f"{r['what']} ({r['amount']})" for r in (hits or rows)) + "?")
+        if tool not in results:
+            if tool not in allowed:
+                return self._say("Please confirm or cancel what's on the card first.")
+            return self._call(tool, {"payment_id": hits[0]["payment_id"], "evidence": self._last_user(messages)},
+                              f"Draft getting back {hits[0]['what']}; she signs it.")
+        return self._draft_done(results[tool])
 
     @staticmethod
     def _draft_done(res: dict) -> dict:
@@ -460,24 +426,24 @@ class OfflineLLM:
         if d["risk_level"] == "BLOCK":
             why = d["reasons"][0] if d["reasons"] else ""
             return OfflineLLM._say(f"I can't process this one: {why}")
-        return OfflineLLM._say(f"Please check the card: {d['amount']} {'in' if d.get('kind') == 'investment' else 'to'} {d['payee']}"
-                               + (f", {d['repeats'][0].lower()}{d['repeats'][1:]}" if d.get("repeats") else "") + ". "
-                               f"If it's right, confirm with your fingerprint.")
+        verb = {"refund": "back from", "money_request": "asked from", "purchase": "to"}.get(d.get("kind"), "to")
+        return OfflineLLM._say(f"Please check the card: {d['amount']} {verb} {d['payee']}. If it's right, confirm with your fingerprint.")
 
     @staticmethod
     def _pick_bill(text: str, bills: list[dict]) -> dict | None:
-        rules = [(r"electric|water|utilit|\bsp\b", "p_sp"), (r"s&cc|town council|conservancy", "p_tc"),
-                 (r"credit card|card bill|card statement|live fresh", "p_cc")]
+        rules = [(r"electric|\bpower\b|riverside|utilit", "p_power"), (r"\bwater\b|maple county", "p_water")]
         for rx, pid in rules:
             if re.search(rx, text, re.I):
                 b = next((b for b in bills if b["payee_id"] == pid), None)
                 if b:
                     return b
-        return bills[0] if len(bills) == 1 else None
+        by_name = next((b for b in bills if b["from"].lower() in text.lower() or b["title"].lower() in text.lower()
+                        or any(w in text.lower() for w in b["from"].lower().split() if len(w) > 5)), None)
+        return by_name or (bills[0] if len(bills) == 1 else None)
 
     @staticmethod
     def _effective_text(messages: list[dict]) -> str:
-        """Multi-turn slot filling: while the user is answering the assistant's questions ("Chen Wei", then
+        """Multi-turn slot filling: while the user is answering the assistant's questions ("Ben Lee", then
         "fifty dollars"), read those answers together with the request that started it ("Send money to my family")."""
         users = [i for i, m in enumerate(messages) if m["role"] == "user"]
         if not users:
@@ -509,8 +475,8 @@ class OfflineLLM:
 
     def _amount(self, text: str, messages: list[dict]) -> tuple[float | None, dict | None]:
         """The amount, and the speech slip it came from if any. A model reads slips by itself; this planner uses
-        textparse.fix_asr as a stand-in. "Yes" to our own "Did you mean a grand, S$1,000?" gives that amount."""
-        amount = parse_amount(text) or self._bank_amount(messages)
+        textparse.fix_asr as a stand-in. "Yes" to our own "Did you mean a grand, $1,000?" gives that amount."""
+        amount = parse_amount(text) or self._worked_out_amount(messages)
         if amount:
             return amount, None
         last = self._last_user(messages)
@@ -526,8 +492,8 @@ class OfflineLLM:
         return (parse_amount(proposal) if proposal else None), None
 
     @staticmethod
-    def _bank_amount(messages: list[dict]) -> float | None:
-        """'Use amount 812.50 exactly' from the session state (a relative amount the bank worked out)."""
+    def _worked_out_amount(messages: list[dict]) -> float | None:
+        """'Use amount 812.50 exactly' from the session state (a relative amount the code worked out)."""
         sysmsg = messages[0]["content"] if messages and messages[0]["role"] == "system" else ""
         m = re.search(r"Use amount (\d+(?:\.\d+)?) exactly", sysmsg)
         return float(m.group(1)) if m else None
@@ -545,6 +511,12 @@ class OfflineLLM:
     @staticmethod
     def _say(text: str) -> dict:
         return {"role": "assistant", "content": text, "tool_calls": []}
+
+
+def engine_label(llm) -> str:
+    """What the UI says. The offline engine is named as what it is."""
+    return "Offline rule engine (no AI model connected)" if str(getattr(llm, "name", "")).startswith("offline") \
+        else f"AI model: {getattr(llm, 'model', getattr(llm, 'name', '?'))}"
 
 
 def build_llm():

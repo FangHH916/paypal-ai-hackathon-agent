@@ -13,7 +13,7 @@ _ONES = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six":
 _TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80,
          "ninety": 90}
 _SCALES = {"hundred": 100, "thousand": 1000, "k": 1000, "grand": 1000}
-_UNIT_WORDS = {"dollar", "dollars", "buck", "bucks", "sgd"}
+_UNIT_WORDS = {"dollar", "dollars", "buck", "bucks", "usd"}
 _NUM_WORDS = set(_ONES) | set(_TENS) | set(_SCALES)
 
 
@@ -62,7 +62,7 @@ def words_to_number(tokens: list[str]) -> float | None:
 
 
 _MONEY_RE = re.compile(
-    r"(?:S?\$|sgd\s*)?\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s*(k\b|thousand|grand|dollars?|bucks?|sgd)?",
+    r"(?:\$|usd\s*)?\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s*(k\b|thousand|grand|dollars?|bucks?|usd)?",
     re.I)
 _TOKEN_RE = re.compile(r"[a-z]+")
 
@@ -90,7 +90,7 @@ def _word_runs(text: str):
 
 
 def parse_amount(text: str) -> float | None:
-    """Extract an amount (SGD) from one sentence. Returns None if there isn't one. Never guesses."""
+    """Extract an amount from one sentence. Returns None if there isn't one. Never guesses."""
     # An explicit self-correction supersedes the earlier amount.
     fixed = re.search(r"\b(?:change|correct|revise)\s+(?:the\s+)?amount\s+to\s+(.+)|\bmake\s+(?:it|that)\s+(.+)|\b(?:no|sorry|actually|I mean)\s*[,;]?\s+(.+)", text, re.I)
     if fixed:
@@ -107,7 +107,7 @@ def parse_amount(text: str) -> float | None:
     for m in _MONEY_RE.finditer(text):
         digits, cents, unit = m.group(1), m.group(2), (m.group(3) or "").lower()
         if is_percent(text, m.end(1) + (len(cents) + 1 if cents else 0)):
-            continue                                  # "20%" is a share, not S$20
+            continue                                  # "20%" is a share, not $20
         # Skip long numbers that look like account numbers, phone numbers or dates
         raw = digits.replace(",", "")
         if len(raw) >= 7 and not unit:
@@ -151,46 +151,12 @@ def find_raw_account(text: str) -> str | None:
     return digits if len(digits) >= 7 else None
 
 
-_ACCOUNT_RE = re.compile(r"\b(current|savings?|joint)\s+(account|acct|a/c)\b|\bfrom (?:my |the |our )?(current|savings?|joint)\b",
-                         re.I)
-
-
-def find_account(text: str) -> str | None:
-    """Which of the customer's accounts they named ("from my current account"), as words; None if not said.
-    ("savings bonds" is a product, not the savings account.)"""
-    source = re.search(r"\bfrom (?:my |the )?(current|savings?|joint)(?:\s+account)?\b", text, re.I)
-    if source:
-        return source[1].lower().rstrip('s') + ('s account' if source[1].lower().startswith('saving') else ' account')
-    for m in _ACCOUNT_RE.finditer(text):
-        # "to my joint account" is where the money goes, not where it comes from
-        if re.search(r"\b(?:to|into)\s+(?:my |our |the )?$", text[:m.start()], re.I):
-            continue
-        word = (m.group(1) or m.group(3)).lower()
-        return {"current": "current account", "joint": "joint account"}.get(word, "savings account")
-    return None
-
-
-def account_id_for(phrase: str | None, accounts: list[dict]) -> str | None:
-    if not phrase:
-        return None
-    first = phrase.split()[0].lower().rstrip("s")
-    return next((a["account_id"] for a in accounts if a["name"].lower().startswith(first)), None)
-
-
 def match_payees(text: str, payees: list[dict]) -> list[dict]:
     """Find payees by alias in the text; return every hit (the caller must ask if there's more than one)."""
-    low = re.sub(r"\bd\s+b\s+s\b", "bank", text.lower())
-    # Source accounts are not recipients of an internal transfer.
-    low = re.sub(r"\bfrom (?:my |the )?(?:savings?|current|joint)(?:\s+account)?\b", "", low)
+    low = text.lower()
     hits = []
     for p in payees:
         names = [p["name"].lower(), *[a.lower() for a in p.get("aliases", [])]]
-        if p.get("type") == "own":
-            # The customer's own account is a destination only after "to" / "into" ("from my savings" is the source)
-            if any(n and re.search(rf"\b(?:to|into)\s+(?:my\s+|our\s+|the\s+)?{re.escape(n)}(?![a-z])", low)
-                   for n in names):
-                hits.append(p)
-            continue
         if any(n and re.search(rf"(?<![a-z]){re.escape(n)}(?![a-z])", low) for n in names):
             hits.append(p)
     if len(hits) > 1:
@@ -246,44 +212,14 @@ def amount_digits_spoken(cents: int) -> str:
 def money_mentions(text: str) -> list[float]:
     """Extract every number that looks like an amount (for the output validator)."""
     vals = []
-    for m in re.finditer(r"(?:S?\$)\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?", text):
+    for m in re.finditer(r"(?:\$)\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?", text):
         vals.append(float(m.group(1).replace(",", "") + (f".{m.group(2)}" if m.group(2) else "")))
     return vals
 
 
-# ---------------------------------------------------------------- Repeating payments
-_FREQ = [(re.compile(r"\bevery (single )?month\b|\bmonthly\b|\beach month\b|\bper month\b|"
-                     r"\b(every|each) [\w-]+(?: day)? of (the|each|every) month\b|\bof every month\b", re.I), "monthly"),
-         (re.compile(r"\bevery (single )?week\b|\bweekly\b|\beach week\b|\bevery (mon|tue|wed|thu|fri|sat|sun)\w*day\b",
-                     re.I), "weekly")]
-_ORD_WORDS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8,
-              "ninth": 9, "tenth": 10, "fifteenth": 15, "twentieth": 20}
-_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-
-
-def frequency_in(text: str) -> str | None:
-    """'every month' -> 'monthly', 'weekly' -> 'weekly', a one-off -> None."""
-    return next((f for rx, f in _FREQ if rx.search(text)), None)
-
-
-def repeat_day_in(text: str, frequency: str | None) -> int | None:
-    """'on the 1st' -> 1 (monthly); 'every Friday' -> 5 (weekly); None if not said."""
-    low = text.lower()
-    if frequency == "weekly":
-        return next((i + 1 for i, d in enumerate(_WEEKDAYS) if re.search(rf"\b{d}s?\b", low)), None)
-    m = re.search(r"\b(?:on the|on|every)\s+(\d{1,2})(?:st|nd|rd|th)\b|\bthe (\d{1,2})(?:st|nd|rd|th)\b", low)
-    if m:
-        d = int(m.group(1) or m.group(2))
-        return d if 1 <= d <= 31 else None
-    m = re.search(r"\b(" + "|".join(_ORD_WORDS) + r")(?: day)? of (?:the|each|every) month\b", low)
-    if m:                                       # "every first day of the month" -> 1
-        return _ORD_WORDS[m.group(1)]
-    return None
-
-
-# ---------------------------------------------------------------- Relative amounts ("half of my money")
-# These are computed by the bank's code, never by the model: the model is bad at arithmetic and a wrong share of
-# someone's savings is exactly the mistake that must not reach the confirmation card.
+# ---------------------------------------------------------------- Relative amounts ("half of it")
+# These are computed by code, never by the model: the model is bad at arithmetic and a wrong share of someone's money is
+# exactly the mistake that must not reach the confirmation card.
 _RELATIVE = [
     (re.compile(r"\btwo[- ]thirds?\b", re.I), 2 / 3, "two thirds"),
     (re.compile(r"\b(?:a |one )?third\b", re.I), 1 / 3, "a third"),
@@ -312,8 +248,8 @@ def relative_in(text: str) -> tuple[float, str, str] | None:
 
 
 # ---------------------------------------------------------------- speech-recognition slips on amounts
-# Used ONLY by the offline planner, as a stand-in for what a real model works out by itself ("a grant" in "move a
-# grant to my joint account" means "a grand"). With a model, the model reads the user's words; the kernel then checks
+# Used ONLY by the offline planner, as a stand-in for what a real model works out by itself ("a grant" in "send a
+# grant to my daughter" means "a grand"). With a model, the model reads the user's words; the kernel then checks
 # its reading (evidence.sounds_alike) instead of rewriting anything.
 _COUNT = r"(a|one|two|three|four|five|six|seven|eight|nine|ten|\d{1,3})"
 _GRAND_SLIP = re.compile(rf"\b{_COUNT}\s+(grant|grants|grind|grinds|gran|grain|grains|grond)\b(?!\s+(?:from|for|of|to apply|application|scheme)\b)", re.I)

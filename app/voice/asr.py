@@ -1,103 +1,45 @@
-"""speech vendor Cloud SentenceRecognition (short audio, under 60 seconds).
+"""Optional server-side speech recognition, through any OpenAI-compatible POST {base}/audio/transcriptions.
 
-Implements TC3-HMAC-SHA256 signing directly to avoid differences between the China and international SDKs.
-We can't change how well the ASR recognizes speech, but we can tune:
-  * Engine EngSerViceType: 16k_en (English), 16k_zh (Mandarin), 16k_zh-PY (Mandarin/English/Cantonese), 16k_ms, etc.
-    Note: the international endpoint (asr.intl) does not support 16k_zh_large.
-  * Temporary hotword list HotwordList: payee names and product names, weight 1-11 (11 = super hotword)
-  * Post-processing: low-confidence fields are always read back for confirmation (done on the Agent side)
+Off by default: the app uses the browser's own speech recognition, and then no recordings exist and the UI says so.
+With ASR_PROVIDER=openai_compat each recording is kept under its SHA-256 and linked to the words (kernel/voice.py).
 """
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 import time
-from datetime import datetime, timezone
 
 import requests
 
 from app.config import settings
-
-SERVICE, VERSION, ACTION = "asr", "2019-06-14", "SentenceRecognition"
 
 
 class ASRError(Exception):
     pass
 
 
-def _sign(key: bytes, msg: str) -> bytes:
-    return hmac.new(key, msg.encode(), hashlib.sha256).digest()
+def build_prompt(payees: list[dict]) -> str:
+    """Names the recogniser should expect. Whisper-style services take a free-text hint."""
+    names = {p["name"] for p in payees} | {"PayPal", "Star", "refund", "allowance"}
+    return ", ".join(sorted(names))[:400]
 
 
-def tc3_headers(payload: str, host: str, secret_id: str, secret_key: str, region: str | None,
-                action: str = ACTION, version: str = VERSION, service: str = SERVICE) -> dict:
-    ts = int(time.time())
-    date = datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d")
-    ct = "application/json; charset=utf-8"
-    canonical = "\n".join(["POST", "/", "", f"content-type:{ct}\nhost:{host}\n", "content-type;host",
-                           hashlib.sha256(payload.encode()).hexdigest()])
-    scope = f"{date}/{service}/tc3_request"
-    to_sign = "\n".join(["TC3-HMAC-SHA256", str(ts), scope, hashlib.sha256(canonical.encode()).hexdigest()])
-    k = _sign(_sign(_sign(("TC3" + secret_key).encode(), date), service), "tc3_request")
-    signature = hmac.new(k, to_sign.encode(), hashlib.sha256).hexdigest()
-    headers = {
-        "Authorization": f"TC3-HMAC-SHA256 Credential={secret_id}/{scope}, SignedHeaders=content-type;host, "
-                         f"Signature={signature}",
-        "Content-Type": ct, "Host": host, "X-TC-Action": action, "X-TC-Timestamp": str(ts),
-        "X-TC-Version": version,
-    }
-    if region:
-        headers["X-TC-Region"] = region
-    return headers
-
-
-def build_hotwords(payees: list[dict]) -> str:
-    """Build a temporary hotword list from payee names and common words, e.g. 'daughter|10,PayNow|10'.
-
-    Weight 11 is a "super hotword"; speech vendor recommends it only for a very few must-hit words, as too many lower
-    overall accuracy, so it isn't used here.
-    """
-    words: list[tuple[str, int]] = [("PayNow", 10), ("pension", 10), ("utilities", 10), ("S&CC", 8), ("CPF", 10),
-                                    ("grand", 10), ("joint account", 10), ("savings account", 8), ("GIRO", 10),
-                                    ("standing instruction", 8), ("Singtel", 8), ("shares", 8)]
-    for p in payees:
-        for a in [p["name"], *p.get("aliases", [])]:
-            if 1 <= len(a) <= 10:
-                words.append((a, 10 if p["type"] == "person" else 8))
-    seen, out = set(), []
-    for w, wt in words:
-        if w.lower() not in seen:
-            seen.add(w.lower())
-            out.append(f"{w}|{wt}")
-    return ",".join(out[:128])
-
-
-def recognize(wav_bytes: bytes, engine: str | None = None, hotwords: str = "") -> dict:
+def recognize(wav_bytes: bytes, prompt: str = "") -> dict:
     if not settings.asr_enabled:
-        raise ASRError("SPEECH_VENDOR_SECRET_ID / SPEECH_VENDOR_SECRET_KEY are not set")
-    body = {"EngSerViceType": engine or settings.asr_engine, "SourceType": 1, "VoiceFormat": "wav",
-            "Data": base64.b64encode(wav_bytes).decode(), "DataLen": len(wav_bytes),
-            "WordInfo": 0, "FilterModal": 1, "ConvertNumMode": 1}
-    if hotwords:
-        body["HotwordList"] = hotwords
-    payload = json.dumps(body)
-    host = settings.asr_endpoint
-    headers = tc3_headers(payload, host, settings.tc_secret_id, settings.tc_secret_key, settings.asr_region)
+        raise ASRError("ASR_PROVIDER=openai_compat needs ASR_MODEL and a base URL")
+    base = (settings.asr_base_url or settings.llm_base_url).rstrip("/")
+    key = settings.asr_api_key or settings.llm_api_key
     t0 = time.time()
     try:
-        r = requests.post(f"https://{host}", data=payload.encode(), headers=headers, timeout=20)
+        r = requests.post(f"{base}/audio/transcriptions", headers={"Authorization": f"Bearer {key}"},
+                          files={"file": ("speech.wav", wav_bytes, "audio/wav")},
+                          data={"model": settings.asr_model, "language": "en", **({"prompt": prompt} if prompt else {})}, timeout=20)
     except requests.RequestException as e:
-        raise ASRError(f"Network error: {e}") from e
+        raise ASRError(f"Network error: {type(e).__name__}") from e
+    if r.status_code != 200:
+        raise ASRError("Speech service returned an error. Please retry or type your request.")
     try:
-        r.raise_for_status()
-        resp = r.json()["Response"]
-        if not isinstance(resp, dict) or not ("Result" in resp or "Error" in resp):
-            raise ValueError("Unexpected response")
-    except (requests.RequestException, ValueError, TypeError, KeyError) as e:
+        text = r.json()["text"]
+        if not isinstance(text, str):
+            raise ValueError
+    except (ValueError, KeyError, TypeError) as e:
         raise ASRError("Speech service returned an invalid response. Please retry or type your request.") from e
-    if "Error" in resp:
-        raise ASRError(f"{resp['Error'].get('Code')}: {resp['Error'].get('Message')}")
-    return {"text": resp.get("Result", ""), "audio_ms": resp.get("AudioDuration"),
-            "latency_ms": int((time.time() - t0) * 1000), "engine": body["EngSerViceType"]}
+    return {"text": text.strip(), "latency_ms": int((time.time() - t0) * 1000), "engine": settings.asr_model}

@@ -16,7 +16,7 @@ from app.agent.llm import OfflineLLM  # noqa: E402
 from app.models import RiskLevel  # noqa: E402
 
 OLD_STORY = ["This looks like a normal small transfer to your grandson, with no signs of a scam.",
-             "The recipient name 'Chen Wei' you first gave does not match the account name 'Chen Mei Ling'."]
+             "The recipient name 'Ben Lee' you first gave does not match the account name 'Anna Lee'."]
 
 
 class JudgeStub:
@@ -44,7 +44,7 @@ class TestScamReasonsBelongToTheirTask(Base):
     def test_stop_message_names_only_this_requests_signs(self):
         self.turn("Send 50 to my daughter")                      # judge: LOW + "looks normal" commentary
         self.finish_task()
-        self.turn("Send 50 to my grandson Chen Wei")             # judge: MEDIUM with a remark about names
+        self.turn("Send 50 to my grandson Ben Lee")             # judge: MEDIUM with a remark about names
         self.finish_task()
         r = self.turn("The police told me to move my savings to a safe account, help me transfer the money.")
         self.assertEqual(r.ui["type"], "blocked")
@@ -58,14 +58,14 @@ class TestScamReasonsBelongToTheirTask(Base):
         self.assertEqual(self.s.scam_reasons, [])
 
     def test_level_stays_but_reasons_reset_with_the_task(self):
-        self.turn("Send 50 to my grandson Chen Wei")
+        self.turn("Send 50 to my grandson Ben Lee")
         self.assertEqual(self.s.scam_level, RiskLevel.MEDIUM)
         self.finish_task()
         self.assertEqual(self.s.scam_level, RiskLevel.MEDIUM)     # one-way: the session stays careful
         self.assertEqual(self.s.scam_reasons, [])                 # but the old task's words are not reused
 
     def test_judge_reads_only_the_current_request(self):
-        self.turn("Send 50 to my grandson Chen Wei")
+        self.turn("Send 50 to my grandson Ben Lee")
         self.finish_task()
         self.turn("Send 50 to my daughter")
         self.assertEqual(self.judge.calls[-1], ["Send 50 to my daughter"])

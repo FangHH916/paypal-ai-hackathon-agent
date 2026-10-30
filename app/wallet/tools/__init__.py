@@ -1,8 +1,7 @@
-"""Mock the bank APIs (named after the the bank developer catalogue). Add a module, then list it here."""
-from app.wallet.tools import (bill_payments, deposits, fund_transfer, giro, limits, payees,  # noqa: F401
-                              standing_instructions)
+"""The agent's wallet tools, one module per area. Add a module, then list it here."""
+from app.wallet.tools import allowance, commerce, invoices, limits, payees, refunds, transfers  # noqa: F401
 
-MODULES = [deposits, payees, limits, fund_transfer, bill_payments, standing_instructions, giro]
+MODULES = [allowance, payees, limits, transfers, commerce, invoices, refunds]
 
 
 def all_tools():

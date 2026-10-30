@@ -1,9 +1,9 @@
-"""Tests for the five the bank challenge requirements:
-  1. multi-intent parsing (transfer / bill / investment, source account) into a structured draft
-  2. dynamic disambiguation (ask with account tails, never guess)
+"""Tests for the five core requirements:
+  1. multi-intent parsing (transfer / bill / purchase) into a structured draft
+  2. dynamic disambiguation (ask, never guess)
   3. dual-engine semantic audit (independent verifier, deterministic comparison, freeze)
   4. deterministic HITL with native biometrics (WebAuthn passkey, user verification required)
-  5. zero-trust execution gateway (re-verifies the device signature before posting)
+  5. zero-trust execution gateway (re-verifies the device signature before PayPal hears anything)
 plus account-bound protection levels.
 """
 import base64
@@ -62,50 +62,41 @@ class Base(unittest.TestCase):
 
 # ---------------------------------------------------------------- 1. multi-intent parsing
 class TestIntents(Base):
-    def test_investment_draft_is_structured(self):
-        r = self.turn("Invest 200 in the income fund")
+    def test_purchase_draft_is_structured(self):
+        r = self.turn("Get me a blood pressure monitor")
         d = self.s.current_draft
-        self.assertEqual((d.kind, d.payee_id, d.amount_cents, d.asset_class), ("investment", "f_income", 20000, "Unit trust"))
-        self.assertEqual(r.ui["card"]["title"], "Confirm investment")
-        self.assertIn("asset_class", d.card_fields())          # the asset class is part of what gets signed
+        self.assertEqual((d.kind, d.merchant_id, d.amount_cents, d.rail), ("purchase", "m_corner", 3900, "orders"))
+        self.assertEqual(r.ui["card"]["title"], "Confirm this purchase")
+        self.assertIn("items", d.card_fields())                 # what is being bought is part of what gets signed
+        self.assertEqual(d.grounding["amount_source"], "catalogue")
 
-    def test_source_account_from_words(self):
-        self.turn("Send 50 to my daughter from my current account")
-        self.assertEqual(self.s.current_draft.from_account, "CUR-002")
-
-    def test_default_account_when_not_said(self):
+    def test_single_wallet(self):
         self.turn("Send 50 to my daughter")
-        self.assertEqual(self.s.current_draft.from_account, "SAV-001")
+        self.assertEqual(self.s.current_draft.from_account, "WALLET")
 
-    def test_savings_bonds_is_not_the_savings_account(self):
-        self.turn("Buy 1000 of savings bonds")
+    def test_new_merchant_needs_care(self):
+        self.turn("Buy a 500 dollar gift card")
         d = self.s.current_draft
-        self.assertEqual((d.kind, d.payee_id, d.from_account), ("investment", "b_ssb", "SAV-001"))
+        self.assertIn("R94_GIFT_CARD", d.risk.rule_hits)
+        self.assertIn("R90_MERCHANT_NEW", d.risk.rule_hits)
+        self.assertEqual(d.risk.level, RiskLevel.HIGH)          # cooling-off, and her family must agree
+        self.assertTrue(d.trust["guardian"])
 
-    def test_unknown_account_rejected_by_tool(self):
-        self.s.messages.append({"role": "user", "content": "Send 50 to my daughter"})
-        res = self.gw.call(self.s, "draft_transfer", {"payee_id": "p_daughter", "amount": 50, "from_account": "CPF-9"})
-        self.assertFalse(res["ok"])
-
-    def test_risky_fund_above_profile_needs_care(self):
-        self.turn("Invest 200 in the STI ETF")
+    def test_over_priced_offer_blocked(self):
+        self.turn("Get me a blood pressure monitor from MedDeals Direct")
         d = self.s.current_draft
-        self.assertIn("R70_ABOVE_RISK_PROFILE", d.risk.rule_hits)
-        self.assertEqual(d.risk.level, RiskLevel.HIGH)          # enhanced protection: cooling-off
-
-    def test_below_minimum_blocked(self):
-        self.turn("Buy 100 of savings bonds")
-        self.assertEqual(self.s.current_draft.risk.level, RiskLevel.BLOCK)
+        self.assertEqual(d.risk.level, RiskLevel.BLOCK)
+        self.assertIn("R91_PRICE_ANOMALY", d.risk.rule_hits)
 
 
 class TestPendingAndCompound(Base):
     """Reported in testing: a payment was still waiting, the user asked for a new one, no card appeared and the model
     claimed it had "prepared" the new transfer (to the wrong person)."""
     def test_compound_with_and_is_split(self):
-        r = self.turn("I want to send 500 to my son and the rest money I want to invest in apple stock.")
+        r = self.turn("I want to send 500 to my son and buy a blood pressure monitor.")
         d = self.s.current_draft
         self.assertEqual((d.payee_id, d.amount_cents), ("p_son", 50000))
-        self.assertEqual(self.s.plan, ["the rest money I want to invest in apple stock"])
+        self.assertEqual(self.s.plan, ["buy a blood pressure monitor"])
         self.assertIn(r.ui["type"], ("confirm", "cooldown"))
 
     def test_not_split_when_second_part_is_not_a_request(self):
@@ -113,13 +104,13 @@ class TestPendingAndCompound(Base):
         self.assertEqual(len(split_plan("Send 50 to my son and daughter")), 1)
 
     def test_new_request_while_pending_shows_waiting_card_and_queues(self):
-        self.turn("Send 50 to my grandson Chen Jun")
+        self.turn("Send 50 to my grandson Sam Lee")
         first = self.s.current_draft
         r = self.turn("I want to send 500 to my son")
         self.assertEqual(r.ui["type"], "confirm")
         self.assertEqual(r.ui["card"]["draft_id"], first.draft_id)          # the SAME waiting card, shown again
         self.assertIn("still have one payment waiting", r.reply)
-        self.assertIn("Chen Jun", r.reply)
+        self.assertIn("Sam Lee", r.reply)
         self.assertEqual(len(self.s.drafts), 1)                               # nothing new invented
         self.assertEqual(self.s.plan, ["I want to send 500 to my son"])     # offered after confirm / cancel
 
@@ -132,10 +123,10 @@ class TestPendingAndCompound(Base):
     def test_false_prepared_claim_corrected(self):
         class Liar(OfflineLLM):
             def chat(self, messages, tools=None, **kw):
-                return {"role": "assistant", "content": "I've prepared a transfer of S$500 to your son Chen Jun.",
+                return {"role": "assistant", "content": "I've prepared a transfer of $500 to your son Sam Lee.",
                         "tool_calls": []}
         r = Agent(self.wallet, self.gw, self.audit, Liar()).run_turn(self.s, "Send 500 to my son")
-        self.assertNotIn("Chen Jun", r.reply)
+        self.assertNotIn("Sam Lee", r.reply)
         # nudged once, still lying -> the rule-based planner finished the turn properly, to the REAL son
         d = self.s.current_draft
         self.assertEqual((d.payee_id, d.amount_cents), ("p_son", 50000))
@@ -143,25 +134,25 @@ class TestPendingAndCompound(Base):
         self.assertTrue(any(t["kind"] == "fallback" for t in self.s.trace))
 
     def test_answer_turn_finishes_the_compound_plan(self):
-        """Live-model failure: '350 to my grandson and invest 2000 in ETF' -> 'which one?' -> 'Chen Wei' -> nothing."""
+        """Live-model failure: '350 to my grandson and buy a monitor' -> 'which one?' -> 'Ben Lee' -> nothing."""
         class LazyOnAnswers(OfflineLLM):
             def chat(self, messages, tools=None, **kw):
                 last = next(m["content"] for m in reversed(messages) if m["role"] == "user")
-                if last == "Chen Wei":
+                if last == "Ben Lee":
                     seen.append(messages[0]["content"])
-                    return {"role": "assistant", "content": "I've prepared the transfer to Chen Wei.", "tool_calls": []}
+                    return {"role": "assistant", "content": "I've prepared the transfer to Ben Lee.", "tool_calls": []}
                 return super().chat(messages, tools=tools, **kw)
         seen = []
         agent = Agent(self.wallet, self.gw, self.audit, LazyOnAnswers())
-        r1 = agent.run_turn(self.s, "I want to transfer 350 dollars to my grandson and I want to invest 2000 dollars in ETF.")
+        r1 = agent.run_turn(self.s, "I want to transfer 350 dollars to my grandson and I want to buy a blood pressure monitor.")
         self.assertEqual(r1.ui["type"], "choose")
         self.assertEqual(len(r1.ui["plan"]), 2)
-        r2 = agent.run_turn(self.s, "Chen Wei")
-        self.assertIn("payee_id p_grandson_wei", seen[0])          # the model was told exactly what to do
+        r2 = agent.run_turn(self.s, "Ben Lee")
+        self.assertIn("payee_id p_grandson_ben", seen[0])          # the model was told exactly what to do
         d = self.s.current_draft
-        self.assertEqual((d.payee_id, d.amount_cents), ("p_grandson_wei", 35000))
+        self.assertEqual((d.payee_id, d.amount_cents), ("p_grandson_ben", 35000))
         self.assertEqual(r2.ui["type"], "confirm")
-        self.assertEqual(self.s.plan, ["I want to invest 2000 dollars in ETF"])
+        self.assertEqual(self.s.plan, ["I want to buy a blood pressure monitor"])
 
     def test_model_that_claims_without_tools_is_nudged_into_calling_them(self):
         """Seen with a live model: it imitated earlier "I've prepared a transfer" replies and skipped the tools."""
@@ -171,13 +162,13 @@ class TestPendingAndCompound(Base):
             def chat(self, messages, tools=None, **kw):
                 self.calls += 1
                 if not any("Harness check" in (m.get("content") or "") for m in messages):
-                    return {"role": "assistant", "content": "I've prepared a transfer of S$300 to Chen Wei.", "tool_calls": []}
+                    return {"role": "assistant", "content": "I've prepared a transfer of $300 to Ben Lee.", "tool_calls": []}
                 # after the nudge: behaves properly (the offline rules can't read the harness note, so drop that pair)
                 i = next(i for i, m in enumerate(messages) if "Harness check" in (m.get("content") or ""))
                 return super().chat(messages[:i - 1] + messages[i + 1:], tools=tools, **kw)
-        r = Agent(self.wallet, self.gw, self.audit, Lazy()).run_turn(self.s, "Send 300 to Chen Wei")
+        r = Agent(self.wallet, self.gw, self.audit, Lazy()).run_turn(self.s, "Send 300 to Ben Lee")
         d = self.s.current_draft
-        self.assertEqual((d.payee_id, d.amount_cents), ("p_grandson_wei", 30000))
+        self.assertEqual((d.payee_id, d.amount_cents), ("p_grandson_ben", 30000))
         self.assertEqual(r.ui["type"], "confirm")
         self.assertTrue(any("without calling a draft tool" in t["label"] for t in self.s.trace))
 
@@ -195,12 +186,12 @@ class TestPendingAndCompound(Base):
         self.assertNotIn("system note", r.reply)
 
     def test_restated_compound_replaces_queue(self):
-        self.turn("Send 300 to my grandson and the rest 2000 dollars I want to invest in the ETF")
-        self.turn("Send 300 to my grandson and the rest of the money I want to invest in the ETF")
-        self.assertEqual(self.s.plan, ["the rest of the money I want to invest in the ETF"])
+        self.turn("Send 300 to my grandson and buy a blood pressure monitor")
+        self.turn("Send 300 to my grandson and buy some groceries")
+        self.assertEqual(self.s.plan, ["buy some groceries"])
 
     def test_the_rest_is_never_turned_into_an_amount(self):
-        r = self.turn("Invest the rest in apple stock")
+        r = self.turn("Send the rest to my son")
         self.assertTrue(r.reply.rstrip().endswith("?"))          # asks how much
         self.assertFalse(self.s.drafts)
 
@@ -225,8 +216,8 @@ class TestLookupDiscipline(Base):
         self.assertTrue(any("without using any tool" in t["label"] for t in self.s.trace))
 
     def test_still_no_lookup_after_nudge_falls_back(self):
-        r = self.lazy(5).run_turn(self.s, "I want to invest 2000 dollars in the ETF")
-        self.assertEqual(self.s.current_draft.payee_id, "e_sti")
+        r = self.lazy(5).run_turn(self.s, "I want to buy a blood pressure monitor")
+        self.assertEqual(self.s.current_draft.merchant_id, "m_corner")
         self.assertIn(r.ui["type"], ("confirm", "cooldown"))
         self.assertTrue(any(t["kind"] == "fallback" for t in self.s.trace))
 
@@ -296,73 +287,50 @@ class TestLookupDiscipline(Base):
         self.assertFalse(llm.supports_tool_choice)
 
 
-class TestBankProducts(Base):
-    def test_buy_us_shares(self):
-        r = self.turn("I want to invest 500 in apple stock")
-        d = self.s.current_draft
-        self.assertEqual((d.payee_id, d.asset_class), ("s_aapl", "Shares (US)"))
-        self.assertIn("AAPL", r.ui["card"]["payee_account"])
-        self.assertIn("R70_ABOVE_RISK_PROFILE", d.risk.rule_hits)          # conservative profile: cooling-off
+class TestShopping(Base):
+    def test_the_stopped_offer_is_named(self):
+        r = self.turn("Get me a blood pressure monitor")
+        self.assertIn("MedDeals Direct", r.reply)
+        checked = {o["merchant"]: o["verdict"] for o in r.ui["card"]["offers_checked"]}
+        self.assertEqual(checked, {"Corner Pharmacy": "ok", "Green Basket Health": "ok", "MedDeals Direct": "stop"})
 
-    def test_shares_execute_with_units_and_show_in_portfolio(self):
-        d0, jwk = p256.generate_keypair()
-        self.kernel.register_key(self.s, jwk)
-        self.wallet.risk_profile("u_chen")["max_product_risk"] = 5           # an adventurous customer
-        self.turn("Buy 300 dollars of the bank shares")
-        d = self.s.current_draft
-        payload = self.kernel.issue_challenge(self.s, d.draft_id, d.digest)
-        a = {"payload": payload, "signature": base64.b64encode(p256.sign(d0, payload.encode())).decode()}
-        receipt = self.kernel.commit(self.s, d.draft_id, self.kernel.authorize(self.s, d.draft_id, d.digest, a))
-        self.assertAlmostEqual(receipt["units"], 300 / 38.5, places=3)
-        held = next(h for h in self.wallet.portfolio("u_chen") if h["product_id"] == "s_d05")
-        self.assertAlmostEqual(held["units"], 50 + 300 / 38.5, places=3)
-
-    def test_fixed_deposit(self):
-        r = self.turn("Put 1000 in a fixed deposit")
-        d = self.s.current_draft
-        self.assertEqual((d.payee_id, d.asset_class, d.risk.level), ("d_fd12", "Fixed deposit", RiskLevel.LOW))
-        self.assertIn("1.80%", r.ui["card"]["payee_account"])
-
-    def test_unknown_company_not_invented(self):
-        r = self.turn("Buy tesla stock")
+    def test_unknown_item_not_invented(self):
+        r = self.turn("Buy a boat")
         self.assertFalse(self.s.drafts)
-        self.assertIn("Apple", r.reply)
+        self.assertIn("blood pressure monitor", r.reply)
 
-    def test_portfolio(self):
-        r = self.turn("How are my investments doing?")
-        self.assertIn("get_portfolio", [t["label"].split("(")[0] for t in self.s.trace if t["kind"] == "action"])
-        self.assertIn("+S$325.00", r.reply)                                # 50 the bank shares: 1,600 -> 1,925
+    def test_seller_text_never_reaches_the_model_as_instructions(self):
+        self.s.messages.append({"role": "user", "content": "blood pressure monitor"})
+        res = self.gw.call(self.s, "search_catalogue", {"query": "blood pressure monitor"})
+        meddeals = next(o for o in res["data"]["offers"] if o["merchant"] == "MedDeals Direct")
+        self.assertTrue(meddeals["suspicious_removed"])
+        self.assertNotIn("approve the payment", json.dumps(res).lower())
 
-    def test_lock_lost_cards_immediately_no_money_moves(self):
-        r = self.turn("I lost my wallet, please lock my cards")
-        self.assertTrue(all(c["status"] == "locked" for c in self.wallet.cards("u_chen")))
-        self.assertIn("1800 111 1111", r.reply)
+    def test_freeze_is_instant_and_no_money_moves(self):
+        r = self.turn("I lost my phone, please freeze my payments")
+        self.assertTrue(self.wallet.user("u_lee")["frozen"]["on"])
+        self.assertIn("frozen", r.reply)
         self.assertFalse(self.s.drafts)
 
-    def test_lock_one_card(self):
-        self.turn("Lock my credit card")
-        st = {c["card_id"]: c["status"] for c in self.wallet.cards("u_chen")}
-        self.assertEqual(st, {"c_debit": "active", "c_credit": "locked"})
+    def test_no_unfreeze_tool_exists(self):
+        self.assertFalse([n for n in self.gw.tools if "unfreeze" in n or "lift" in n])
 
-    def test_lock_by_card_name_from_button(self):
-        self.turn("Lock my the bank Live Fresh Card")
-        self.assertEqual(self.wallet.card("u_chen", "c_credit")["status"], "locked")
-
-    def test_no_unlock_tool_exists(self):
-        self.assertFalse([n for n in self.gw.tools if "unlock" in n])
+    def test_freeze_needs_an_explicit_request(self):
+        self.s.messages.append({"role": "user", "content": "what is my allowance"})
+        self.assertFalse(self.gw.call(self.s, "freeze_payments", {})["ok"])
 
 
 class TestPlans(Base):
-    """Reported: 'invest 500 in Microsoft stock, 1000 dollars in apple stock' -> only Microsoft was done."""
-    def test_list_of_investments_becomes_two_steps(self):
-        r = self.turn("invest 500 in Microsoft stock, 1000 dollars in apple stock")
-        self.assertEqual((self.s.current_draft.payee_id, self.s.current_draft.amount_cents), ("s_msft", 50000))
-        self.assertEqual(self.s.plan, ["invest 1000 dollars in apple stock"])
+    """Reported: a list of two payments in one sentence -> only the first was done."""
+    def test_list_of_payments_becomes_two_steps(self):
+        r = self.turn("send 50 to my son, 100 dollars to my daughter")
+        self.assertEqual((self.s.current_draft.payee_id, self.s.current_draft.amount_cents), ("p_son", 5000))
+        self.assertEqual(self.s.plan, ["send 100 dollars to my daughter"])
         self.assertEqual(len(r.ui["plan"]), 2)
 
     def test_three_steps_flattened(self):
-        self.turn("Send 200 to my daughter and invest 500 in Microsoft stock, 1000 dollars in apple stock")
-        self.assertEqual(self.s.plan, ["invest 500 in Microsoft stock", "invest 1000 dollars in apple stock"])
+        self.turn("Send 20 to my daughter and send 50 to my son, 30 dollars to Ben Lee")
+        self.assertEqual(self.s.plan, ["send 50 to my son", "send 30 dollars to Ben Lee"])
 
     def test_question_step_moves_on_by_itself(self):
         r = self.turn("What is my balance and has my pension come in")
@@ -385,9 +353,8 @@ class TestPlans(Base):
         self.addCleanup(limit.stop)
         key, jwk = p256.generate_keypair()
         self.kernel.register_key(self.s, jwk)
-        self.wallet.risk_profile("u_chen")["max_product_risk"] = 5
-        r = self.turn("Pay the electricity bill, then send 100 to my son, give my daughter and Chen Wei 50 each "
-                      "and invest 300 in Apple")
+        r = self.turn("Pay the power bill, then send 100 to my son, give my daughter and Ben Lee 50 each "
+                      "and send 30 to Sam Lee")
         self.assertEqual(len(r.ui["plan"]), 5)
         done = []
         for _ in range(5):
@@ -398,12 +365,12 @@ class TestPlans(Base):
             done.append((d.payee_name, d.amount_cents))
             if self.s.plan:
                 self.turn(self.s.plan.pop(0))          # what the page does after each confirmation
-        self.assertEqual(done, [("SP Group Utilities", 8640), ("Chen Zhi Qiang", 10000), ("Chen Mei Ling", 5000),
-                                ("Chen Wei", 5000), ("Apple Inc. shares", 30000)])
-        self.assertEqual(len(self.wallet.executed), 5)
+        self.assertEqual(done, [("Riverside Power", 8640), ("David Lee", 10000), ("Anna Lee", 5000),
+                                ("Ben Lee", 5000), ("Sam Lee", 3000)])
+        self.assertEqual(len(self.wallet.payments), 5)
 
     def test_stopped_step_offers_the_rest(self):
-        r = self.turn("Invest 5000 in a fixed deposit and send 50 to my daughter")    # 5000 > balance
+        r = self.turn("Send 5000 to my son and send 50 to my daughter")    # 5000 > allowance
         self.assertEqual(r.ui["type"], "blocked")
         self.assertEqual(r.ui["offer_next"], "send 50 to my daughter")
 
@@ -414,7 +381,7 @@ class TestPlans(Base):
 
     def test_flagged_session_says_so_and_drops_the_plan(self):
         self.turn("The police say I must move my savings to a safe account")
-        r = self.turn("I want to send 300 to my daughter, 500 to my grandson, 2000 dollars in Microsoft stock")
+        r = self.turn("I want to send 300 to my daughter, 500 to my grandson, 200 dollars to my son")
         self.assertEqual(r.ui["type"], "blocked")
         self.assertIn("signs of a scam", r.reply)
         self.assertEqual(self.s.plan, [])
@@ -422,14 +389,14 @@ class TestPlans(Base):
         self.assertEqual(self.turn("How much money do I have?").ui["type"], "text")   # reading still works
 
     def test_answering_a_question_does_not_show_a_plan(self):
-        self.turn("Send 50 to my grandson and invest 300 in Apple")          # asks which grandson
+        self.turn("Send 50 to my grandson and buy a blood pressure monitor")          # asks which grandson
         r = self.turn("Yes.")
         self.assertNotIn("plan", r.ui)
 
     def test_list_item_verb_comes_from_its_own_words(self):
         from app.agent.loop import split_plan
-        self.assertEqual(split_plan("send 300 to my daughter, 2000 dollars in Microsoft stock"),
-                         ["send 300 to my daughter", "invest 2000 dollars in Microsoft stock"])
+        self.assertEqual(split_plan("send 300 to my daughter, 200 dollars to my son"),
+                         ["send 300 to my daughter", "send 200 dollars to my son"])
 
     def model_queues(self, task):
         class Planner(OfflineLLM):
@@ -438,37 +405,37 @@ class TestPlans(Base):
                 call = lambda n, a: {"role": "assistant", "content": "", "tool_calls": [  # noqa: E731
                     {"id": f"c{done}", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}]}
                 if done == 0:
-                    return call("draft_investment", {"product_id": "s_msft", "amount": 500,
-                                                     "evidence": "Put 500 into Microsoft for me"})
+                    return call("draft_transfer", {"payee_id": "p_son", "amount": 500,
+                                                   "evidence": "Give my son 500 for me"})
                 if done == 1:
                     return call("queue_follow_up", {"task": task})
                 return {"role": "assistant", "content": "Please check the card. I'll do the next one after.",
                         "tool_calls": []}
         return Agent(self.wallet, self.gw, self.audit, Planner()).run_turn(
-            self.s, "Put 500 into Microsoft for me, oh and Apple with 1000 too")
+            self.s, "Give my son 500 for me, oh and my daughter 100 too")
 
     def test_model_can_queue_what_the_user_said(self):
-        r = self.model_queues("invest 1000 in Apple shares")
-        self.assertEqual(self.s.plan, ["invest 1000 in Apple shares"])
+        r = self.model_queues("send 100 to my daughter")
+        self.assertEqual(self.s.plan, ["send 100 to my daughter"])
         self.assertIn("plan", r.ui)
 
     def test_model_cannot_queue_an_amount_the_user_never_said(self):
-        self.model_queues("invest 5000 in Apple shares")
+        self.model_queues("send 900 to my daughter")
         self.assertEqual(self.s.plan, [])
         self.assertTrue(any("isn't in the user's own words" in t["label"] for t in self.s.trace))
 
     def test_model_cannot_queue_a_payee_the_user_never_mentioned(self):
-        self.model_queues("send 1000 to my son")
+        self.model_queues("send 100 to Ben Lee")
         self.assertEqual(self.s.plan, [])
 
 
 # ---------------------------------------------------------------- 2. disambiguation
 class TestDisambiguation(Base):
-    def test_two_grandsons_asks_with_account_tails(self):
+    def test_two_grandsons_asks_with_both_names(self):
         r = self.turn("Send 50 to my grandson")
         self.assertEqual(r.ui["type"], "choose")
-        self.assertIn("••••2290", r.reply)
-        self.assertIn("••••6613", r.reply)
+        self.assertIn("Ben Lee", r.reply)
+        self.assertIn("Sam Lee", r.reply)
         self.assertFalse(self.s.drafts)                          # never guesses
 
     def test_missing_amount_asks(self):
@@ -500,20 +467,23 @@ class TestVerifier(Base):
         self.model_drafts("Send 50 to my daughter", "draft_transfer", {"payee_id": "p_son", "amount": 50})
         self.assertEqual(self.s.phase, Phase.FROZEN)
 
-    def test_wrong_account_frozen(self):
-        self.model_drafts("Pay my utilities bill from my current account", "draft_bill_payment",
-                          {"bill_id": "b_sp_oct", "from_account": "SAV-001"})
+    def test_wrong_bill_frozen(self):
+        self.model_drafts("Pay my water bill", "draft_bill_payment", {"invoice_id": "inv_power_oct"})
         self.assertEqual(self.s.phase, Phase.FROZEN)
 
-    def test_wrong_asset_type_frozen(self):
-        self.model_drafts("Invest 200 in the income fund", "draft_transfer", {"payee_id": "p_daughter", "amount": 200})
+    def test_wrong_type_frozen(self):
+        self.model_drafts("Buy a blood pressure monitor for my daughter for 200", "draft_transfer", {"payee_id": "p_daughter", "amount": 200})
+        self.assertEqual(self.s.phase, Phase.FROZEN)
+
+    def test_wrong_item_frozen(self):
+        self.model_drafts("Get me a blood pressure monitor", "draft_purchase", {"offer_id": "of_groceries"})
         self.assertEqual(self.s.phase, Phase.FROZEN)
 
     def test_frozen_reply_is_code_template(self):
-        class Wrong(OfflineLLM):      # always drafts S$500
+        class Wrong(OfflineLLM):      # always drafts $500
             def chat(self, messages, tools=None, **kw):
                 if messages[-1]["role"] == "tool":
-                    return {"role": "assistant", "content": "All set, S$500 is ready!", "tool_calls": []}
+                    return {"role": "assistant", "content": "All set, $500 is ready!", "tool_calls": []}
                 return {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {
                     "name": "draft_transfer", "arguments": json.dumps({"payee_id": "p_daughter", "amount": 500})}}]}
         r = Agent(self.wallet, self.gw, self.audit, Wrong()).run_turn(self.s, "Send 50 to my daughter")
@@ -528,9 +498,9 @@ class TestVerifier(Base):
         self.assertEqual(e.exception.code, "NOT_VERIFIED")
 
     def test_not_stated_is_not_a_mismatch(self):
-        ex = extract_offline(["Send money to my daughter"], catalog(self.wallet, "u_chen"))
+        ex = extract_offline(["Send money to my daughter"], catalog(self.wallet, "u_lee"))
         self.assertIsNone(ex["amount"])
-        usual = extract_offline(["Send money to my daughter", "the usual amount"], catalog(self.wallet, "u_chen"))
+        usual = extract_offline(["Send money to my daughter", "the usual amount"], catalog(self.wallet, "u_lee"))
         self.assertEqual(usual["amount"], 200)  # explicit reference resolved against bank history
 
     def test_model_verifier_parses_json_and_runs_in_parallel(self):
@@ -541,7 +511,7 @@ class TestVerifier(Base):
             def chat(self, messages, tools=None, **kw):
                 seen["tools"], seen["payload"] = tools, json.loads(messages[-1]["content"])
                 return {"content": '```json\n{"intent": "transfer", "payee": "my daughter", "amount": 50, '
-                                   '"asset_class": "cash", "from_account": null}\n```', "tool_calls": []}
+                                   '"quantity": null}\n```', "tool_calls": []}
         gw = ToolGateway(self.wallet, self.kernel, verifier=Verifier(FakeModel(), self.wallet))
         Agent(self.wallet, gw, self.audit, OfflineLLM()).run_turn(self.s, "Send 50 to my daughter")
         v = self.s.current_draft.verification
@@ -571,8 +541,8 @@ class TestPasskey(Base):
         return self.kernel.passkey_register(self.s, SITE, reg["credential_id"], reg["client_data_json"],
                                             reg["attestation_object"])
 
-    def pay(self, sign):
-        self.turn("Send 50 to my daughter")
+    def pay(self, sign, text="Send 50 to my daughter"):
+        self.turn(text)
         d = self.s.current_draft
         payload = self.kernel.issue_challenge(self.s, d.draft_id, d.digest)
         tok = self.kernel.authorize(self.s, d.draft_id, d.digest, sign(payload), site=SITE)
@@ -583,7 +553,7 @@ class TestPasskey(Base):
         receipt = self.pay(self.auth.sign)
         auth = receipt["verifiable"]["authorization"]
         self.assertEqual(auth["method"], "passkey")
-        self.assertEqual(self.wallet.account("u_chen", "SAV-001")["balance_cents"], 325000 - 5000)
+        self.assertEqual(self.wallet.allowance_left("u_lee"), 150000 - 5000)
 
     def test_receipt_verifies_offline(self):
         import sys
@@ -607,7 +577,7 @@ class TestPasskey(Base):
         self.assertTrue(all(ok for _, ok in check(receipt["verifiable"])))
         self.s.settle()
         with self.assertRaises(KernelError):                       # tampered RSA signature
-            self.pay(lambda p: {**self.auth.sign(p), "signature": webauthn.b64u(b"\x01" * 256)})
+            self.pay(lambda p: {**self.auth.sign(p), "signature": webauthn.b64u(b"\x01" * 256)}, "Send 60 to my daughter")
 
     def test_no_user_verification_rejected(self):
         self.enrol()
@@ -635,7 +605,7 @@ class TestPasskey(Base):
         self.s.settle()
         self.auth.count = 5                                   # a cloned authenticator
         with self.assertRaises(KernelError) as e:
-            self.pay(self.auth.sign)
+            self.pay(self.auth.sign, "Send 60 to my daughter")
         self.assertEqual(e.exception.code, "COUNTER_REPLAY")
 
     def test_no_downgrade_to_browser_key(self):
@@ -658,8 +628,8 @@ class TestPasskey(Base):
     def test_registry_persists(self):
         path = os.path.join(self.tmp.name, "pk.json")
         reg = CredentialRegistry(__import__("pathlib").Path(path))
-        reg.add_passkey("u_chen", {"credential_id": "abc", "public_key": {}, "rp_id": "localhost", "sign_count": 0})
-        self.assertTrue(CredentialRegistry(__import__("pathlib").Path(path)).passkeys("u_chen", "localhost"))
+        reg.add_passkey("u_lee", {"credential_id": "abc", "public_key": {}, "rp_id": "localhost", "sign_count": 0})
+        self.assertTrue(CredentialRegistry(__import__("pathlib").Path(path)).passkeys("u_lee", "localhost"))
 
 
 # ---------------------------------------------------------------- 5. execution gateway
@@ -711,33 +681,33 @@ class TestGateway(Base):
     def test_gateway_rejects_unsigned(self):
         d, _ = self.signed_draft()
         with self.assertRaises(GatewayError) as e:
-            self.kernel.gateway.execute(user_id="u_chen", session_id="h", card=d.card_fields(), digest=d.digest,
-                                        auth=None, idempotency_key="x")
+            self.kernel.gateway.execute(user_id="u_lee", session_id="h", card=d.card_fields(), digest=d.digest,
+                                        auth=None)
         self.assertEqual(e.exception.code, "GW_UNSIGNED")
 
     def test_gateway_rejects_signature_for_other_card(self):
         d, _ = self.signed_draft()
         card = {**d.card_fields(), "amount_cents": 999_00}
         with self.assertRaises(GatewayError) as e:
-            self.kernel.gateway.execute(user_id="u_chen", session_id="h", card=card,
+            self.kernel.gateway.execute(user_id="u_lee", session_id="h", card=card,
                                         digest=hashlib.sha256(canonical(card).encode()).hexdigest(),
-                                        auth=self.s.signatures[d.draft_id], idempotency_key="x")
+                                        auth=self.s.signatures[d.draft_id])
         self.assertEqual(e.exception.code, "GW_PAYLOAD_MISMATCH")
 
     def test_gateway_does_not_trust_a_forged_record(self):
         d, _ = self.signed_draft()
         forged = {**self.s.signatures[d.draft_id], "signature": base64.b64encode(b"\x01" * 64).decode()}
         with self.assertRaises(GatewayError) as e:
-            self.kernel.gateway.execute(user_id="u_chen", session_id="h", card=d.card_fields(), digest=d.digest,
-                                        auth=forged, idempotency_key="x")
+            self.kernel.gateway.execute(user_id="u_lee", session_id="h", card=d.card_fields(), digest=d.digest,
+                                        auth=forged)
         self.assertEqual(e.exception.code, "GW_INVALID_SIGNATURE")
 
     def test_gateway_own_replay_list(self):
         d, tok = self.signed_draft()
         self.kernel.commit(self.s, d.draft_id, tok)
         with self.assertRaises(GatewayError) as e:
-            self.kernel.gateway.execute(user_id="u_chen", session_id="h", card=d.card_fields(), digest=d.digest,
-                                        auth=self.s.signatures[d.draft_id], idempotency_key="again")
+            self.kernel.gateway.execute(user_id="u_lee", session_id="h", card=d.card_fields(), digest=d.digest,
+                                        auth=self.s.signatures[d.draft_id])
         self.assertEqual(e.exception.code, "GW_REPLAY")
 
 
@@ -754,11 +724,11 @@ class TestProtection(Base):
         st = self.lower()
         self.assertEqual(st["level"], "enhanced")
         self.assertEqual(st["pending"]["to"], "standard")
-        self.assertEqual(protection.effective(self.wallet, "u_chen", now=st["pending"]["effective_at"] + 1), "standard")
+        self.assertEqual(protection.effective(self.wallet, "u_lee", now=st["pending"]["effective_at"] + 1), "standard")
 
     def test_lowering_still_enhanced_until_the_wait_is_over(self):
         st = self.lower()
-        self.assertEqual(protection.effective(self.wallet, "u_chen", now=st["pending"]["effective_at"] - 1), "enhanced")
+        self.assertEqual(protection.effective(self.wallet, "u_lee", now=st["pending"]["effective_at"] - 1), "enhanced")
         self.assertTrue(st["delay_words"])
 
     def test_delay_words(self):
@@ -775,7 +745,7 @@ class TestProtection(Base):
         self.assertEqual((st["level"], st["pending"]), ("enhanced", None))
 
     def test_standard_turns_scam_high_into_warning(self):
-        self.wallet.protection("u_chen")["level"] = "standard"
+        self.wallet.protection("u_lee")["level"] = "standard"
         r = self.turn("A bank officer called and said it's urgent, send 50 to my daughter")
         self.assertNotEqual(r.ui["type"], "blocked")
         self.assertEqual(self.s.current_draft.risk.level, RiskLevel.MEDIUM)     # warning + question
@@ -785,13 +755,13 @@ class TestProtection(Base):
         self.assertEqual(r.ui["type"], "blocked")
 
     def test_safe_account_blocks_everyone(self):
-        self.wallet.protection("u_chen")["level"] = "standard"
+        self.wallet.protection("u_lee")["level"] = "standard"
         r = self.turn("The police say I must move my savings to a safe account")
         self.assertEqual(r.ui["type"], "blocked")
 
     def test_standard_has_higher_cooling_threshold(self):
-        self.wallet.protection("u_chen")["level"] = "standard"
-        self.turn("Send 1500 to my daughter")
+        self.wallet.protection("u_lee")["level"] = "standard"
+        self.turn("Send 600 to my daughter")
         self.assertNotIn("R12_ABOVE_THRESHOLD", self.s.current_draft.risk.rule_hits)
 
 

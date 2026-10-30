@@ -1,11 +1,11 @@
 """Voice recordings for the audit trail.
 
-The the bank brief asks that every step be traceable: the raw audio, the transcript, the drafts, the checks and the
-signature. Each recording sent to speech recognition is kept here under its SHA-256, and the audit log stores that
+Every step should be traceable: the raw audio, the transcript, the drafts, the checks and the signature. When an
+optional speech service is configured (ASR_PROVIDER), each recording sent to speech recognition is kept here under its SHA-256, and the audit log stores that
 hash with the transcript. A confirmation card carries the hashes of the recordings it was built from, so the
 customer's fingerprint signature covers "this recording -> this card".
 
-Demo storage is the server's disk (wiped on a redeploy). A bank would use encrypted object storage with a retention
+Demo storage is the server's disk (wiped on a redeploy). A real service would use encrypted object storage with a retention
 policy. The oldest files are removed once the folder passes MAX_FILES / MAX_BYTES.
 """
 from __future__ import annotations

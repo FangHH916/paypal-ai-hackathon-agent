@@ -14,7 +14,7 @@ Server side (here), with no third-party library:
   * signCount must increase (cloned-authenticator detection) when the authenticator keeps one
 
 Attestation is "none": we don't check which brand of device made the key. Enrolment is trust-on-first-use for
-this demo customer; a real bank would bind it to a verified identity (see docs/SECURITY.md).
+this demo customer; a real service would bind it to a verified identity (see docs/SECURITY.md).
 """
 from __future__ import annotations
 

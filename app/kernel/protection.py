@@ -1,11 +1,11 @@
 """Protection level: an ACCOUNT setting, never a screen setting.
 
-Senior mode / standard view only change how the app looks. How careful the bank is lives here, because a scammer
+Senior mode / standard view only change how the app looks. How careful Star is lives here, because a scammer
 on the phone can easily say "tap Standard view" - but cannot make the account less protected in a hurry:
 
   * raising protection (standard -> enhanced) takes effect immediately
   * lowering it (enhanced -> standard) must be signed on the customer's device AND only takes effect after a delay
-    (PROTECTION_LOWER_DELAY). It can be cancelled at any time before then. A real bank would wait 24 hours; the
+    (PROTECTION_LOWER_DELAY). It can be cancelled at any time before then. A real service would wait 24 hours; the
     demo default is 2 minutes so a judge can watch the switch happen.
 
 What the level changes is only the SOFT friction. The hard safety boundary is the same for everyone:
@@ -13,11 +13,11 @@ the agent can only draft, drafts must match what the user said, the independent 
 every payment is signed on the device, and the execution gateway refuses anything unsigned.
 
                          enhanced (seniors)                 standard (everyone else)
-  cooling-off above      RULE_HIGH_THRESHOLD (S$1,000)      RULE_HIGH_THRESHOLD_STANDARD (S$3,000)
+  cooling-off above      RULE_HIGH_THRESHOLD ($500)         RULE_HIGH_THRESHOLD_STANDARD ($1,200)
   scam phrases (HIGH)    stopped before reaching the model   a warning + "is this your own idea?" question
   scam phrases (BLOCK)   stopped                             stopped ("safe account" etc. stop everyone)
   late-night payments    extra question                      no extra question
-  risky investments      cooling-off                         a warning + question
+  a note with a phone    stopped                             cooling-off
 """
 from __future__ import annotations
 

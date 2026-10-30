@@ -1,6 +1,6 @@
 """Voice recordings in the audit trail (kernel/voice.py).
 
-The brief: every step traceable, from the raw audio to the signature. A recording is kept under its SHA-256, the
+Every step is traceable, from the raw audio to the signature. A recording is kept under its SHA-256, the
 audit log has the hash and the transcript, and the card carries the hashes, so the signature covers them.
 """
 import os
@@ -35,7 +35,7 @@ class VoiceBase(ApiBase):
     def say(self, text, audio=None):
         """What the server does for a spoken message: record the clip, link the words, run the turn."""
         audio = audio or wav()
-        sha = voice.record_clip(self.s, self.store, self.audit, audio, {"text": text, "engine": "16k_en", "latency_ms": 300})
+        sha = voice.record_clip(self.s, self.store, self.audit, audio, {"text": text, "engine": "whisper-test", "latency_ms": 300})
         self.s.turn_audio = voice.bind_utterance(self.s, text, sha)
         try:
             return sha, self.turn(text)
@@ -94,3 +94,33 @@ class TestStore(VoiceBase):
             voice.MAX_FILES = old
         self.assertEqual(len(list(Path(self.vtmp.name).glob("*.wav"))), 2)
         self.assertIsNotNone(self.store.path(shas[-1]))
+
+
+class TestOptionalSpeechService(VoiceBase):
+    def test_transcription_is_a_stubbed_multipart_post(self):
+        from unittest import mock
+        from app.config import settings
+        from app.voice import asr
+        fake = mock.Mock(status_code=200)
+        fake.json.return_value = {"text": " Send 50 to my daughter "}
+        with mock.patch.object(settings, "asr_provider", "openai_compat"), mock.patch.object(settings, "asr_model", "m"), \
+                mock.patch.object(settings, "asr_base_url", "https://speech.example/v1"), mock.patch.object(settings, "asr_api_key", "k"), \
+                mock.patch("app.voice.asr.requests.post", return_value=fake) as post:
+            res = asr.recognize(wav(0.1), "Anna Lee")
+        self.assertEqual(res["text"], "Send 50 to my daughter")
+        self.assertEqual(post.call_args.args[0], "https://speech.example/v1/audio/transcriptions")
+        self.assertEqual(post.call_args.kwargs["data"]["model"], "m")
+
+    def test_off_by_default_and_bad_responses_are_errors(self):
+        from unittest import mock
+        from app.config import settings
+        from app.voice import asr
+        self.assertFalse(settings.asr_enabled)
+        with self.assertRaises(asr.ASRError):
+            asr.recognize(wav(0.1))
+        fake = mock.Mock(status_code=500)
+        with mock.patch.object(settings, "asr_provider", "openai_compat"), mock.patch.object(settings, "asr_model", "m"), \
+                mock.patch.object(settings, "asr_base_url", "https://speech.example/v1"), \
+                mock.patch("app.voice.asr.requests.post", return_value=fake):
+            with self.assertRaises(asr.ASRError):
+                asr.recognize(wav(0.1))

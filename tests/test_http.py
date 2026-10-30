@@ -13,8 +13,8 @@ import unittest
 
 _TMP = tempfile.TemporaryDirectory()
 os.environ["LLM_PROVIDER"] = "offline"          # never call a real model or ASR from tests
-os.environ["SPEECH_VENDOR_SECRET_ID"] = ""
-os.environ["SPEECH_VENDOR_SECRET_KEY"] = ""
+os.environ["PAYPAL_MODE"] = "simulator"         # never reach anything real from tests
+os.environ["ASR_PROVIDER"] = "browser"
 os.environ["AUDIT_PATH"] = os.path.join(_TMP.name, "audit.jsonl")
 os.environ["PASSKEY_PATH"] = os.path.join(_TMP.name, "passkeys.json")
 os.environ.setdefault("RULE_FIXED_HOUR", "14")
@@ -36,6 +36,9 @@ class HttpTest(unittest.TestCase):
     def setUpClass(cls):
         cls.port = _free_port()
         cls.base = f"http://127.0.0.1:{cls.port}"
+        from app import runtime
+        runtime.registry.path = None              # app.config may have been imported before this file set PASSKEY_PATH
+        runtime.registry._passkeys.clear()
         cls.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=cls.port, log_level="warning"))
         cls.thread = threading.Thread(target=cls.server.run, daemon=True)
         cls.thread.start()
@@ -82,8 +85,7 @@ class HttpTest(unittest.TestCase):
         r = requests.get(self.base + "/", headers={"Host": f"localhost:{self.port}"})
         self.assertEqual(r.status_code, 200)
         self.assertIn('src="/app.js"', r.text)
-        for path, mime in [("/app.js", "text/javascript"), ("/styles.css", "text/css"),
-                           ("/bank-logo.svg", "image/svg+xml"), ("/favicon.svg", "image/svg+xml")]:
+        for path, mime in [("/app.js", "text/javascript"), ("/styles.css", "text/css"), ("/favicon.svg", "image/svg+xml")]:
             r = requests.get(self.base + path)
             self.assertEqual(r.status_code, 200, path)
             self.assertTrue(r.headers["content-type"].startswith(mime), path)
@@ -130,14 +132,15 @@ class HttpTest(unittest.TestCase):
         sid = self.post("/api/reset", {"world": True}).json()["session_id"]
         st = requests.get(self.base + "/api/state", params={"session_id": sid}).json()
         self.assertEqual(st["phase"], "IDLE")
-        self.assertGreaterEqual(len(st["accounts"]), 2)
-        self.assertTrue(st["total_balance"].startswith("S$"))
+        self.assertEqual(st["allowance"]["left"], "$1,500.00")
+        self.assertIn("can't see your PayPal balance", st["allowance"]["note"])
+        self.assertEqual(st["paypal"]["label"], "SIMULATED")
         self.assertFalse(st["device_key"])
         self.assertTrue(all("masked_account" in p for p in st["payees"]))
 
         r = self.post("/api/chat", {"session_id": sid, "text": "Send 50 to my daughter"}).json()
         self.assertEqual(r["ui"]["type"], "confirm")
-        self.assertEqual(r["ui"]["card"]["amount"], "S$50.00")
+        self.assertEqual(r["ui"]["card"]["amount"], "$50.00")
         # nothing moved: the agent can only draft
         after = requests.get(self.base + "/api/state", params={"session_id": sid}).json()
         self.assertEqual(after["total_balance"], st["total_balance"])
@@ -171,7 +174,8 @@ class HttpTest(unittest.TestCase):
                                        "assertion": auth.sign(ch["payload"])})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["receipt"]["verifiable"]["authorization"]["method"], "passkey")
-        self.post("/api/passkey/remove", {"session_id": sid})
+        from app import runtime
+        runtime.registry._passkeys.clear()
 
     def test_model_mistake_demo_is_frozen(self):
         sid = self.post("/api/reset", {"world": True}).json()["session_id"]
@@ -213,8 +217,8 @@ class HttpTest(unittest.TestCase):
         self.assertNotIn("aaaaaaaaaaaaaaaa", a)  # server-generated, opaque session capability
         ua, ub = runtime.sessions.get(a).user_id, runtime.sessions.get(b).user_id
         self.assertNotEqual(ua, ub)
-        runtime.wallet.account(ua, "SAV-001")["balance_cents"] = 1_00          # A's world changes...
-        self.assertEqual(runtime.wallet.account(ub, "SAV-001")["balance_cents"], 325000)   # ...B's doesn't
+        runtime.wallet.account(ua, "WALLET")["balance_cents"] = 1_00          # A's world changes...
+        self.assertEqual(runtime.wallet.account(ub, "WALLET")["balance_cents"], 150000)   # ...B's doesn't
         # A enrols a passkey: B is unaffected and can still enrol their own
         auth = webauthn.SoftAuthenticator(rp_id="127.0.0.1", origin=self.base)
         opts = self.post("/api/passkey/options", {"session_id": a}).json()
@@ -223,16 +227,16 @@ class HttpTest(unittest.TestCase):
         st_b = requests.get(self.base + "/api/state", params={"session_id": b}).json()
         self.assertFalse(st_b["passkey"]["enrolled"])
         # A resets their world: only A's balance comes back, B's session and world are untouched
-        runtime.wallet.account(ub, "SAV-001")["balance_cents"] = 2_00
+        runtime.wallet.account(ub, "WALLET")["balance_cents"] = 2_00
         a2 = self.post("/api/reset", {"visitor": "aaaaaaaaaaaaaaaa", "session_id": a, "world": True}).json()["session_id"]
-        self.assertEqual(runtime.wallet.account(runtime.sessions.get(a2).user_id, "SAV-001")["balance_cents"], 325000)
-        self.assertEqual(runtime.wallet.account(ub, "SAV-001")["balance_cents"], 2_00)
+        self.assertEqual(runtime.wallet.account(runtime.sessions.get(a2).user_id, "WALLET")["balance_cents"], 150000)
+        self.assertEqual(runtime.wallet.account(ub, "WALLET")["balance_cents"], 2_00)
         # Identity comes from the server-owned binding, never a client-controlled prefix
         runtime.sessions._s.pop(b)
         self.assertEqual(runtime.sessions.get(b).user_id, ub)
         # junk visitor ids are ignored
         junk = self.post("/api/reset", {"visitor": "../../etc"}).json()["session_id"]
-        self.assertEqual(runtime.sessions.get(junk).user_id, "u_chen")
+        self.assertEqual(runtime.sessions.get(junk).user_id, "u_lee")
 
     def test_platform_hostnames_are_allowed(self):
         from unittest import mock

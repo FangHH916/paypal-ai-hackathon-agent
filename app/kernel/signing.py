@@ -27,7 +27,7 @@ from app.models import Draft
 
 BIOMETRIC_REQUIRED = ("This payment needs your fingerprint, face or device PIN. Open the page in Safari (iPhone) or "
                       "Chrome (Android, Windows, Mac) on a device with screen lock, not inside an app like WeChat.")
-CHALLENGE_DOMAIN = "STAR-DCTA-AUTH-V1"   # binds signatures to this purpose so they can't be reused elsewhere
+CHALLENGE_DOMAIN = "STAR-PAY-AUTH-V1"    # binds signatures to this purpose so they can't be reused elsewhere
 SETTINGS_DOMAIN = "STAR-SETTINGS-V1"     # signed account-setting changes (lowering the protection level)
 
 
@@ -114,9 +114,9 @@ def build_challenge(session_id: str, draft: Draft, ttl: int | None = None) -> st
     card = draft.card_fields()
     return canonical({
         "domain": CHALLENGE_DOMAIN, "session_id": session_id, "draft_id": draft.draft_id, "digest": draft.digest,
-        "kind": card["kind"], "payee": card["payee_name"], "amount_cents": card["amount_cents"],
-        "currency": card["currency"], "asset_class": card["asset_class"], "from_account": card["from_account"],
-        "you_said": card["you_said"], "schedule": card.get("schedule"),
+        "kind": card["kind"], "rail": card["rail"], "payee": card["payee_name"], "merchant_id": card["merchant_id"],
+        "amount_cents": card["amount_cents"], "currency": card["currency"], "from_account": card["from_account"],
+        "you_said": card["you_said"],
         "nonce": secrets.token_hex(12), "expires_at": int(time.time()) + (ttl or settings.challenge_ttl),
     })
 

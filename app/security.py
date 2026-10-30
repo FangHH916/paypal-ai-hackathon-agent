@@ -1,14 +1,16 @@
-"""HTTP hardening for the local demo server (adapted from a teammate's prototype, Aegis).
+"""HTTP hardening for the demo server (adapted from a teammate's prototype, Aegis).
 
 * Host allowlist      - only answer to localhost (or ALLOWED_HOSTS): blocks DNS-rebinding attacks
 * Same-origin POSTs   - a browser POST with a foreign Origin header is refused: blocks cross-site requests
 * JSON only           - POST bodies must be application/json: a plain HTML form can't trigger an API call
-* Size limits         - 32 KB for API calls, 3 MB for the speech endpoint
-* Rate limits         - online demo only (PUBLIC_DEMO=1): model and speech calls per device per 5 minutes
+* Size limits         - 32 KB for API calls, 64 KB for the webhook, 3 MB for the speech endpoint
+* Rate limits         - online demo only (PUBLIC_DEMO=1): model and speech calls per device per 5 minutes; the
+                        webhook and guardian endpoints always
 * Security headers    - strict CSP (no inline script, no third-party code), no framing, no sniffing,
                         microphone allowed only for this page
 
-This is a local, single-process demo server. Do not expose it to the internet as-is (see docs/SECURITY.md).
+PayPal's webhook POST has no Origin header, so the same-origin rule passes it; only its verified signature counts.
+This is a single-process demo server. Do not expose it to the internet as-is (see docs/SECURITY.md).
 """
 from __future__ import annotations
 
@@ -21,6 +23,20 @@ from app.config import settings
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; "
        "media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+# AG Grid writes inline styles, so pages that show the grid get a per-response nonce plus these hashes. The script policy
+# never changes. Hashes pinned for AG Grid Community 36.2.0: re-capture them whenever web/vendor/ag-grid is updated
+# (qa/e2e_demo.py fails on any CSP violation, which catches drift). Filled in by the Product stage.
+GRID_STYLE_HASHES: tuple[str, ...] = ()
+
+
+def grid_csp(nonce: str) -> str:
+    hashes = "".join(f" '{h}'" for h in GRID_STYLE_HASHES)
+    unsafe = " 'unsafe-hashes'" if GRID_STYLE_HASHES else ""
+    return (f"default-src 'self'; script-src 'self'; style-src 'self' 'nonce-{nonce}'{unsafe}{hashes}; img-src 'self' data: blob:; "
+            "font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; "
+            "frame-ancestors 'none'; form-action 'self'")
+
+
 HEADERS = [
     (b"content-security-policy", CSP.encode()),
     (b"x-content-type-options", b"nosniff"),
@@ -29,12 +45,15 @@ HEADERS = [
     (b"permissions-policy", b"camera=(), geolocation=(), microphone=(self)"),
     (b"cache-control", b"no-store"),
 ]
-API_LIMIT, ASR_LIMIT = 32 * 1024, 3 * 1024 * 1024   # 50 s of 16 kHz WAV is ~2.2 MB as base64
+API_LIMIT, ASR_LIMIT, WEBHOOK_LIMIT = 32 * 1024, 3 * 1024 * 1024, 64 * 1024   # official webhook max size: unverified
+LIMITS = {"/api/asr": ASR_LIMIT, "/api/paypal/webhook": WEBHOOK_LIMIT}
 
 
-# Online demo only: each device gets a fair share of the model and speech APIs (they cost money and have quotas)
-COSTLY = {"/api/chat": 40, "/api/asr": 20}          # requests per device per 5 minutes
-COSTLY.update({"/api/review/secondary": 20, "/api/lab/contract": 6})
+# Each device gets a fair share of the model and speech APIs (they cost money and have quotas)
+COSTLY = {"/api/chat": 40, "/api/asr": 20, "/api/lab/contract": 6, "/api/lab/drill": 12, "/api/lab/naive-agent": 12}          # requests per device per 5 minutes
+# These answer to anyone on the internet, so they are limited in every mode
+ALWAYS = {"/api/paypal/webhook": 600, "/api/guardian/pair": 30, "/api/guardian/feed": 400, "/api/guardian/challenge": 60,
+          "/api/guardian/decide": 60, "/api/guardian/freeze": 20, "/api/guardian/lift": 20, "/simulator/api/decide": 60}
 _WINDOW = 300
 _hits: dict[tuple[str, str], deque] = {}
 _hits_lock = threading.Lock()
@@ -46,7 +65,6 @@ def _client(scope, headers) -> str:
     return (scope.get("client") or ("?",))[0]
 
 
-
 def _allow(client: str, path: str) -> bool:
     now = time.time()
     with _hits_lock:
@@ -55,7 +73,7 @@ def _allow(client: str, path: str) -> bool:
         q = _hits.setdefault((client, path), deque())
         while q and now - q[0] > _WINDOW:
             q.popleft()
-        if len(q) >= COSTLY[path]:
+        if len(q) >= {**COSTLY, **ALWAYS}[path]:
             return False
         q.append(now)
         return True
@@ -82,14 +100,15 @@ class SecurityMiddleware:
                 return await self._deny(send, 403, "ORIGIN", "Cross-site requests are not allowed.")
             if not headers.get("content-type", "").startswith("application/json"):
                 return await self._deny(send, 415, "CONTENT_TYPE", "JSON is required.")
-            limit = ASR_LIMIT if path == "/api/asr" else API_LIMIT
+            limit = LIMITS.get(path, API_LIMIT)
             try:
                 length = int(headers.get("content-length", "0"))
             except ValueError:
                 length = limit + 1
             if length < 0 or length > limit:
                 return await self._deny(send, 413, "TOO_LARGE", "Request is too large.")
-            if (settings.public_demo or path == "/api/review/secondary") and path in COSTLY and not _allow(_client(scope, headers), path):
+            limited = path in ALWAYS or (settings.public_demo and path in COSTLY)
+            if limited and not _allow(_client(scope, headers), path):
                 return await self._deny(send, 429, "RATE_LIMITED",
                                         "Too many requests from this device. Please wait a minute and try again.")
 

@@ -9,9 +9,11 @@ Checks the whole chain:
      - passkey receipts: the device also confirmed the fingerprint / face check (WebAuthn UV flag) and the
        passkey's challenge is SHA-256 of the exact signed payload
   4. the receipt itself hasn't been edited                            (receipt_sha256)
+  5. PayPal's idempotency key is the function of that digest           (this signature produced this PayPal request key)
 
-It proves the payment matches what this device key signed. It does NOT prove a real bank identity - in this
-prototype the key is registered by the browser session, not bound to a verified customer.
+It proves the payment matches what this device key signed, and that this signature produced this PayPal request key. It
+does NOT prove PayPal's own state, and it does NOT prove a real identity - in this prototype the key is registered
+by the browser session, not bound to a verified customer.
 """
 from __future__ import annotations
 
@@ -25,12 +27,21 @@ from app.kernel import p256, webauthn  # noqa: E402
 from app.kernel.signing import canonical, verify_device_signature  # noqa: E402
 
 
+# The same functions as app/paypal/ids.py, on purpose: a checker should not need the thing it checks.
+_KEY_FOR_RAIL = {"payouts": lambda d: "star-" + d[:40], "orders": lambda d: "ord-" + d[:40], "refund": lambda d: "ref-" + d[:40],
+                 "payout_cancel": lambda d: "ref-" + d[:40], "invoice": lambda d: "STAR-" + d[:16], "money_request": lambda d: "STAR-" + d[:16]}
+
+
 def check(receipt: dict) -> list[tuple[str, bool]]:
     out = []
     body = {k: v for k, v in receipt.items() if k != "receipt_sha256"}
     out.append(("Receipt not edited", hashlib.sha256(canonical(body).encode()).hexdigest() == receipt.get("receipt_sha256")))
     card, digest = receipt["card"], receipt["digest"]
     out.append(("Card matches its digest", hashlib.sha256(canonical(card).encode()).hexdigest() == digest))
+    pp = receipt.get("paypal") or {}
+    if pp:
+        make = _KEY_FOR_RAIL.get(pp.get("api"))
+        out.append(("PayPal request key comes from this digest", bool(make) and make(digest) == pp.get("idempotency_key")))
     auth = receipt.get("authorization", {})
     if "payload" not in auth:
         out.append(("Signed by a device key", False))

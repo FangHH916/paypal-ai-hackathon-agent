@@ -1,7 +1,7 @@
 """Agent main loop = constrained ReAct + Harness.
 
 One conversation turn:
-  0. Plan: split a compound request ("pay the electricity bill, then send 200 to my daughter") into ordered
+  0. Plan: split a compound request ("pay the power bill, then send 200 to my daughter") into ordered
      tasks; do the first, queue the rest (Plan-and-Execute)
   1. pre-hook: deterministic scam-phrase scan; if it is high risk and involves moving money, block it
      directly without reaching the model
@@ -29,19 +29,21 @@ from app.wallet.ledger import Wallet
 from app.config import settings
 from app.kernel import protection as prot
 from app.kernel.audit import AuditLog
+from app.kernel.hotline import hotline, hotline_words
 from app.kernel.state import Session
 from app.models import Phase, RiskLevel, fmt_money
 
-_CLAIMS_DONE = re.compile(r"(has|have|was|were) been (sent|paid|transferred)|successfully (sent|paid|transferred)|"
-                          r"\bi(?:'ve| have)? (just )?(sent|paid|transferred)\b|"
-                          r"(transfer|payment) (is |was )?(complete|done|successful)", re.I)
+_CLAIMS_DONE = re.compile(r"(has|have|was|were) been (sent|paid|transferred|refunded|purchased|bought)|successfully (sent|paid|transferred|refunded|purchased|bought)|"
+                          r"\bi(?:'ve| have)? (just )?(sent|paid|transferred|refunded|purchased|bought)\b|"
+                          r"(transfer|payment|purchase|refund) (is |was )?(complete|done|successful)", re.I)
 _SPLIT = re.compile(r"\b(?:and then|after that|afterwards|then)\b", re.I)
 _AND = re.compile(r",?\s+\band\b\s+(?:also\s+)?", re.I)
 # The model says it prepared / set up a payment, but no draft was made this turn
 _CLAIMS_PREPARED = re.compile(r"\b(i'?ve|i have|i)\s+(just\s+)?(prepared|drafted|set up|created|arranged)\b.{0,40}"
-                              r"\b(transfer|payment|investment|card|draft|purchase|buy)\b|\bhere'?s your (transfer|payment|investment)\b", re.I)
-_MONEY_INTENTS = ("transfer", "bill_pay", "invest", "add_payee", "giro_setup")
-# "John Tan has been added", "your limit is now raised", "GIRO is set up": only true after the user signs the card
+                              r"\b(transfer|payment|card|draft|purchase|buy|refund|request)\b|\bhere'?s your (transfer|payment|purchase)\b", re.I)
+_MONEY_INTENTS = ("transfer", "bill_pay", "purchase", "refund", "stop_payout", "money_request", "add_payee")
+_DRAFT_INTENTS = ("transfer", "bill_pay", "purchase", "refund", "stop_payout", "money_request")
+# "Tom Reed has been added", "your limit is now raised": only true after the user signs the card
 _CLAIMS_CHANGED = re.compile(r"\b(has|have|had) been (added|set up|raised|increased|changed|registered|approved)\b|"
                              r"\b(is|are) now (added|set up|raised|active|registered|one of your payees)\b|"
                              r"\b(added|registered) (him|her|them|it|\w+(?: \w+)?) (as|to) (a |your )?(new )?payees?\b|"
@@ -64,13 +66,13 @@ def care_answer(text: str) -> bool | None:
 
 _NOTE = re.compile(r"\s*\[system note:[^\]]*\]", re.I)
 NUDGE = ("[Harness check] No draft exists: you did not call any draft tool in this turn, so nothing has been prepared. "
-         "Do not say it is prepared. If you know who/what and how much, call list_payees (or list_investments) and then "
+         "Do not say it is prepared. If you know who/what and how much, call list_payees, search_catalogue or list_invoices and then "
          "the draft tool now. Otherwise ask the user one short question.")
 NUDGE_LOOKUP = ("[Harness check] You answered without calling any tool, so you have not checked anything. Never say a "
-                "payee, product, bill or account doesn't exist without looking it up. Call the right tool now "
-                "(list_payees, list_investments, get_bills, get_balance, get_portfolio, get_cards), then continue.")
-_DATA_INTENTS = ("transfer", "bill_pay", "invest", "bill_query", "income", "balance", "spending", "portfolio", "card",
-                 "limits", "regular", "regular_cancel", "add_payee", "giro_setup")
+                "person, offer or invoice doesn't exist without looking it up. Call the right tool now "
+                "(list_payees, search_catalogue, list_invoices, get_allowance, list_refundable, payment_status), then continue.")
+_DATA_INTENTS = ("transfer", "bill_pay", "purchase", "refund", "stop_payout", "money_request", "bill_query", "income", "balance",
+                 "spending", "limits", "add_payee", "status", "disputes")
 
 
 @dataclass
@@ -87,31 +89,27 @@ class TurnResult:
 
 _LIST = re.compile(r",(?!\d)|;|\band\b|\balso\b", re.I)          # "1,000" is a number, not a list
 _EACHWORD = re.compile(r"\b(each|both)\b", re.I)
-_VERB = {"transfer": "send", "invest": "invest", "bill_pay": "pay"}
-_INVESTY = re.compile(r"\b(stocks?|shares?|funds?|etfs?|bonds?|deposit|apple|microsoft|singtel|unit trust)\b", re.I)
+_VERB = {"transfer": "send", "bill_pay": "pay"}
 _RELATIVE = re.compile(r"\bhalf\s+(?:that amount|of (?:it|that)|as much)\b", re.I)
 
 
 def _verb_for(item: str, last: str) -> str:
-    """Verb for a list item that has none: from its own words first ("2000 in Microsoft stock" -> invest),
-    otherwise the previous item's."""
-    if _INVESTY.search(item):
-        return "invest"
+    """Verb for a list item that has none: "to" means sending, otherwise the previous item's."""
     if re.search(r"\bto\b", item, re.I):
         return "send"
     return _VERB[last]
 
 
 def _split_list(text: str) -> list[str]:
-    """ "invest 500 in Microsoft, 1000 dollars in Apple" -> ["invest 500 in Microsoft", "invest 1000 dollars in Apple"].
+    """ "send 50 to my son, 100 dollars to my daughter" -> ["send 50 to my son", "send 100 dollars to my daughter"].
     Only when EVERY item has its own amount; an item without a verb borrows the previous item's.
-    "give my daughter and Chen Wei 50 each" is kept together here (split later by _split_each)."""
+    "give my daughter and Ben Lee 50 each" is kept together here (split later by _split_each)."""
     segs = [p.strip(" ,.") for p in _LIST.split(text) if p and p.strip(" ,.")]
     merged: list[str] = []
     i = 0
     while i < len(segs):
         seg = segs[i]
-        # "give my daughter" + "Chen Wei 50 each" -> one item for _split_each
+        # "give my daughter" + "Ben Lee 50 each" -> one item for _split_each
         while not parse_amount(seg) and i + 1 < len(segs) and _EACHWORD.search(segs[i + 1]):
             i += 1
             seg = f"{seg} and {segs[i]}"
@@ -125,7 +123,7 @@ def _split_list(text: str) -> list[str]:
         if intent == "unknown" or (re.match(r"(s\$|\$)?\d", p, re.I) and last in _VERB):
             if last not in _VERB:
                 return [text]
-            p = f"{_verb_for(p, last)} {p}"    # "1000 in a fixed deposit" -> "invest 1000 in a fixed deposit"
+            p = f"{_verb_for(p, last)} {p}"    # "100 to my son" -> "send 100 to my son"
         else:
             last = intent
         out.append(p)
@@ -154,11 +152,10 @@ def _split_each(text: str) -> list[str]:
 
 def split_plan(text: str) -> list[str]:
     """Split a compound request into ordered tasks, only when every part is a request on its own:
-    "pay the bill, then send 200 to my daughter", "send 500 to my son and invest the rest in a fund",
-    "invest 500 in Microsoft, 1000 in Apple". ("send 50 to my son and daughter" stays one task.)"""
-    # Protect conjunctions inside one amount or one utilities bill before task splitting.
+    "pay the power bill, then send 200 to my daughter", "send 500 to my son and buy a blood pressure monitor".
+    ("send 50 to my son and daughter" stays one task.)"""
+    # Protect conjunctions inside one amount before task splitting.
     text = re.sub(r"\b(hundred|thousand)\s+and\s+(?=\w+)", r"\1 ", text, flags=re.I)
-    text = re.sub(r"\bwater and electricity\b", "water/electricity", text, flags=re.I)
     # "twenty dollars and fifty cents" is one amount, not two queued payments.
     if re.search(r"\bdollars?\s+and\s+[a-z -]+\s+cents?\b", text, re.I) and not re.search(r"\bthen\b", text, re.I):
         return [text]
@@ -181,6 +178,7 @@ class Agent:
     # ------------------------------------------------------------------ One turn
     def run_turn(self, s: Session, text: str) -> TurnResult:
         s.settle()
+        self.gateway.kernel.refresh_receipts(s)      # a later webhook may have verified an earlier step
         start = len(s.trace)
         s.add_trace("user", text)
         self.audit.append("user.utterance", s.session_id,
@@ -214,25 +212,16 @@ class Agent:
             text, step_meta = done
         elif _RELATIVE.search(text) and len(split_plan(text)) == 1:
             parent_id = s.plan_references.pop(text, None)
-            if parent_id is None and s.receipts:
-                # A separate follow-up may explicitly identify the account just credited.
-                from app.agent.textparse import account_id_for, find_account
-                previous = s.receipts[0].get("card", {})
-                account_id = account_id_for(find_account(text), self.wallet.accounts(s.user_id))
-                if account_id and previous.get("payee_id") == "own:" + account_id:
-                    parent_id = previous.get("draft_id")
+            if parent_id is None and s.receipts:     # "half of it" right after a payment: that payment
+                parent_id = s.receipts[0].get("card", {}).get("draft_id")
             receipt = next((r for r in s.receipts if r.get("card", {}).get("draft_id") == parent_id), None)
             if not receipt or receipt.get("status") != "SUCCESS" or receipt["card"]["amount_cents"] % 2:
-                reply = "I need the exact SGD amount. Which amount should I use? The previous step must be completed before its amount can be reused."
+                reply = "I need the exact amount. Which amount should I use? The previous step must be completed before its amount can be reused."
                 s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
                 return TurnResult(reply, {"type": "text"}, reply, s.trace[start:], "reference guard")
             cents = receipt["card"]["amount_cents"] // 2
             reference_parent_id = parent_id
-            text = _RELATIVE.sub(f"{cents // 100}.{cents % 100:02d} SGD", text)
-            # For an owned-account transfer, "of it" means funds in that destination account.
-            target = self.wallet.payee(s.user_id, receipt["card"]["payee_id"])
-            if target and target.get("type") == "own" and not re.search(r"\bfrom\b", text, re.I):
-                text += " from my " + target["name"]
+            text = _RELATIVE.sub(f"{cents // 100}.{cents % 100:02d} dollars", text)
             s.add_trace("reference", "Amount resolved from the completed, signed parent transaction",
                         {"original": raw_text, "resolved": text, "parent_draft_id": parent_id})
             self.audit.append("plan.reference_resolved", s.session_id,
@@ -263,13 +252,12 @@ class Agent:
             if s.scam_level.rank >= RiskLevel.HIGH.rank:
                 return self._locked(s, start, text)
             # Amount-only corrections may not silently discard a new recipient/account instruction.
-            if re.search(r"\b(?:to|from)\s+(?:my |the )?(?:daughter|son|grandson|Chen|current|savings|joint)\b", text, re.I):
-                error = "The old payment is cancelled. Please restate the complete recipient, source account and amount."
-            if not error and amount and pending_edit.kind != "bill":
+            if re.search(r"\bto\s+(?:my |the )?(?:daughter|son|grandson)\b|\bto\s+[A-Z][a-z]+\b", text):
+                error = "The old payment is cancelled. Please tell me again who to pay and how much."
+            if not error and amount and pending_edit.kind in ("transfer", "money_request"):
                 verdict = self.gateway.verifier.verdict(s) if self.gateway.verifier else None
                 d = self.gateway.kernel.create_draft(s, kind=pending_edit.kind, payee_id=pending_edit.payee_id,
-                    amount_cents=round(amount * 100), from_account=pending_edit.from_account,
-                    evidence=text, verification=verdict, schedule=pending_edit.schedule)
+                    amount_cents=round(amount * 100), evidence=text, verification=verdict)
                 for task, parent in list(s.plan_references.items()):
                     if parent == pending_edit.draft_id:
                         s.plan_references[task] = d.draft_id
@@ -278,7 +266,7 @@ class Agent:
                         s.plan_drafts[pos] = d.draft_id
                 reply = "The old confirmation is cancelled. Please review the corrected payment."
                 s.messages.append({"role": "assistant", "content": reply})
-                card = presenter.build_card(d, self.wallet, s.phase, care=s.care_mode)
+                card = self._card(s, d)
                 return TurnResult(reply, {"type": {Phase.FROZEN: "frozen", Phase.BLOCKED: "blocked", Phase.COOLING: "cooldown"}.get(s.phase, "confirm"), "card": card},
                                   reply, s.trace[start:], "request correction")
             reply = error or "Please make a new payment request with the recipient and amount."
@@ -355,13 +343,13 @@ class Agent:
                 any(t.tier == "draft" for t in self.gateway.available(s)):
             s.verifier_job = verifier.start(s)       # second engine starts now, alongside the ReAct loop
             s.add_trace("verify", f"Independent verifier started in parallel ({verifier.name}); it sees only your words")
-        # "half of my money" / "with half of it" / "whatever is left": the bank's code works the amount out
+        # "half of it": code works the amount out
         s.amount_hint = None
-        if relative_in(OfflineLLM._effective_text(s.messages)):    # also "Yes" after "that is S$812.50, shall I?"
-            cands = derived_amounts(user_utterances(s.messages), self.wallet.accounts(s.user_id), None)
+        if relative_in(OfflineLLM._effective_text(s.messages)):    # also "Yes" after "that is $812.50, shall I?"
+            cands = derived_amounts(user_utterances(s.messages))
             if cands:
                 s.amount_hint = cands[0]
-                s.add_trace("evidence", f"Amount worked out by the wallet: {cands[0][1]} = {fmt_money(cands[0][0])}")
+                s.add_trace("evidence", f"Amount worked out by Star: {cands[0][1]} = {fmt_money(cands[0][0])}")
         history = s.messages[-settings.max_history_turns * 2:]
         draft_before = s.current_draft_id
         change_before = (s.pending_change or {}).get("change_id")
@@ -405,7 +393,7 @@ class Agent:
         ui = {"type": "text"}
         speak = reply
         if new_draft:
-            card = presenter.build_card(new_draft, self.wallet, s.phase, care=s.care_mode)
+            card = self._card(s, new_draft)
             ui = {"type": {Phase.BLOCKED: "blocked", Phase.COOLING: "cooldown", Phase.FROZEN: "frozen"}.get(
                 s.phase, "confirm"), "card": card}
             if s.phase not in (Phase.BLOCKED, Phase.FROZEN):
@@ -413,9 +401,9 @@ class Agent:
         elif pending and s.phase in (Phase.AWAITING_AUTH, Phase.COOLING):
             # Whatever the user asked, keep the waiting card in front of them (e.g. after "I'm ready")
             ui = {"type": "cooldown" if s.phase == Phase.COOLING else "confirm",
-                  "card": presenter.build_card(pending, self.wallet, s.phase, care=s.care_mode), "reopened": True}
+                  "card": self._card(s, pending), "reopened": True}
         elif s.pending_change and s.pending_change["change_id"] != change_before:
-            ui = {"type": "change", "card": s.pending_change["card"]}     # add payee / raise limit / GIRO: sign it
+            ui = {"type": "change", "card": s.pending_change["card"]}     # add a person / raise limit: sign it
         elif s.phase == Phase.HANDOFF:
             ui = {"type": "handoff"}
         else:
@@ -443,6 +431,10 @@ class Agent:
             ui["care_mode"] = s.care_changed           # the app switches its view (the model called set_care_mode)
         self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": ui["type"], "llm": llm_name})
         return TurnResult(reply=reply, ui=ui, speak=speak, trace=s.trace[start:], llm=llm_name)
+
+    def _card(self, s: Session, d) -> dict:
+        return presenter.build_card(d, self.wallet, s.phase, care=s.care_mode, offers=s.last_offers,
+                                    mode_label=self.gateway.kernel.gateway.mode_status()["label"])
 
     # ------------------------------------------------------------------ Model planner
     def _model_plan(self, s: Session, text: str, rule_parts: list[str]) -> list[dict] | None:
@@ -473,29 +465,25 @@ class Agent:
                         {"rules": rule_parts})
         s.add_trace("plan", f"Model planned {len(steps)} step{'s' if len(steps) > 1 else ''} ({took:.1f}s): "
                             + " → ".join(st["said"] for st in steps),
-                    [{k: st[k] for k in ("pos", "request", "action", "amount", "from")} for st in steps])
+                    [{k: st[k] for k in ("pos", "request", "action", "amount")} for st in steps])
         self.audit.append("plan.model", s.session_id, {"request": text, "steps": steps})
         return steps
 
     def _planned_step(self, s: Session, start: int, spec: dict, raw: str):
-        """Work out a planned step's referenced amount / account in code (from signed, executed earlier steps and real
-        balances). Returns (instruction, step_meta), or a TurnResult asking the user when it can't be worked out."""
+        """Work out a planned step's referenced amount in code (from signed, verified earlier steps). Returns
+        (instruction, step_meta), or a TurnResult asking the user when it can't be worked out."""
         try:
             text, resolved = planner.resolve(spec, self.wallet, s.user_id, s.receipts, s.plan_drafts)
         except planner.Unresolved as e:
             reply = (f"I can't work out the amount for “{spec['said']}” yet: {e}. "
-                     "Which exact amount in SGD should I use?")
+                     "Which exact amount should I use?")
             s.plan.clear()
             s.plan_specs.clear()
             s.messages.extend([{"role": "user", "content": spec["said"], "raw_content": raw},
                                {"role": "assistant", "content": reply}])
             return TurnResult(reply, {"type": "text"}, reply, s.trace[start:], "plan guard")
         if resolved:
-            s.add_trace("reference", f"Step {spec['pos']}: worked out by the bank — "
-                                     + (f"{resolved['why']} = {fmt_money(resolved['amount_cents'])}"
-                                        if resolved.get("amount_cents") is not None else "")
-                                     + (f"{'; ' if resolved.get('amount_cents') is not None else ''}from "
-                                        f"{resolved['from_account']}" if resolved.get("from_account") else ""),
+            s.add_trace("reference", f"Step {spec['pos']}: worked out by Star — {resolved['why']} = {fmt_money(resolved['amount_cents'])}",
                         {"step": spec["said"], "instruction": text})
             self.audit.append("plan.reference_resolved", s.session_id, {"step": spec, "instruction": text,
                                                                          "resolved": resolved})
@@ -595,30 +583,30 @@ class Agent:
         s.add_trace("guard", f"Exceeded step limit {settings.max_steps}, handing off to a human")
         if s.phase == Phase.IDLE:
             s.transition(Phase.HANDOFF)
-        return "I could not complete this request. This demo has no live staff service; please use the official banking app to contact a staff member.", llm_name, False
+        return "I could not complete this request. This demo has no live staff service; please talk to your family or a staff member at PayPal.", llm_name, False
 
     @staticmethod
     def _what_happened(s: Session, d) -> str:
         if not d:
             return ""
-        verb = "draft_standing_instruction" if d.schedule else \
-            {"transfer": "draft_transfer", "bill": "draft_bill_payment", "investment": "draft_investment"}[d.kind]
+        verb = {"transfer": "draft_transfer", "bill": "draft_bill_payment", "purchase": "draft_purchase", "refund": "draft_refund",
+                "money_request": "draft_money_request"}[d.kind]
         state = {Phase.FROZEN: "frozen by the verifier", Phase.BLOCKED: "blocked by the rules",
                  Phase.COOLING: "in cooling-off"}.get(s.phase, "shown on the confirmation card")
         return (f"\n[system note: {verb} was called and created draft {d.draft_id}: {fmt_money(d.amount_cents)} "
-                f"{'in' if d.kind == 'investment' else 'to'} {d.payee_name}, {state}. Nothing is paid until the user signs.]")
+                f"to {d.payee_name}, {state}. Nothing is paid until the user signs.]")
 
     @staticmethod
     def _money_related(s: Session, text: str) -> bool:
-        if detect_intent(text) in ("transfer", "bill_pay", "invest") or fraud.wants_money_move(text):
+        if detect_intent(text) in _DRAFT_INTENTS or fraud.wants_money_move(text):
             return True
         prev = next((m for m in reversed(s.messages[:-1]) if m["role"] == "assistant"), None)
         return bool(prev and prev["content"].rstrip().endswith("?"))     # answering "how much?" / "which one?"
 
     # ------------------------------------------------------------------ Choice buttons
     def _choices(self, s: Session, reply: str) -> list[dict]:
-        """If the agent is asking "which one?" and names 2+ saved payees or bills, turn them into buttons.
-        Options only ever come from the user's own saved payees / bills, never from the model's text."""
+        """If the agent is asking "which one?" and names 2+ saved people or bills, turn them into buttons.
+        Options only ever come from the user's own saved people / bills, never from the model's text."""
         if not reply or not reply.rstrip().endswith("?"):
             return []
         low = reply.lower()
@@ -626,31 +614,30 @@ class Agent:
         if len(people) >= 2:
             return [{"label": f"{p['name']} ({p['relation']})", "detail": p["masked_account"], "send": p["name"]}
                     for p in people]
-        bills = [b for b in self.wallet.bills(s.user_id) if b["title"].lower() in low]
+        bills = [b for b in self.wallet.invoices(s.user_id) if b["title"].lower() in low]
         if len(bills) >= 2:
             return [{"label": b["title"], "detail": fmt_money(b["amount_cents"]), "send": f"Pay the {b['title']}"}
                     for b in bills]
         return []
 
     def _still_pending(self, s: Session, start: int, text: str, d) -> TurnResult:
-        prep = "in" if d.kind == "investment" else "to"
         if text not in s.plan:
             s.plan.insert(0, text)
-        reply = (f"You still have one payment waiting: {fmt_money(d.amount_cents)} {prep} {d.payee_name}. "
+        reply = (f"You still have one payment waiting: {fmt_money(d.amount_cents)} to {d.payee_name}. "
                  f"Please confirm it with your fingerprint or cancel it first. Then I'll help with “{text}”.")
         s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
         s.add_trace("guard", "A payment is still waiting for the user; showing its card again and queuing the new request",
                     {"pending": d.draft_id, "queued": text})
         self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "confirm", "llm": "guard"})
-        card = presenter.build_card(d, self.wallet, s.phase, care=s.care_mode)
+        card = self._card(s, d)
         return TurnResult(reply=reply, ui={"type": "cooldown" if s.phase == Phase.COOLING else "confirm", "card": card,
                                            "reopened": True}, speak=reply, trace=s.trace[start:], llm="guard")
 
     def _locked(self, s: Session, start: int, text: str) -> TurnResult:
         s.plan.clear()
         reply = ("Earlier in this conversation there were signs of a scam, so for your safety I can't prepare any "
-                 "payments in this conversation. If this really is your own idea, please check with your family first, "
-                 "then use the the bank app or call the bank on 1800 111 1111.")
+                 "payments in this conversation. If this really is your own idea, please check with your family first. "
+                 f"You can also call {hotline_words()}.")
         s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
         s.add_trace("guard", f"Session is flagged for scams ({s.scam_level.value}); money request answered by the "
                              "harness, remaining plan dropped", {"reasons": s.scam_reasons[:3]})
@@ -666,20 +653,23 @@ class Agent:
             s.transition(Phase.BLOCKED)
         reasons = (reasons or s.scam_reasons)[:3]      # why THIS message was stopped, not earlier commentary
         reply = ("For your safety, I've stopped this one. " + " ".join(reasons) +
-                 " If someone asked you to do this, please hang up and call the ScamShield helpline 1799, "
+                 f" If someone asked you to do this, please hang up and call {hotline_words()}, "
                  "or talk to your family first.")
         s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
         s.add_trace("guard", "High-risk phrases + moving money: blocked without reaching the model", {"reasons": reasons})
         self.audit.append("scam.intercepted", s.session_id, {"text": text, "level": s.scam_level.value,
                                                              "reasons": reasons})
-        return TurnResult(reply=reply, ui={"type": "blocked", "reasons": reasons, "hotline": "1799"},
+        self.wallet.add_stop(s.user_id, kind="scam", to="", amount_cents=0, status="STOPPED", stopped_by="Scam signs in what was said",
+                             why=" ".join(reasons), codes=["SCAM_PRE_SCREEN"])
+        self.wallet.add_alert(s.user_id, "stop", "stopped", "Star stopped a request that looked like a scam. " + (reasons[0] if reasons else ""))
+        return TurnResult(reply=reply, ui={"type": "blocked", "reasons": reasons, "hotline": hotline()["spoken"]},
                           speak=reply, trace=s.trace[start:], llm="guard")
 
     # ------------------------------------------------------------------ Validation
     def _validate_reply(self, s: Session, reply: str | None, draft, text: str, changed: bool = False) -> str:
         reply = _NOTE.sub("", reply or "").strip() or None
         if draft:
-            prep = "in" if draft.kind == "investment" else "to"
+            prep = "back from" if draft.kind == "refund" else "from" if draft.kind == "money_request" else "to"
             template = (f"{fmt_money(draft.amount_cents)} {prep} {draft.payee_name}, ready to confirm."
                         if not s.care_mode else
                         f"Please check the card: {fmt_money(draft.amount_cents)} {prep} {draft.payee_name}.")
@@ -693,7 +683,7 @@ class Agent:
                 return ("I've stopped this before it reached you, because it doesn't match what you said. " +
                         " ".join(draft.verification["mismatches"][:2]) + " Please tell me again what you'd like to do.")
             # Amounts the reply may legitimately mention: the draft amount, plus any amount the rules quoted in their
-            # reasons (balance, usual amount, limits). Anything else means the model got the number wrong.
+            # reasons (allowance, usual amount, limits). Anything else means the model got the number wrong.
             allowed = [draft.amount_cents] + [round(v * 100) for v in
                                               money_mentions(" ".join(draft.risk.reasons if draft.risk else []))]
             mentioned = money_mentions(reply or "")
@@ -712,12 +702,11 @@ class Agent:
             s.add_trace("guard", "Model claimed it prepared a payment, but no draft was made this turn; corrected",
                         {"model_reply": reply})
             if pend:
-                prep = "in" if pend.kind == "investment" else "to"
-                return (f"Your waiting payment is {fmt_money(pend.amount_cents)} {prep} {pend.payee_name}. "
+                return (f"Your waiting payment is {fmt_money(pend.amount_cents)} to {pend.payee_name}. "
                         "Please check the card and confirm it with your fingerprint, or cancel it.")
             return "I haven't prepared anything yet. Could you tell me again who to pay and how much?"
         # Only on payment turns: "your pension has been paid in" is a fine answer to an income question
-        if reply and _CLAIMS_DONE.search(reply) and (draft or detect_intent(text) in ("transfer", "bill_pay", "invest")):
+        if reply and _CLAIMS_DONE.search(reply) and (draft or detect_intent(text) in _DRAFT_INTENTS):
             s.add_trace("guard", "Model claimed the transaction was executed, but the system did not execute it; corrected",
                         {"model_reply": reply})
             return ("Nothing has been sent yet — please check and confirm the card yourself." if draft

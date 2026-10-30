@@ -1,13 +1,13 @@
-"""Shared pieces for the mock the bank APIs.
+"""Shared pieces for the wallet tools.
 
-Each module in this package mirrors one API from the the bank developer catalogue (developer.example/bank-apis) by name and
-purpose (the fields are our own; the real specifications aren't public). A module exposes TOOLS: the agent tools
-backed by that API. To add an API, add a module and list it in __init__.py; nobody else's file changes.
+A module in this package exposes TOOLS: the agent tools for one area. To add an area, add a module and list it in
+__init__.py; nobody else's file changes.
 
 Every tool has a tier, which decides what the agent may do with it (agent/tools.py shrinks the set by risk/phase):
-  read     look things up                                     (balances, payees, limits, GIRO, standing orders)
-  draft    prepare something the customer must sign            (payments, standing orders, new payee, higher limit)
-  control  protective actions that apply at once, and are logged (lower the limit, cancel a GIRO or standing order)
+  read     look things up                                     (allowance, payees, offers, invoices, verified payments)
+  draft    prepare something the customer must sign            (payments, purchases, refunds, new person, higher limit)
+  control  protective actions that apply at once, and are logged (lower the limit, freeze payments)
+No tier moves money. These modules never import app.paypal.client or the execution gateway (tests/test_architecture.py).
 Optional `group`: the tool is only offered to the model when the conversation is about it (fewer tools = fewer
 mistakes for a small model).
 """
@@ -21,6 +21,7 @@ from pydantic import BaseModel
 MISHEARD_DESC = ("Only if speech recognition clearly misheard the AMOUNT: the user's words exactly as transcribed, "
                  "e.g. 'a grant' (else omit)")
 MEANT_DESC = "What you're sure they meant, e.g. 'a grand'. The card shows both so the user can check."
+EVIDENCE_DESC = "Quote the user's exact words that asked for this"
 
 
 class NoArgs(BaseModel):

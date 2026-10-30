@@ -1,6 +1,7 @@
 """Deterministic rule engine: the same input always gives the same result. The model cannot call or bypass it.
 
 Every rule has a code (for the audit log) and a plain-language reason (for the elderly user).
+Merchant and invoice checks live in kernel/trust.py; this engine turns their hits into the risk level.
 """
 from __future__ import annotations
 
@@ -9,12 +10,14 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
 
-from app.wallet.ledger import Wallet
 from app.config import settings
-from app.kernel import protection as prot
+from app.kernel import protection as prot, trust
 from app.models import Draft, RiskDecision, RiskLevel, fmt_money
+from app.wallet.ledger import Wallet
 
-RULESET_VERSION = "rules-2026.10.14-v5"
+RULESET_VERSION = "rules-2026.10.30-v6"
+DUPLICATE_WINDOW = 600
+OUTGOING = ("transfer", "bill", "purchase")
 
 
 @dataclass
@@ -25,6 +28,17 @@ class RuleContext:
     local_hour: int | None = None                  # can be injected in tests
     grounding: object | None = None                # evidence.Grounding: is the draft backed by the user's words
     protection: str = "enhanced"                   # account protection level (kernel/protection.py)
+    rail_error: str = ""                           # why PayPal can't be reached at all (missing keys, unsupported mode)
+    said: str = ""                                 # the words of this task, for the refund-scam check
+
+
+def _target(draft: Draft, wallet: Wallet):
+    if draft.kind == "purchase":
+        return {"name": draft.merchant_name, "type": "merchant"} if draft.merchant_id else None
+    if draft.kind == "refund":
+        parent = wallet.payment(draft.parent_payment_id or "")
+        return {"name": parent["counterparty_name"], "type": "refund"} if parent else None
+    return wallet.payee(draft.user_id, draft.payee_id)
 
 
 def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> RiskDecision:
@@ -43,82 +57,70 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
         if new == RiskLevel.BLOCK:
             blocking.append(why)
 
-    invest = draft.kind == "investment"
-    payee = wallet.product(draft.payee_id) if invest else wallet.payee(draft.user_id, draft.payee_id)
-    acct = wallet.account(draft.user_id, draft.from_account)
+    user = draft.user_id
+    payee = _target(draft, wallet)
     enhanced = ctx.protection == "enhanced"
     threshold = prot.high_threshold(ctx.protection)
+    spends = draft.kind in OUTGOING
 
     # ---- Hard checks (BLOCK) ----
-    if payee is None and invest:
-        raise_to(RiskLevel.BLOCK, "R06_UNKNOWN_PRODUCT", "I can't find this investment product.")
-    elif payee is None:
+    if ctx.rail_error:
+        raise_to(RiskLevel.BLOCK, "R09_RAIL_UNAVAILABLE", f"I can't reach PayPal from this server, so nothing can be sent. {ctx.rail_error}")
+    if wallet.user(user)["frozen"]["on"] and draft.kind != "refund":
+        raise_to(RiskLevel.BLOCK, "R14_WALLET_FROZEN", "Payments are frozen right now. Lifting the freeze needs you and your family.")
+    if payee is None:
         raise_to(RiskLevel.BLOCK, "R00_UNKNOWN_PAYEE", "This person is not in your saved payees, so I can't send money to them directly.")
-    if acct is None:
-        raise_to(RiskLevel.BLOCK, "R01_UNKNOWN_ACCOUNT", "I can't find the account to pay from.")
-    if payee and payee.get("type") == "own" and payee.get("account_id") == draft.from_account:
-        raise_to(RiskLevel.BLOCK, "R07_SAME_ACCOUNT", "Please choose two different accounts for an internal transfer.")
     if draft.amount_cents <= 0:
         raise_to(RiskLevel.BLOCK, "R02_BAD_AMOUNT", "The amount must be more than zero.")
-    if acct and draft.amount_cents > acct["balance_cents"]:
-        raise_to(RiskLevel.BLOCK, "R03_INSUFFICIENT",
-                 f"Not enough money — your account only has {fmt_money(acct['balance_cents'])}.")
+    left = wallet.allowance_left(user)
+    if spends and draft.amount_cents > left:
+        raise_to(RiskLevel.BLOCK, "R03_OVER_ALLOWANCE",
+                 f"That's over your Star allowance. You have {fmt_money(left)} left. "
+                 "Star can't see your PayPal balance: this is the limit you and your family set.")
     if draft.amount_cents > settings.single_txn_hard_limit * 100:
         raise_to(RiskLevel.BLOCK, "R04_HARD_LIMIT",
-                 f"Payments over {fmt_money(int(settings.single_txn_hard_limit * 100))} must be done at a branch or with customer service.")
+                 f"Star doesn't handle payments over {fmt_money(int(settings.single_txn_hard_limit * 100))}.")
     if draft.expires_at < ctx.now:
         raise_to(RiskLevel.BLOCK, "R05_EXPIRED", "This request has expired. Please say it again.")
 
-    own = payee is not None and payee.get("type") == "own"
-    if own and payee.get("account_id") == draft.from_account:
-        raise_to(RiskLevel.BLOCK, "R07_SAME_ACCOUNT", "The money would go to the same account it comes from.")
-    # ---- Credit card bill: between nothing and the full statement (the bank Bill Payments API) ----
-    if draft.kind == "bill" and draft.bill_id:
-        bill = wallet.bill(draft.user_id, draft.bill_id)
-        if bill and draft.amount_cents > bill["amount_cents"]:
-            raise_to(RiskLevel.BLOCK, "R08_OVER_BILL",
-                     f"That's more than the bill ({fmt_money(bill['amount_cents'])}).")
-    # ---- Daily transfer limit (the bank Limits API): transfers to other people today, not own accounts ----
-    if draft.kind == "transfer" and not own and not draft.schedule and payee is not None:
-        lim = wallet.limits(draft.user_id)["daily_transfer_cents"]
-        used = wallet.transferred_today(draft.user_id)
+    # ---- An earlier payment's outcome is still unknown, or the same one just went through ----
+    if spends:
+        unknown = wallet.open_unknown(user)
+        if any(r["card"].get("payee_id") == draft.payee_id or r["amount_cents"] == draft.amount_cents for r in unknown):
+            raise_to(RiskLevel.BLOCK, "R60_UNKNOWN_OUTCOME", "I'm still checking with PayPal whether an earlier payment went through. "
+                     "Please don't pay again until I know.")
+        same = [r for r in wallet.payments_for(user) if r["card"].get("payee_id") == draft.payee_id and r["amount_cents"] == draft.amount_cents
+                and r.get("verified") and ctx.now - r["created_at"] <= DUPLICATE_WINDOW and r["state"] in ("SENT", "PAID")]
+        if same:
+            raise_to(RiskLevel.MEDIUM, "R61_RECENT_DUPLICATE", f"You just paid {payee['name'] if payee else 'them'} this same amount a few minutes ago.")
+
+    # ---- Daily limit: money to other people today ----
+    if draft.kind == "transfer" and payee is not None:
+        lim = wallet.limits(user)["daily_transfer_cents"]
+        used = wallet.transferred_today(user)
         if used + draft.amount_cents > lim:
-            left = max(0, lim - used)
+            remaining = max(0, lim - used)
             raise_to(RiskLevel.BLOCK, "R13_DAILY_LIMIT",
-                     f"This is over your daily transfer limit of {fmt_money(lim)}"
-                     + (f" (you have {fmt_money(left)} left today)." if used else ".")
+                     f"This is over your daily limit of {fmt_money(lim)}"
+                     + (f" (you have {fmt_money(remaining)} left today)." if used else ".")
                      + " You can raise the limit, but a higher limit only starts after a waiting time.")
 
-    if payee is not None and draft.kind == "transfer" and not own:
-        history = wallet.payee_history(draft.user_id, draft.payee_id)
+    if payee is not None and draft.kind == "transfer":
+        history = wallet.payee_history(user, draft.payee_id)
         # ---- New payee (HIGH) ----
-        if not history and payee.get("type") != "own":
-            raise_to(RiskLevel.HIGH, "R10_NEW_PAYEE", "This is your first transfer to this person, so for safety we'll wait a little before confirming.")
-        elif history:
-            typical = max(history)
-            if draft.amount_cents > typical * 2:
-                raise_to(RiskLevel.MEDIUM, "R11_ABOVE_USUAL",
-                         f"This is quite a bit more than you usually send to {payee['name']} ({fmt_money(typical)}).")
+        if not history:
+            raise_to(RiskLevel.HIGH, "R10_NEW_PAYEE", "This is your first payment to this person, so for safety we'll wait a little before confirming.")
+        elif draft.amount_cents > max(history) * 2:
+            raise_to(RiskLevel.MEDIUM, "R11_ABOVE_USUAL",
+                     f"This is quite a bit more than you usually send to {payee['name']} ({fmt_money(max(history))}).")
         # ---- Large amount (HIGH) ----
         if draft.amount_cents > threshold * 100:
             raise_to(RiskLevel.HIGH, "R12_ABOVE_THRESHOLD",
-                     f"This is more than your limit of {fmt_money(int(threshold * 100))}, so we'll wait a little before confirming.")
-
-    # ---- Investments: minimum, suitability (MAS-style), size ----
-    if invest and payee is not None:
-        if draft.amount_cents < payee["min_cents"]:
-            raise_to(RiskLevel.BLOCK, "R71_BELOW_MINIMUM",
-                     f"The minimum for {payee['name']} is {fmt_money(payee['min_cents'])}.")
-        profile = wallet.risk_profile(draft.user_id)
-        if payee["risk"] > profile["max_product_risk"]:
-            raise_to(RiskLevel.HIGH if enhanced else RiskLevel.MEDIUM, "R70_ABOVE_RISK_PROFILE",
-                     (f"These shares have risk rating {payee['risk']} of 5, above your " if payee["asset_class"].startswith("Shares")
-                      else f"This {payee['asset_class'] if payee['asset_class'].isupper() else payee['asset_class'].lower()} "
-                           f"has risk rating {payee['risk']} of 5, above your ") +
-                     f"{profile['label'].lower()} risk profile. The value can go down as well as up.")
-        if draft.amount_cents > threshold * 100:
-            raise_to(RiskLevel.HIGH, "R72_LARGE_INVESTMENT",
                      f"This is more than {fmt_money(int(threshold * 100))}, so we'll wait a little before confirming.")
+
+    # ---- Merchant and invoice checks (kernel/trust.py) ----
+    for h in trust.check(draft, wallet, protection=ctx.protection, scam_level=ctx.scam_level.value, said=ctx.said)["hits"]:
+        raise_to(RiskLevel(h["level"]), h["code"], h["why"])
 
     # ---- Time warning (MEDIUM) and hard transaction frequency limit (BLOCK) ----
     if ctx.local_hour is not None:
@@ -126,17 +128,17 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
     elif settings.fixed_hour is not None:
         hour = settings.fixed_hour
     else:
-        # the customer's local time (Singapore), not the server's clock (Render runs in UTC)
+        # the customer's local time, not the server's clock (Render runs in UTC)
         try:
-            hour = datetime.fromtimestamp(ctx.now, ZoneInfo(settings.bank_timezone)).hour
-        except Exception:  # noqa: BLE001 - no time zone data on the server: Singapore is UTC+8 all year
-            hour = time.gmtime(ctx.now + 8 * 3600).tm_hour
-    if enhanced and (hour >= settings.night_start or hour < settings.night_end):
+            hour = datetime.fromtimestamp(ctx.now, ZoneInfo(settings.customer_timezone)).hour
+        except Exception:  # noqa: BLE001 - no time zone data on the server: use UTC rather than failing a payment
+            hour = time.gmtime(ctx.now).tm_hour
+    if enhanced and spends and (hour >= settings.night_start or hour < settings.night_end):
         raise_to(RiskLevel.MEDIUM, "R20_NIGHT", "It's late at night, so let's double-check.")
     # Earlier steps of the same request (one sentence, each step signed on its own) don't count against the limit
-    recent = wallet.recent_exec_count(draft.user_id, settings.velocity_window_min * 60, plan_id=draft.plan_id)
+    recent = wallet.recent_exec_count(user, settings.velocity_window_min * 60, plan_id=draft.plan_id)
     if recent >= settings.velocity_max:
-        raise_to(RiskLevel.BLOCK, "R21_VELOCITY", "Too many payments in a short time. Please wait until the transaction window clears, then prepare a new request.")
+        raise_to(RiskLevel.BLOCK, "R21_VELOCITY", "Too many payments in a short time. Please wait a little, then ask again.")
 
     # ---- Fields from untrusted sources (MEDIUM) ----
     if draft.taint:
@@ -157,7 +159,7 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
         if not g.payee and not g.amount:
             raise_to(RiskLevel.BLOCK, "R52_NOT_REQUESTED",
                      "I can't find this payment in anything you said, so I won't prepare it.")
-        elif not g.payee:
+        elif not g.payee and draft.kind != "refund":      # money coming back to her: the card names it, no wait
             raise_to(RiskLevel.HIGH, "R51_PAYEE_NOT_SAID",
                      f"You didn't mention {payee['name']}. Please check who this money is going to.")
         elif not g.amount:
@@ -166,14 +168,14 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
 
     if level == RiskLevel.MEDIUM and set(hits) <= {"R50_AMOUNT_NOT_SAID"}:
         question = f"Is {fmt_money(draft.amount_cents)} the right amount?"
-    elif level == RiskLevel.MEDIUM and set(hits) <= {"R70_ABOVE_RISK_PROFILE", "R50_AMOUNT_NOT_SAID"}:
-        question = "Do you understand this investment can lose value, and do you still want it?"
+    elif level == RiskLevel.MEDIUM and draft.kind in ("purchase", "bill", "refund", "money_request"):
+        question = "Is this really what you want, and is it your own idea?"
     elif level == RiskLevel.MEDIUM:
         question = "Do you know this person, and is this payment your own idea?"
     verify_kind = None
     if enhanced and "R10_NEW_PAYEE" in hits and level != RiskLevel.BLOCK:
         # The first payment to someone new is how most scams end: ask outright whether someone else is behind it.
-        # The card can't be signed without a "yes"; a "no" stops it and points to ScamShield.
+        # The card can't be signed without a "yes"; a "no" stops it and points to the scam hotline.
         question = (f"Do you know {payee['name']} yourself, and is sending this money your own idea? "
                     "Say no if someone on the phone or in a message asked you to pay them.")
         verify_kind = "new_payee"

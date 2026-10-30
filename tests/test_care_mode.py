@@ -33,13 +33,13 @@ class TestCareMode(unittest.TestCase):
         self.c.post("/api/care/offer", json={"session_id": self.sid})
         self.assertIs(self.chat("No, thanks")["ui"]["care_mode"], False)
         card = self.chat("Send 300 to my daughter")["ui"]["card"]
-        self.assertEqual(card["readback"], "S$300.00 to Chen Mei Ling, from Savings Account.")
+        self.assertEqual(card["readback"], "$300.00 to Anna Lee.")
 
     def test_a_request_instead_of_an_answer_is_just_a_request(self):
         self.c.post("/api/care/offer", json={"session_id": self.sid})
         r = self.chat("Send 300 to my daughter")
         self.assertNotIn("care_mode", r["ui"])
-        self.assertEqual(r["ui"]["card"]["payee_name"], "Chen Mei Ling")
+        self.assertEqual(r["ui"]["card"]["payee_name"], "Anna Lee")
 
     def test_offer_only_once_and_switch_keeps_star_in_step(self):
         self.c.post("/api/care/offer", json={"session_id": self.sid})
@@ -51,10 +51,10 @@ class TestCareMode(unittest.TestCase):
         self.assertEqual(system_prompt("senior").split("[How to speak]")[0],
                          system_prompt("everyday").split("[How to speak]")[0])
         self.c.post("/api/care", json={"session_id": self.sid, "on": False})
-        standard = self.chat("Send 1800 to my daughter")["ui"]["card"]
+        standard = self.chat("Send 700 to my daughter")["ui"]["card"]
         sid2 = self.c.post("/api/reset", json={"world": True}).json()["session_id"]
         self.c.post("/api/care", json={"session_id": sid2, "on": True})
-        care = self.c.post("/api/chat", json={"session_id": sid2, "text": "Send 1800 to my daughter"}).json()["ui"]["card"]
+        care = self.c.post("/api/chat", json={"session_id": sid2, "text": "Send 700 to my daughter"}).json()["ui"]["card"]
         self.assertEqual((standard["risk_level"], standard["reasons"]), (care["risk_level"], care["reasons"]))
 
     def test_answers(self):
