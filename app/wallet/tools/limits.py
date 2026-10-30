@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.bank.bank_api.base import NoArgs, Tool
+from app.wallet.tools.base import NoArgs, Tool
 from app.models import fmt_money, to_cents
 
 
@@ -13,8 +13,8 @@ class SetLimitArgs(BaseModel):
 
 
 def get_limits(gw, s, _):
-    lim = gw.bank.limits(s.user_id)
-    used = gw.bank.transferred_today(s.user_id)
+    lim = gw.wallet.limits(s.user_id)
+    used = gw.wallet.transferred_today(s.user_id)
     out = {"daily_transfer_limit": fmt_money(lim["daily_transfer_cents"]), "used_today": fmt_money(used),
            "left_today": fmt_money(max(0, lim["daily_transfer_cents"] - used)),
            "applies_to": "transfers to other people (not your own accounts, bills or investments)"}
@@ -24,7 +24,7 @@ def get_limits(gw, s, _):
 
 
 def set_daily_limit(gw, s, a: SetLimitArgs):
-    cents, now = to_cents(a.amount), gw.bank.limits(s.user_id)["daily_transfer_cents"]
+    cents, now = to_cents(a.amount), gw.wallet.limits(s.user_id)["daily_transfer_cents"]
     if cents < now:
         gw.kernel.lower_limit(s, cents)
         return {"status": f"Lowered now: the daily transfer limit is {fmt_money(cents)}. Tell the user in one sentence."}

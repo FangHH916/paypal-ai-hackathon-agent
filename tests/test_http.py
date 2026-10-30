@@ -213,8 +213,8 @@ class HttpTest(unittest.TestCase):
         self.assertNotIn("aaaaaaaaaaaaaaaa", a)  # server-generated, opaque session capability
         ua, ub = runtime.sessions.get(a).user_id, runtime.sessions.get(b).user_id
         self.assertNotEqual(ua, ub)
-        runtime.bank.account(ua, "SAV-001")["balance_cents"] = 1_00          # A's world changes...
-        self.assertEqual(runtime.bank.account(ub, "SAV-001")["balance_cents"], 325000)   # ...B's doesn't
+        runtime.wallet.account(ua, "SAV-001")["balance_cents"] = 1_00          # A's world changes...
+        self.assertEqual(runtime.wallet.account(ub, "SAV-001")["balance_cents"], 325000)   # ...B's doesn't
         # A enrols a passkey: B is unaffected and can still enrol their own
         auth = webauthn.SoftAuthenticator(rp_id="127.0.0.1", origin=self.base)
         opts = self.post("/api/passkey/options", {"session_id": a}).json()
@@ -223,10 +223,10 @@ class HttpTest(unittest.TestCase):
         st_b = requests.get(self.base + "/api/state", params={"session_id": b}).json()
         self.assertFalse(st_b["passkey"]["enrolled"])
         # A resets their world: only A's balance comes back, B's session and world are untouched
-        runtime.bank.account(ub, "SAV-001")["balance_cents"] = 2_00
+        runtime.wallet.account(ub, "SAV-001")["balance_cents"] = 2_00
         a2 = self.post("/api/reset", {"visitor": "aaaaaaaaaaaaaaaa", "session_id": a, "world": True}).json()["session_id"]
-        self.assertEqual(runtime.bank.account(runtime.sessions.get(a2).user_id, "SAV-001")["balance_cents"], 325000)
-        self.assertEqual(runtime.bank.account(ub, "SAV-001")["balance_cents"], 2_00)
+        self.assertEqual(runtime.wallet.account(runtime.sessions.get(a2).user_id, "SAV-001")["balance_cents"], 325000)
+        self.assertEqual(runtime.wallet.account(ub, "SAV-001")["balance_cents"], 2_00)
         # Identity comes from the server-owned binding, never a client-controlled prefix
         runtime.sessions._s.pop(b)
         self.assertEqual(runtime.sessions.get(b).user_id, ub)

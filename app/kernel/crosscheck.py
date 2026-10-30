@@ -35,14 +35,14 @@ def _names(entity: dict) -> list[str]:
     return [n for n in [entity.get("name", ""), entity.get("title", ""), *entity.get("aliases", [])] if n]
 
 
-def resolve_targets(said: str, draft: Draft, bank) -> set[str]:
+def resolve_targets(said: str, draft: Draft, wallet) -> set[str]:
     """Which saved payees / bills / products could the customer's phrase refer to?"""
     w = _words(said)
     if draft.kind == "investment":
-        pool = [(p["product_id"], _names(p)) for p in bank.products]
+        pool = [(p["product_id"], _names(p)) for p in wallet.products]
     else:
-        pool = [(p["payee_id"], _names(p)) for p in bank.payees(draft.user_id)]
-        pool += [(b["payee_id"], [b["title"]]) for b in bank.bills(draft.user_id, only_unpaid=False)]
+        pool = [(p["payee_id"], _names(p)) for p in wallet.payees(draft.user_id)]
+        pool += [(b["payee_id"], [b["title"]]) for b in wallet.bills(draft.user_id, only_unpaid=False)]
     hits = set()
     for pid, names in pool:
         for n in names:
@@ -70,7 +70,7 @@ def _asset(s: str | None) -> str | None:
     return _ASSET.get(k, k)
 
 
-def compare(draft: Draft, extracted: dict, bank) -> dict:
+def compare(draft: Draft, extracted: dict, wallet) -> dict:
     fields: dict[str, str] = {}
     why: list[str] = []
     ex = extracted if isinstance(extracted, dict) else {}
@@ -95,13 +95,13 @@ def compare(draft: Draft, extracted: dict, bank) -> dict:
         fields["payee"] = "mismatch"
         why.append("The independent check returned an invalid recipient.")
     elif said_payee:
-        targets = resolve_targets(str(said_payee), draft, bank)
+        targets = resolve_targets(str(said_payee), draft, wallet)
         ok = draft.payee_id in targets
         fields["payee"] = "match" if ok else "mismatch"
         if not ok:
             label = f"“{said_payee}”"
             if len(targets) == 1 and draft.kind != "investment":
-                p = bank.payee(draft.user_id, next(iter(targets))) or {}
+                p = wallet.payee(draft.user_id, next(iter(targets))) or {}
                 if p.get("type") == "person":
                     label = f"your {p['relation']} {p['name']}"
             why.append(f"Who: you asked for {label}, but this is for {draft.payee_name}.")
@@ -148,12 +148,12 @@ def compare(draft: Draft, extracted: dict, bank) -> dict:
 
     # ---- From which account
     said_acct = ex.get("from_account")
-    acct = resolve_account(str(said_acct), bank.accounts(draft.user_id)) if said_acct else None
+    acct = resolve_account(str(said_acct), wallet.accounts(draft.user_id)) if said_acct else None
     if acct:
         ok = acct == draft.from_account
         fields["from_account"] = "match" if ok else "mismatch"
         if not ok:
-            have_name = (bank.account(draft.user_id, draft.from_account) or {}).get("name", draft.from_account)
+            have_name = (wallet.account(draft.user_id, draft.from_account) or {}).get("name", draft.from_account)
             why.append(f"From: you said “{said_acct}”, but this takes the money from your {have_name}.")
     else:
         fields["from_account"] = "not stated"

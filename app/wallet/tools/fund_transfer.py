@@ -11,7 +11,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.bank.bank_api.base import MEANT_DESC, MISHEARD_DESC, Tool
+from app.wallet.tools.base import MEANT_DESC, MISHEARD_DESC, Tool
 from app.kernel.executor import KernelError
 from app.models import fmt_money, to_cents
 
@@ -32,7 +32,7 @@ class DraftTransferArgs(BaseModel):
 def create_transfer_draft(gw, s, *, payee_id: str, amount: float, from_account: str | None, evidence: str,
                           heard: tuple[str, str], schedule: dict | None = None):
     """Shared by Fund Transfer (one-off) and Standing Instructions (regular)."""
-    payee = gw.bank.payee(s.user_id, payee_id)
+    payee = gw.wallet.payee(s.user_id, payee_id)
     if payee is None:
         raise KernelError(f"payee_id={payee_id} is not in the user's saved payees. Only use a payee_id returned by "
                           "list_payees; to pay someone new, the user can add them as a payee first (request_add_payee).")
@@ -42,7 +42,7 @@ def create_transfer_draft(gw, s, *, payee_id: str, amount: float, from_account: 
     if payee["type"] == "own":
         if schedule:
             raise KernelError("Regular transfers between your own accounts aren't available here; a one-off move is.")
-        acct = acct or next((x["account_id"] for x in gw.bank.accounts(s.user_id)
+        acct = acct or next((x["account_id"] for x in gw.wallet.accounts(s.user_id)
                              if x["account_id"] != payee["account_id"]), None)
     what = f"{'Regular ' + schedule['frequency'] + ' transfer' if schedule else 'Transfer'} " \
            f"{fmt_money(to_cents(amount))} to {payee['name']} ({payee['relation']})"

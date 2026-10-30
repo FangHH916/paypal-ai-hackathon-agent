@@ -8,7 +8,7 @@ import os
 
 os.environ.setdefault("RULE_FIXED_HOUR", "14")
 
-from tests.test_hackathon import Base  # noqa: E402
+from tests.test_requirements import Base  # noqa: E402
 from app.kernel import p256  # noqa: E402
 from app.kernel.executor import KernelError  # noqa: E402
 from app.models import Phase, RiskLevel  # noqa: E402
@@ -30,7 +30,7 @@ class ApiBase(Base):
         return self.kernel.commit(self.s, d.draft_id, tok)
 
     def bal(self, acct):
-        return self.bank.account("u_chen", acct)["balance_cents"]
+        return self.wallet.account("u_chen", acct)["balance_cents"]
 
     def apis(self, r):
         return [t["label"] for t in r.trace if t["kind"] == "api"]
@@ -77,7 +77,7 @@ class TestBillPayments(ApiBase):
         self.assertEqual((d.payee_id, d.amount_cents, d.grounding["amount_source"]), ("p_cc", 5000, "bill"))
         self.assertEqual(r.ui["card"]["amount_note"], "minimum payment due")
         self.pay()
-        bill = self.bank.bill("u_chen", "b_cc_oct")
+        bill = self.wallet.bill("u_chen", "b_cc_oct")
         self.assertEqual((bill["status"], bill["amount_cents"]), ("unpaid", 124050 - 5000))   # the rest stays due
 
     def test_more_than_the_bill_is_blocked(self):
@@ -99,7 +99,7 @@ class TestStandingInstructions(ApiBase):
         self.assertEqual(rec["status"], "SCHEDULED")
         self.assertEqual(self.bal("SAV-001"), sav)                     # nothing is taken today
         self.assertTrue(any(x["payee_id"] == "p_son" and x["status"] == "active"
-                            for x in self.bank.standing_instructions("u_chen")))
+                            for x in self.wallet.standing_instructions("u_chen")))
 
     def test_model_cannot_quietly_make_a_one_off_repeat(self):
         d = self.model_drafts("Send 100 to my son", "draft_standing_instruction",
@@ -126,37 +126,37 @@ class TestStandingInstructions(ApiBase):
         self.assertIn("every month on the 28th", r.reply)
         r = self.turn("Stop the monthly allowance to my daughter")
         self.assertIn("stopped", r.reply)
-        self.assertEqual(self.bank.standing_instructions("u_chen")[0]["status"], "cancelled")
+        self.assertEqual(self.wallet.standing_instructions("u_chen")[0]["status"], "cancelled")
 
 
 class TestGiro(ApiBase):
     def test_cancel_named_giro_is_instant(self):
         r = self.turn("Cancel my gym GIRO")
         self.assertIn("ActiveSG Gym", r.reply)
-        self.assertEqual(next(g for g in self.bank.giro("u_chen") if g["giro_id"] == "GIRO-02")["status"], "cancelled")
+        self.assertEqual(next(g for g in self.wallet.giro("u_chen") if g["giro_id"] == "GIRO-02")["status"], "cancelled")
 
     def test_cannot_cancel_something_the_user_did_not_name(self):
         self.s.messages.append({"role": "user", "content": "what regular payments do I have?"})
         res = self.gw.call(self.s, "cancel_giro", {"giro_id": "GIRO-03"})
         self.assertFalse(res["ok"])
-        self.assertEqual(next(g for g in self.bank.giro("u_chen") if g["giro_id"] == "GIRO-03")["status"], "active")
+        self.assertEqual(next(g for g in self.wallet.giro("u_chen") if g["giro_id"] == "GIRO-03")["status"], "active")
 
     def test_setup_needs_a_signature(self):
         r = self.turn("Set up GIRO for my utilities bill")
         self.assertEqual(r.ui["type"], "change")
         cid = r.ui["card"]["change_id"]
-        before = len(self.bank.giro("u_chen"))
+        before = len(self.wallet.giro("u_chen"))
         with self.assertRaises(Exception):                              # no signature, no change
             self.kernel.apply_change(self.s, cid, {"payload": "x", "signature": "y"})
         self.kernel.apply_change(self.s, cid, self.sign(self.kernel.change_challenge(self.s, cid)))
-        self.assertEqual(len(self.bank.giro("u_chen")), before + 1)
-        self.assertEqual(self.bank.giro("u_chen")[-1]["biller"], "SP Group Utilities")
+        self.assertEqual(len(self.wallet.giro("u_chen")), before + 1)
+        self.assertEqual(self.wallet.giro("u_chen")[-1]["biller"], "SP Group Utilities")
 
 
 class TestLimits(ApiBase):
     def test_lowering_is_instant_and_enforced(self):
         self.turn("Lower my daily transfer limit to 500")
-        self.assertEqual(self.bank.limits("u_chen")["daily_transfer_cents"], 50000)
+        self.assertEqual(self.wallet.limits("u_chen")["daily_transfer_cents"], 50000)
         self.s = type(self.s)(session_id="h2")
         self.kernel.register_key(self.s, p256.generate_keypair()[1])
         self.turn("Send 600 to my daughter")
@@ -168,7 +168,7 @@ class TestLimits(ApiBase):
         self.assertEqual(r.ui["type"], "change")
         cid = r.ui["card"]["change_id"]
         self.kernel.apply_change(self.s, cid, self.sign(self.kernel.change_challenge(self.s, cid)))
-        lim = self.bank.limits("u_chen")
+        lim = self.wallet.limits("u_chen")
         self.assertEqual(lim["daily_transfer_cents"], 300000)          # not yet
         self.assertEqual(lim["pending"]["to_cents"], 800000)
 
@@ -185,7 +185,7 @@ class TestPayees(ApiBase):
         self.assertIn(["Account number", "123 456 789 0"], r.ui["card"]["rows"])
         cid = r.ui["card"]["change_id"]
         self.kernel.apply_change(self.s, cid, self.sign(self.kernel.change_challenge(self.s, cid)))
-        p = next(p for p in self.bank.payees("u_chen") if p["name"] == "John Tan")
+        p = next(p for p in self.wallet.payees("u_chen") if p["name"] == "John Tan")
         self.assertEqual(p["masked_account"], "OCBC ••••7890")
         # the first transfer to a brand-new payee waits and is double-checked
         self.s = type(self.s)(session_id="h3")
@@ -196,7 +196,7 @@ class TestPayees(ApiBase):
         r = self.turn("Add a new payee John Tan, OCBC account 123-456789-0")
         cid = r.ui["card"]["change_id"]
         self.kernel.apply_change(self.s, cid, self.sign(self.kernel.change_challenge(self.s, cid)))
-        p = next(p for p in self.bank.payees("u_chen") if p["name"] == "John Tan")
+        p = next(p for p in self.wallet.payees("u_chen") if p["name"] == "John Tan")
         self.s = type(self.s)(session_id="h4")
         self.kernel.register_key(self.s, self.jwk)
         return self.model_drafts(f"send {amount} to John Tan", "draft_transfer", {"payee_id": p["payee_id"], "amount": amount})
@@ -214,7 +214,7 @@ class TestPayees(ApiBase):
         self.assertEqual(self.kernel.commit(self.s, d.draft_id, tok)["status"], "SUCCESS")
 
     def test_standard_protection_does_not_ask(self):
-        self.bank.protection("u_chen")["level"] = "standard"
+        self.wallet.protection("u_chen")["level"] = "standard"
         d = self._new_payee_draft()
         self.assertIsNone(d.risk.verify_kind)
         self.assertIn("R10_NEW_PAYEE", d.risk.rule_hits)          # still waits a little
@@ -262,9 +262,9 @@ class TestNoFalseClaims(ApiBase):
         from app.agent.loop import Agent
         self.turn("Add a new payee John Tan, OCBC account 123-456789-0")
         self.assertIsNotNone(self.s.pending_change)
-        r = Agent(self.bank, self.gw, self.audit, _ClaimsItsDone()).run_turn(self.s, "Yes, that's right")
+        r = Agent(self.wallet, self.gw, self.audit, _ClaimsItsDone()).run_turn(self.s, "Yes, that's right")
         self.assertIn("Nothing has changed yet", r.reply)
-        self.assertFalse(any(p["name"] == "John Tan" for p in self.bank.payees("u_chen")))
+        self.assertFalse(any(p["name"] == "John Tan" for p in self.wallet.payees("u_chen")))
 
 
 class TestVagueAmounts(ApiBase):
@@ -379,9 +379,9 @@ class TestOddAnswerPointer(ApiBase):
         self.s.messages += [{"role": "user", "content": "move money to my joint account"},
                             {"role": "assistant", "content": "How much would you like to move?"},
                             {"role": "user", "content": "Agree!"}]
-        self.assertIn('answered "Agree!", which has no number', state_summary(self.s, self.bank))
+        self.assertIn('answered "Agree!", which has no number', state_summary(self.s, self.wallet))
         self.s.messages[-1]["content"] = "300"
-        self.assertNotIn("which has no number", state_summary(self.s, self.bank))
+        self.assertNotIn("which has no number", state_summary(self.s, self.wallet))
 
     def test_model_may_ask_back_without_a_tool(self):
         from app.agent.loop import Agent
@@ -392,6 +392,6 @@ class TestOddAnswerPointer(ApiBase):
             def chat(self, messages, tools=None, **_):
                 return {"role": "assistant", "content": "Did you mean a grand, S$1,000?", "tool_calls": []}
         self.turn("I want to move money to my joint account")
-        r = Agent(self.bank, self.gw, self.audit, AsksBack()).run_turn(self.s, "Agree!")
+        r = Agent(self.wallet, self.gw, self.audit, AsksBack()).run_turn(self.s, "Agree!")
         self.assertEqual(r.reply, "Did you mean a grand, S$1,000?")
         self.assertFalse(any(t["kind"] == "fallback" for t in self.s.trace))

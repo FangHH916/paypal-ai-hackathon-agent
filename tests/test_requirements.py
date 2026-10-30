@@ -19,8 +19,8 @@ from app.agent.llm import OfflineLLM  # noqa: E402
 from app.agent.loop import Agent  # noqa: E402
 from app.agent.tools import ToolGateway  # noqa: E402
 from app.agent.verifier import Verifier, extract_offline, catalog  # noqa: E402
-from app.bank.gateway import GatewayError  # noqa: E402
-from app.bank.mock_bank import MockBank  # noqa: E402
+from app.wallet.gateway import GatewayError  # noqa: E402
+from app.wallet.ledger import Wallet  # noqa: E402
 from app.kernel import p256, protection, webauthn  # noqa: E402
 from app.kernel.audit import AuditLog  # noqa: E402
 from app.kernel.credentials import CredentialRegistry  # noqa: E402
@@ -35,13 +35,13 @@ SITE = Site("localhost", frozenset({"http://localhost:8000"}))
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.bank = MockBank()
+        self.wallet = Wallet()
         self.audit = AuditLog(os.path.join(self.tmp.name, "a.jsonl"))
         self.registry = CredentialRegistry(None)
-        self.kernel = Kernel(self.bank, self.audit, TokenService(b"t"), allow_mock=False, registry=self.registry)
-        self.verifier = Verifier(None, self.bank)
-        self.gw = ToolGateway(self.bank, self.kernel, verifier=self.verifier)
-        self.agent = Agent(self.bank, self.gw, self.audit, OfflineLLM())
+        self.kernel = Kernel(self.wallet, self.audit, TokenService(b"t"), allow_mock=False, registry=self.registry)
+        self.verifier = Verifier(None, self.wallet)
+        self.gw = ToolGateway(self.wallet, self.kernel, verifier=self.verifier)
+        self.agent = Agent(self.wallet, self.gw, self.audit, OfflineLLM())
         self.s = Session(session_id="h")
 
     def tearDown(self):
@@ -134,7 +134,7 @@ class TestPendingAndCompound(Base):
             def chat(self, messages, tools=None, **kw):
                 return {"role": "assistant", "content": "I've prepared a transfer of S$500 to your son Chen Jun.",
                         "tool_calls": []}
-        r = Agent(self.bank, self.gw, self.audit, Liar()).run_turn(self.s, "Send 500 to my son")
+        r = Agent(self.wallet, self.gw, self.audit, Liar()).run_turn(self.s, "Send 500 to my son")
         self.assertNotIn("Chen Jun", r.reply)
         # nudged once, still lying -> the rule-based planner finished the turn properly, to the REAL son
         d = self.s.current_draft
@@ -152,7 +152,7 @@ class TestPendingAndCompound(Base):
                     return {"role": "assistant", "content": "I've prepared the transfer to Chen Wei.", "tool_calls": []}
                 return super().chat(messages, tools=tools, **kw)
         seen = []
-        agent = Agent(self.bank, self.gw, self.audit, LazyOnAnswers())
+        agent = Agent(self.wallet, self.gw, self.audit, LazyOnAnswers())
         r1 = agent.run_turn(self.s, "I want to transfer 350 dollars to my grandson and I want to invest 2000 dollars in ETF.")
         self.assertEqual(r1.ui["type"], "choose")
         self.assertEqual(len(r1.ui["plan"]), 2)
@@ -175,7 +175,7 @@ class TestPendingAndCompound(Base):
                 # after the nudge: behaves properly (the offline rules can't read the harness note, so drop that pair)
                 i = next(i for i, m in enumerate(messages) if "Harness check" in (m.get("content") or ""))
                 return super().chat(messages[:i - 1] + messages[i + 1:], tools=tools, **kw)
-        r = Agent(self.bank, self.gw, self.audit, Lazy()).run_turn(self.s, "Send 300 to Chen Wei")
+        r = Agent(self.wallet, self.gw, self.audit, Lazy()).run_turn(self.s, "Send 300 to Chen Wei")
         d = self.s.current_draft
         self.assertEqual((d.payee_id, d.amount_cents), ("p_grandson_wei", 30000))
         self.assertEqual(r.ui["type"], "confirm")
@@ -191,7 +191,7 @@ class TestPendingAndCompound(Base):
             def chat(self, messages, tools=None, **kw):
                 return {"role": "assistant", "content": "Your balance is fine. [system note: draft_transfer was called]",
                         "tool_calls": []}
-        r = Agent(self.bank, self.gw, self.audit, Copycat()).run_turn(self.s, "How much money do I have?")
+        r = Agent(self.wallet, self.gw, self.audit, Copycat()).run_turn(self.s, "How much money do I have?")
         self.assertNotIn("system note", r.reply)
 
     def test_restated_compound_replaces_queue(self):
@@ -217,7 +217,7 @@ class TestLookupDiscipline(Base):
                 clean = [m for m in messages if "Harness check" not in (m.get("content") or "")
                          and "can't find a saved payee" not in (m.get("content") or "")]
                 return super().chat(clean, tools=tools, **kw)
-        return Agent(self.bank, self.gw, self.audit, Lazy())
+        return Agent(self.wallet, self.gw, self.audit, Lazy())
 
     def test_answer_without_lookup_is_nudged(self):
         r = self.lazy(1).run_turn(self.s, "I want to send 300 to my grandson.")
@@ -238,11 +238,11 @@ class TestLookupDiscipline(Base):
             def chat(inner, messages, tools=None, tool_choice=None, **kw):
                 seen.append(tool_choice)
                 return super().chat(messages, tools=tools, **kw)
-        Agent(self.bank, self.gw, self.audit, Forcing()).run_turn(self.s, "Send 50 to my daughter")
+        Agent(self.wallet, self.gw, self.audit, Forcing()).run_turn(self.s, "Send 50 to my daughter")
         self.assertEqual(seen[0], "required")
         self.assertTrue(all(c is None for c in seen[1:]))
         seen.clear()
-        Agent(self.bank, self.gw, self.audit, Forcing()).run_turn(Session(session_id="q"), "Hello there")
+        Agent(self.wallet, self.gw, self.audit, Forcing()).run_turn(Session(session_id="q"), "Hello there")
         self.assertTrue(all(c is None for c in seen))
 
     def test_slow_forced_call_switches_forcing_off(self):
@@ -256,7 +256,7 @@ class TestLookupDiscipline(Base):
                 return super().chat(messages, tools=tools, **kw)
         llm = SlowForced()
         with mock.patch.object(settings, "llm_required_slow", -1.0):        # every forced call counts as "slow"
-            r = Agent(self.bank, self.gw, self.audit, llm).run_turn(self.s, "Send 50 to my daughter")
+            r = Agent(self.wallet, self.gw, self.audit, llm).run_turn(self.s, "Send 50 to my daughter")
         self.assertFalse(llm.supports_tool_choice)
         self.assertEqual(r.ui["type"], "confirm")                           # the turn itself still completes
         self.assertTrue(any(t["kind"] == "model" for t in self.s.trace))   # every call is timed in the trace
@@ -272,7 +272,7 @@ class TestLookupDiscipline(Base):
                     raise LLMError("timeout")
                 return super().chat(messages, tools=tools, **kw)
         llm = Flaky()
-        r = Agent(self.bank, self.gw, self.audit, llm).run_turn(self.s, "Send 50 to my daughter")
+        r = Agent(self.wallet, self.gw, self.audit, llm).run_turn(self.s, "Send 50 to my daughter")
         self.assertEqual(r.llm, "openai_compat")                            # not "offline(fallback)"
         self.assertFalse(llm.supports_tool_choice)
         self.assertEqual(self.s.current_draft.payee_id, "p_daughter")
@@ -307,14 +307,14 @@ class TestBankProducts(Base):
     def test_shares_execute_with_units_and_show_in_portfolio(self):
         d0, jwk = p256.generate_keypair()
         self.kernel.register_key(self.s, jwk)
-        self.bank.risk_profile("u_chen")["max_product_risk"] = 5           # an adventurous customer
+        self.wallet.risk_profile("u_chen")["max_product_risk"] = 5           # an adventurous customer
         self.turn("Buy 300 dollars of the bank shares")
         d = self.s.current_draft
         payload = self.kernel.issue_challenge(self.s, d.draft_id, d.digest)
         a = {"payload": payload, "signature": base64.b64encode(p256.sign(d0, payload.encode())).decode()}
         receipt = self.kernel.commit(self.s, d.draft_id, self.kernel.authorize(self.s, d.draft_id, d.digest, a))
         self.assertAlmostEqual(receipt["units"], 300 / 38.5, places=3)
-        held = next(h for h in self.bank.portfolio("u_chen") if h["product_id"] == "s_d05")
+        held = next(h for h in self.wallet.portfolio("u_chen") if h["product_id"] == "s_d05")
         self.assertAlmostEqual(held["units"], 50 + 300 / 38.5, places=3)
 
     def test_fixed_deposit(self):
@@ -335,18 +335,18 @@ class TestBankProducts(Base):
 
     def test_lock_lost_cards_immediately_no_money_moves(self):
         r = self.turn("I lost my wallet, please lock my cards")
-        self.assertTrue(all(c["status"] == "locked" for c in self.bank.cards("u_chen")))
+        self.assertTrue(all(c["status"] == "locked" for c in self.wallet.cards("u_chen")))
         self.assertIn("1800 111 1111", r.reply)
         self.assertFalse(self.s.drafts)
 
     def test_lock_one_card(self):
         self.turn("Lock my credit card")
-        st = {c["card_id"]: c["status"] for c in self.bank.cards("u_chen")}
+        st = {c["card_id"]: c["status"] for c in self.wallet.cards("u_chen")}
         self.assertEqual(st, {"c_debit": "active", "c_credit": "locked"})
 
     def test_lock_by_card_name_from_button(self):
         self.turn("Lock my the bank Live Fresh Card")
-        self.assertEqual(self.bank.card("u_chen", "c_credit")["status"], "locked")
+        self.assertEqual(self.wallet.card("u_chen", "c_credit")["status"], "locked")
 
     def test_no_unlock_tool_exists(self):
         self.assertFalse([n for n in self.gw.tools if "unlock" in n])
@@ -385,7 +385,7 @@ class TestPlans(Base):
         self.addCleanup(limit.stop)
         key, jwk = p256.generate_keypair()
         self.kernel.register_key(self.s, jwk)
-        self.bank.risk_profile("u_chen")["max_product_risk"] = 5
+        self.wallet.risk_profile("u_chen")["max_product_risk"] = 5
         r = self.turn("Pay the electricity bill, then send 100 to my son, give my daughter and Chen Wei 50 each "
                       "and invest 300 in Apple")
         self.assertEqual(len(r.ui["plan"]), 5)
@@ -400,7 +400,7 @@ class TestPlans(Base):
                 self.turn(self.s.plan.pop(0))          # what the page does after each confirmation
         self.assertEqual(done, [("SP Group Utilities", 8640), ("Chen Zhi Qiang", 10000), ("Chen Mei Ling", 5000),
                                 ("Chen Wei", 5000), ("Apple Inc. shares", 30000)])
-        self.assertEqual(len(self.bank.executed), 5)
+        self.assertEqual(len(self.wallet.executed), 5)
 
     def test_stopped_step_offers_the_rest(self):
         r = self.turn("Invest 5000 in a fixed deposit and send 50 to my daughter")    # 5000 > balance
@@ -444,7 +444,7 @@ class TestPlans(Base):
                     return call("queue_follow_up", {"task": task})
                 return {"role": "assistant", "content": "Please check the card. I'll do the next one after.",
                         "tool_calls": []}
-        return Agent(self.bank, self.gw, self.audit, Planner()).run_turn(
+        return Agent(self.wallet, self.gw, self.audit, Planner()).run_turn(
             self.s, "Put 500 into Microsoft for me, oh and Apple with 1000 too")
 
     def test_model_can_queue_what_the_user_said(self):
@@ -516,7 +516,7 @@ class TestVerifier(Base):
                     return {"role": "assistant", "content": "All set, S$500 is ready!", "tool_calls": []}
                 return {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {
                     "name": "draft_transfer", "arguments": json.dumps({"payee_id": "p_daughter", "amount": 500})}}]}
-        r = Agent(self.bank, self.gw, self.audit, Wrong()).run_turn(self.s, "Send 50 to my daughter")
+        r = Agent(self.wallet, self.gw, self.audit, Wrong()).run_turn(self.s, "Send 50 to my daughter")
         self.assertEqual(r.ui["type"], "frozen")
         self.assertIn("doesn't match what you said", r.reply)
 
@@ -528,9 +528,9 @@ class TestVerifier(Base):
         self.assertEqual(e.exception.code, "NOT_VERIFIED")
 
     def test_not_stated_is_not_a_mismatch(self):
-        ex = extract_offline(["Send money to my daughter"], catalog(self.bank, "u_chen"))
+        ex = extract_offline(["Send money to my daughter"], catalog(self.wallet, "u_chen"))
         self.assertIsNone(ex["amount"])
-        usual = extract_offline(["Send money to my daughter", "the usual amount"], catalog(self.bank, "u_chen"))
+        usual = extract_offline(["Send money to my daughter", "the usual amount"], catalog(self.wallet, "u_chen"))
         self.assertEqual(usual["amount"], 200)  # explicit reference resolved against bank history
 
     def test_model_verifier_parses_json_and_runs_in_parallel(self):
@@ -542,8 +542,8 @@ class TestVerifier(Base):
                 seen["tools"], seen["payload"] = tools, json.loads(messages[-1]["content"])
                 return {"content": '```json\n{"intent": "transfer", "payee": "my daughter", "amount": 50, '
                                    '"asset_class": "cash", "from_account": null}\n```', "tool_calls": []}
-        gw = ToolGateway(self.bank, self.kernel, verifier=Verifier(FakeModel(), self.bank))
-        Agent(self.bank, gw, self.audit, OfflineLLM()).run_turn(self.s, "Send 50 to my daughter")
+        gw = ToolGateway(self.wallet, self.kernel, verifier=Verifier(FakeModel(), self.wallet))
+        Agent(self.wallet, gw, self.audit, OfflineLLM()).run_turn(self.s, "Send 50 to my daughter")
         v = self.s.current_draft.verification
         self.assertEqual((v["status"], v["parallel"]), ("match", True))
         self.assertIsNone(seen["tools"])                                   # read-only: no tools at all
@@ -555,7 +555,7 @@ class TestVerifier(Base):
             name = "openai_compat"
             def chat(self, *a, **k):
                 raise RuntimeError("down")
-        v = Verifier(Boom(), self.bank)
+        v = Verifier(Boom(), self.wallet)
         self.s.messages.append({"role": "user", "content": "Send 50 to my daughter"})
         out = v.verdict(self.s)
         self.assertIn("fallback", out["engine"])
@@ -583,7 +583,7 @@ class TestPasskey(Base):
         receipt = self.pay(self.auth.sign)
         auth = receipt["verifiable"]["authorization"]
         self.assertEqual(auth["method"], "passkey")
-        self.assertEqual(self.bank.account("u_chen", "SAV-001")["balance_cents"], 325000 - 5000)
+        self.assertEqual(self.wallet.account("u_chen", "SAV-001")["balance_cents"], 325000 - 5000)
 
     def test_receipt_verifies_offline(self):
         import sys
@@ -754,11 +754,11 @@ class TestProtection(Base):
         st = self.lower()
         self.assertEqual(st["level"], "enhanced")
         self.assertEqual(st["pending"]["to"], "standard")
-        self.assertEqual(protection.effective(self.bank, "u_chen", now=st["pending"]["effective_at"] + 1), "standard")
+        self.assertEqual(protection.effective(self.wallet, "u_chen", now=st["pending"]["effective_at"] + 1), "standard")
 
     def test_lowering_still_enhanced_until_the_wait_is_over(self):
         st = self.lower()
-        self.assertEqual(protection.effective(self.bank, "u_chen", now=st["pending"]["effective_at"] - 1), "enhanced")
+        self.assertEqual(protection.effective(self.wallet, "u_chen", now=st["pending"]["effective_at"] - 1), "enhanced")
         self.assertTrue(st["delay_words"])
 
     def test_delay_words(self):
@@ -775,7 +775,7 @@ class TestProtection(Base):
         self.assertEqual((st["level"], st["pending"]), ("enhanced", None))
 
     def test_standard_turns_scam_high_into_warning(self):
-        self.bank.protection("u_chen")["level"] = "standard"
+        self.wallet.protection("u_chen")["level"] = "standard"
         r = self.turn("A bank officer called and said it's urgent, send 50 to my daughter")
         self.assertNotEqual(r.ui["type"], "blocked")
         self.assertEqual(self.s.current_draft.risk.level, RiskLevel.MEDIUM)     # warning + question
@@ -785,12 +785,12 @@ class TestProtection(Base):
         self.assertEqual(r.ui["type"], "blocked")
 
     def test_safe_account_blocks_everyone(self):
-        self.bank.protection("u_chen")["level"] = "standard"
+        self.wallet.protection("u_chen")["level"] = "standard"
         r = self.turn("The police say I must move my savings to a safe account")
         self.assertEqual(r.ui["type"], "blocked")
 
     def test_standard_has_higher_cooling_threshold(self):
-        self.bank.protection("u_chen")["level"] = "standard"
+        self.wallet.protection("u_chen")["level"] = "standard"
         self.turn("Send 1500 to my daughter")
         self.assertNotIn("R12_ABOVE_THRESHOLD", self.s.current_draft.risk.rule_hits)
 

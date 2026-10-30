@@ -17,7 +17,7 @@ class ReviewHttpTest(unittest.TestCase):
         self.addCleanup(key.stop)
         security._hits.clear()
         self.s = runtime.sessions.new_for_visitor("abcdef0123456789")
-        runtime.bank.add_payee(self.s.user_id, "John Tan", "OCBC", "1234567890", "friend")
+        runtime.wallet.add_payee(self.s.user_id, "John Tan", "OCBC", "1234567890", "friend")
         runtime.agent.run_turn(self.s, "Send 1500 to John Tan")
         self.d = self.s.current_draft
         self.ticket = {"session_id":self.s.session_id, "draft_id":self.d.draft_id,
@@ -30,7 +30,7 @@ class ReviewHttpTest(unittest.TestCase):
 
     def test_inspect_then_approve_never_moves_money(self):
         headers = {"X-Review-Key":"test-operator-secret"}
-        before = runtime.bank.account(self.s.user_id, "SAV-001")["balance_cents"]
+        before = runtime.wallet.account(self.s.user_id, "SAV-001")["balance_cents"]
         r = self.client.post("/api/review/secondary", headers=headers, json={**self.ticket, "operation":"inspect"})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["card"]["amount"], "S$1,500.00")
@@ -38,7 +38,7 @@ class ReviewHttpTest(unittest.TestCase):
         r = self.client.post("/api/review/secondary", headers=headers, json=self.ticket)
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json()["simulation"])
-        self.assertEqual(runtime.bank.account(self.s.user_id, "SAV-001")["balance_cents"], before)
+        self.assertEqual(runtime.wallet.account(self.s.user_id, "SAV-001")["balance_cents"], before)
         card = self.client.get("/api/card/" + self.s.session_id).json()["card"]
         self.assertFalse(card["secondary_required"])
         self.assertEqual(card["decision"]["checks"]["authorization"]["status"], "pending")

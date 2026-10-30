@@ -155,7 +155,7 @@ class SessionStore:
 
     @staticmethod
     def _new(session_id: str) -> Session:
-        from app.bank.mock_bank import DEMO_USER
+        from app.wallet.ledger import DEMO_USER
         v = visitor_of(session_id)
         return Session(session_id=session_id, user_id=f"{DEMO_USER}~{v}" if v else DEMO_USER)
 

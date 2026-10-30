@@ -10,7 +10,7 @@ from pathlib import Path
 
 os.environ.setdefault("RULE_FIXED_HOUR", "14")
 
-from tests.test_bank_apis import ApiBase  # noqa: E402
+from tests.test_wallet_tools import ApiBase  # noqa: E402
 from app.kernel import voice  # noqa: E402
 from app.kernel.signing import compute_digest  # noqa: E402
 

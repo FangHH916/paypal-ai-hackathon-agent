@@ -132,7 +132,7 @@ def _unexpected_answer(messages: list[dict]) -> str:
     return ""
 
 
-def state_summary(session, bank) -> str:
+def state_summary(session, wallet) -> str:
     """Structured state summary injected every turn: replaces the full history so the model doesn't "forget the amount"."""
     lines = [f"[Current session state] Phase: {session.phase.value}"]
     d = session.current_draft

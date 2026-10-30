@@ -67,7 +67,7 @@ def request(kernel, s, kind: str, data: dict, evidence: str = "") -> dict:
         raise ChangeError("For your safety I can't add payees, raise limits or set up GIRO in this conversation. "
                           "If someone is telling you to do this, please hang up and call the ScamShield helpline 1799.",
                           "SCAM_LOCK")
-    bank, said = kernel.bank, _said(s)
+    wallet, said = kernel.wallet, _said(s)
     rows: list[list[str]] = []
     if kind == "add_payee":
         digits = re.sub(r"\D", "", data.get("account_number", ""))
@@ -78,7 +78,7 @@ def request(kernel, s, kind: str, data: dict, evidence: str = "") -> dict:
         if not name or not _mentions(said, [w for w in re.findall(r"[A-Za-z]{3,}", name)]):
             raise ChangeError("Please tell me the payee's name as it appears on their bank account.", "NOT_SAID")
         if any(re.sub(r"\D", "", p.get("masked_account", ""))[-4:] == digits[-4:] and p["name"].lower() == name.lower()
-               for p in bank.payees(s.user_id)):
+               for p in wallet.payees(s.user_id)):
             raise ChangeError(f"{name} is already one of your payees.", "EXISTS")
         data = {"name": name, "bank": (data.get("bank") or "").strip()[:30] or "Other bank",
                 "account_number": digits, "relation": (data.get("relation") or "").strip()[:30]}
@@ -90,7 +90,7 @@ def request(kernel, s, kind: str, data: dict, evidence: str = "") -> dict:
         note = ("Check every digit. Your first transfer to a new payee waits a little and is checked again. "
                 "If someone you haven't met asked you to add them, stop and call your family.")
     elif kind == "raise_limit":
-        lim = bank.limits(s.user_id)
+        lim = wallet.limits(s.user_id)
         to_cents = int(data["to_cents"])
         if to_cents <= lim["daily_transfer_cents"]:
             raise ChangeError("That isn't higher than your current limit.", "NOT_HIGHER")
@@ -108,25 +108,25 @@ def request(kernel, s, kind: str, data: dict, evidence: str = "") -> dict:
         note = (f"For your safety a higher limit only starts after {wait}. You can keep the old limit at any "
                 "time before then. Lowering it again is instant.")
     else:  # giro_setup
-        biller = bank.payee(s.user_id, data.get("biller_payee_id", ""))
+        biller = wallet.payee(s.user_id, data.get("biller_payee_id", ""))
         if biller is None or biller.get("type") != "biller":
             raise ChangeError("Please choose one of your billing organisations (from get_bills).", "BAD_BILLER")
-        bill_titles = [b["title"] for b in bank.bills(s.user_id, only_unpaid=False) if b["payee_id"] == biller["payee_id"]]
+        bill_titles = [b["title"] for b in wallet.bills(s.user_id, only_unpaid=False) if b["payee_id"] == biller["payee_id"]]
         if not _mentions(said, [biller["name"], *biller.get("aliases", []), *bill_titles]):
             raise ChangeError("Please tell me which bill you want paid by GIRO.", "NOT_SAID")
-        if any(g["biller"] == biller["name"] and g["status"] != "cancelled" for g in bank.giro(s.user_id)):
+        if any(g["biller"] == biller["name"] and g["status"] != "cancelled" for g in wallet.giro(s.user_id)):
             raise ChangeError(f"{biller['name']} already has a GIRO arrangement.", "EXISTS")
         limit = int(data["limit_cents"]) if data.get("limit_cents") else None
         if limit and not _amount_said(said, limit):
             raise ChangeError("The maximum must be the amount you said.", "NOT_SAID")
-        acct = data.get("from_account") or bank.accounts(s.user_id)[0]["account_id"]
-        if bank.account(s.user_id, acct) is None:
+        acct = data.get("from_account") or wallet.accounts(s.user_id)[0]["account_id"]
+        if wallet.account(s.user_id, acct) is None:
             raise ChangeError("Please choose one of your accounts.", "BAD_ACCOUNT")
         data = {"biller_payee_id": biller["payee_id"], "biller": biller["name"],
                 "aliases": biller.get("aliases", []), "limit_cents": limit, "from_account": acct}
         title = "Set up GIRO (automatic bill payment)"
         rows = [["Billing organisation", biller["name"]],
-                ["Pay from", f"{bank.account(s.user_id, acct)['name']} ({acct})"],
+                ["Pay from", f"{wallet.account(s.user_id, acct)['name']} ({acct})"],
                 ["Maximum each time", fmt_money(limit) if limit else "Each bill in full"]]
         note = "Approval usually takes a few working days. You can cancel a GIRO at any time."
     change_id = "c_" + secrets.token_hex(5)
@@ -157,20 +157,20 @@ def apply(kernel, s, change_id: str, assertion: dict, site) -> dict:
         raise ChangeError("This confirmation expired. Please try again.", "EXPIRED")
     rec = kernel._signature(s, issued, assertion, site)
     s.setting_challenges.pop("change:" + change_id, None)
-    bank, uid, d = kernel.bank, s.user_id, pc["data"]
+    wallet, uid, d = kernel.wallet, s.user_id, pc["data"]
     if pc["kind"] == "add_payee":
-        p = bank.add_payee(uid, d["name"], d["bank"], d["account_number"], d["relation"])
+        p = wallet.add_payee(uid, d["name"], d["bank"], d["account_number"], d["relation"])
         reply = (f"Done. {p['name']} ({p['masked_account']}) is now one of your payees. Your first transfer to them "
                  "will wait a little and be checked again.")
     elif pc["kind"] == "raise_limit":
         eff = time.time() + settings.protection_delay
-        bank.set_daily_limit(uid, d["to_cents"], effective_at=eff)
+        wallet.set_daily_limit(uid, d["to_cents"], effective_at=eff)
         from app.kernel.protection import delay_words
         reply = (f"Done. Your daily transfer limit goes up to {fmt_money(d['to_cents'])} in "
                  f"{delay_words()}. Until then it stays "
                  f"{fmt_money(d['from_cents'])}.")
     else:
-        g = bank.add_giro(uid, d["biller"], d["aliases"], d["limit_cents"], d["from_account"])
+        g = wallet.add_giro(uid, d["biller"], d["aliases"], d["limit_cents"], d["from_account"])
         reply = (f"Done. GIRO for {g['biller']} is set up and waiting for approval, which usually takes a few working "
                  "days. Your bills will then be paid automatically.")
     s.pending_change = None
@@ -198,40 +198,40 @@ def _pending(s, change_id: str) -> dict:
 
 # ---------------------------------------------------------------------------------------------- protective
 def lower_limit(kernel, s, to_cents: int) -> dict:
-    lim = kernel.bank.limits(s.user_id)
+    lim = kernel.wallet.limits(s.user_id)
     if to_cents >= lim["daily_transfer_cents"]:
         raise ChangeError("That isn't lower than your current limit.", "NOT_LOWER")
     if not _amount_said(_said(s), to_cents):
         raise ChangeError("The new limit must be the amount you said.", "NOT_SAID")
-    new = kernel.bank.set_daily_limit(s.user_id, to_cents)
+    new = kernel.wallet.set_daily_limit(s.user_id, to_cents)
     kernel.audit.append("limit.lowered", s.session_id, {"from_cents": lim["daily_transfer_cents"], "to_cents": to_cents})
     s.add_trace("guard", f"Daily transfer limit lowered to {fmt_money(to_cents)} (protective, takes effect now)")
     return new
 
 
 def cancel_standing_instruction(kernel, s, si_id: str) -> dict:
-    bank = kernel.bank
-    si = next((x for x in bank.standing_instructions(s.user_id) if x["si_id"] == si_id and x["status"] == "active"), None)
+    wallet = kernel.wallet
+    si = next((x for x in wallet.standing_instructions(s.user_id) if x["si_id"] == si_id and x["status"] == "active"), None)
     if si is None:
         raise ChangeError(f"si_id={si_id} is not an active standing instruction. Call list_standing_instructions.",
                           "NOT_FOUND")
-    payee = bank.payee(s.user_id, si["payee_id"]) or {}
+    payee = wallet.payee(s.user_id, si["payee_id"]) or {}
     if not _mentions(_said(s), [payee.get("name", ""), *payee.get("aliases", []), si_id]):
         raise ChangeError("Please tell me which regular transfer you want to stop.", "NOT_SAID")
-    out = bank.cancel_standing_instruction(s.user_id, si_id)
+    out = wallet.cancel_standing_instruction(s.user_id, si_id)
     kernel.audit.append("standing_instruction.cancelled", s.session_id, {"si_id": si_id})
     s.add_trace("guard", f"Standing instruction {si_id} cancelled (protective, takes effect now)")
     return out
 
 
 def cancel_giro(kernel, s, giro_id: str) -> dict:
-    bank = kernel.bank
-    g = next((x for x in bank.giro(s.user_id) if x["giro_id"] == giro_id and x["status"] != "cancelled"), None)
+    wallet = kernel.wallet
+    g = next((x for x in wallet.giro(s.user_id) if x["giro_id"] == giro_id and x["status"] != "cancelled"), None)
     if g is None:
         raise ChangeError(f"giro_id={giro_id} is not an active GIRO. Call list_giro.", "NOT_FOUND")
     if not _mentions(_said(s), [g["biller"], *g.get("aliases", []), giro_id]):
         raise ChangeError("Please tell me which GIRO you want to cancel.", "NOT_SAID")
-    out = bank.cancel_giro(s.user_id, giro_id)
+    out = wallet.cancel_giro(s.user_id, giro_id)
     kernel.audit.append("giro.cancelled", s.session_id, {"giro_id": giro_id})
     s.add_trace("guard", f"GIRO with {g['biller']} cancelled (protective, takes effect now)")
     return out

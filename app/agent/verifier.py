@@ -26,7 +26,7 @@ from app.config import settings
 
 _POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="verifier")
 
-VERIFIER_PROMPT = """You are an independent transaction verifier at a bank. You have no tools and cannot take any action.
+VERIFIER_PROMPT = """You are an independent transaction verifier at a wallet. You have no tools and cannot take any action.
 You are given ONLY the customer's own words for the current request (a speech-to-text transcript, which may contain
 recognition errors) and the names of their saved payees, accounts and investment products.
 You are NOT shown what the assistant prepared. Extract the ONE transaction the customer is asking for right now.
@@ -68,13 +68,13 @@ class Job:
     started: float
 
 
-def catalog(bank, user_id: str) -> dict:
-    return {"transactions": bank.transactions(user_id, limit=30), "payees": [{"name": p["name"], "relation": p["relation"], "aliases": p["aliases"], "type": p["type"]}
-                       for p in bank.payees(user_id)],
-            "bills": [b["title"] for b in bank.bills(user_id)],
-            "accounts": [a["name"] for a in bank.accounts(user_id)],
+def catalog(wallet, user_id: str) -> dict:
+    return {"transactions": wallet.transactions(user_id, limit=30), "payees": [{"name": p["name"], "relation": p["relation"], "aliases": p["aliases"], "type": p["type"]}
+                       for p in wallet.payees(user_id)],
+            "bills": [b["title"] for b in wallet.bills(user_id)],
+            "accounts": [a["name"] for a in wallet.accounts(user_id)],
             "products": [{"name": p["name"], "asset_class": p["asset_class"], "aliases": p["aliases"]}
-                         for p in bank.products]}
+                         for p in wallet.products]}
 
 
 def extract_offline(utterances: list[str], cat: dict) -> dict:
@@ -111,8 +111,8 @@ def extract_offline(utterances: list[str], cat: dict) -> dict:
 
 
 class Verifier:
-    def __init__(self, llm, bank):
-        self.llm, self.bank = llm, bank
+    def __init__(self, llm, wallet):
+        self.llm, self.wallet = llm, wallet
         self.offline = llm is None or str(getattr(llm, "name", "")).startswith("offline")
 
     @property
@@ -137,7 +137,7 @@ class Verifier:
     def start(self, s) -> Job:
         """Start extracting in the background from what the user has said so far for this task."""
         utt, step = self._transcript(s)
-        cat = catalog(self.bank, s.user_id)
+        cat = catalog(self.wallet, s.user_id)
         return Job((utt, step), _POOL.submit(self._extract, utt, cat, step), time.time())
 
     def verdict(self, s) -> dict:
@@ -150,9 +150,9 @@ class Verifier:
             if parallel:
                 res = job.future.result(timeout=settings.llm_timeout + 5)
             else:
-                res = self._extract(utt, catalog(self.bank, s.user_id), step)
+                res = self._extract(utt, catalog(self.wallet, s.user_id), step)
         except Exception as e:  # noqa: BLE001 - fall back to the deterministic extractor, never to "no check"
-            res = {"engine": "offline extractor (fallback)", "extracted": extract_offline(utt, catalog(self.bank, s.user_id)),
+            res = {"engine": "offline extractor (fallback)", "extracted": extract_offline(utt, catalog(self.wallet, s.user_id)),
                    "error": str(e)[:120]}
         res["parallel"] = parallel
         res["waited_ms"] = int((time.time() - t0) * 1000)

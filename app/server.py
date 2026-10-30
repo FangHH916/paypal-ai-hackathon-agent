@@ -18,7 +18,7 @@ from starlette.routing import Route
 
 from app import lab, runtime
 from app.agent import presenter
-from app.bank.mock_bank import DEMO_USER
+from app.wallet.ledger import DEMO_USER
 from app.config import ROOT, settings
 from app.kernel import protection as prot
 from app.kernel import contract
@@ -102,38 +102,38 @@ async def static(request: Request):
 async def state(request: Request):
     """Everything the dashboard shows: accounts, payees, bills, history, this session's receipts and status."""
     s = runtime.sessions.get(request.query_params.get("session_id"))
-    bank, uid = runtime.bank, s.user_id
-    user = bank.user(uid)
+    wallet, uid = runtime.wallet, s.user_id
+    user = wallet.user(uid)
     return JSONResponse({
         "session_id": s.session_id, "phase": s.phase.value, "user": user["name"],
-        "accounts": [{**a, "balance": fmt_money(a["balance_cents"])} for a in bank.accounts(uid)],
-        "total_balance": fmt_money(sum(a["balance_cents"] for a in bank.accounts(uid))),
+        "accounts": [{**a, "balance": fmt_money(a["balance_cents"])} for a in wallet.accounts(uid)],
+        "total_balance": fmt_money(sum(a["balance_cents"] for a in wallet.accounts(uid))),
         "payees": [{k: p[k] for k in ("payee_id", "name", "relation", "type", "masked_account")}
-                   for p in bank.payees(uid)],
-        "bills": [{**b, "amount": fmt_money(b["amount_cents"])} for b in bank.bills(uid, only_unpaid=False)],
+                   for p in wallet.payees(uid)],
+        "bills": [{**b, "amount": fmt_money(b["amount_cents"])} for b in wallet.bills(uid, only_unpaid=False)],
         "transactions": [{**t, "amount": ("+" if t["amount_cents"] > 0 else "−") + fmt_money(abs(t["amount_cents"]))}
-                         for t in bank.transactions(uid, limit=30)],
-        "receipts": [r["verifiable"] for r in reversed(list(bank.executed.values()))
+                         for t in wallet.transactions(uid, limit=30)],
+        "receipts": [r["verifiable"] for r in reversed(list(wallet.executed.values()))
                      if r.get("user_id") == uid and r.get("verifiable")],
         "device_key": bool(s.public_key),
         "passkey": runtime.kernel.passkey_status(s.user_id, _site(request)),
-        "protection": prot.status(bank, uid),
-        "risk_profile": bank.risk_profile(uid)["label"],
+        "protection": prot.status(wallet, uid),
+        "risk_profile": wallet.risk_profile(uid)["label"],
         "holdings": [{"name": r["name"], "asset_class": r["asset_class"], "units": round(r["units"], 2),
                       "value": fmt_money(r["value_cents"]), "gain_cents": r["gain_cents"],
                       "gain": ("+" if r["gain_cents"] >= 0 else "−") + fmt_money(abs(r["gain_cents"]))}
-                     for r in bank.portfolio(uid)],
-        "cards": [{k: c[k] for k in ("card_id", "name", "masked", "status")} for c in bank.cards(uid)],
-        "limits": {"daily": fmt_money(bank.limits(uid)["daily_transfer_cents"]),
-                   "used_today": fmt_money(bank.transferred_today(uid)),
-                   "pending": (fmt_money(bank.limits(uid)["pending"]["to_cents"]) if bank.limits(uid).get("pending") else None)},
-        "standing_instructions": [{"si_id": x["si_id"], "to": (bank.payee(uid, x["payee_id"]) or {}).get("name", ""),
+                     for r in wallet.portfolio(uid)],
+        "cards": [{k: c[k] for k in ("card_id", "name", "masked", "status")} for c in wallet.cards(uid)],
+        "limits": {"daily": fmt_money(wallet.limits(uid)["daily_transfer_cents"]),
+                   "used_today": fmt_money(wallet.transferred_today(uid)),
+                   "pending": (fmt_money(wallet.limits(uid)["pending"]["to_cents"]) if wallet.limits(uid).get("pending") else None)},
+        "standing_instructions": [{"si_id": x["si_id"], "to": (wallet.payee(uid, x["payee_id"]) or {}).get("name", ""),
                                    "amount": fmt_money(x["amount_cents"]), "frequency": x["frequency"], "day": x["day"],
                                    "next": x["next_date"]}
-                                  for x in bank.standing_instructions(uid) if x["status"] == "active"],
+                                  for x in wallet.standing_instructions(uid) if x["status"] == "active"],
         "giro": [{"giro_id": g["giro_id"], "biller": g["biller"], "status": g["status"],
                   "max": fmt_money(g["limit_cents"]) if g.get("limit_cents") else "Each bill"}
-                 for g in bank.giro(uid) if g["status"] != "cancelled"],
+                 for g in wallet.giro(uid) if g["status"] != "cancelled"],
         "pending_change": (s.pending_change or {}).get("card"),
         "scam_level": s.scam_level.value,
     })
@@ -154,8 +154,8 @@ async def health(_: Request):
 
 async def world(request: Request):
     s = runtime.sessions.get(request.query_params.get("session_id"))
-    a = runtime.bank.accounts(s.user_id)[0]
-    return JSONResponse({"user": runtime.bank.user(s.user_id)["name"], "account": a["name"],
+    a = runtime.wallet.accounts(s.user_id)[0]
+    return JSONResponse({"user": runtime.wallet.user(s.user_id)["name"], "account": a["name"],
                          "balance": fmt_money(a["balance_cents"]), "phase": s.phase.value})
 
 
@@ -188,7 +188,7 @@ async def speech_to_text(request: Request):
     except Exception:  # noqa: BLE001
         return _err("audio_b64 is not valid base64")
     s = runtime.sessions.get(body.get("session_id"))
-    hot = asr.build_hotwords(runtime.bank.payees(s.user_id))
+    hot = asr.build_hotwords(runtime.wallet.payees(s.user_id))
     try:
         res = asr.recognize(wav, engine=body.get("engine"), hotwords=hot)
     except asr.ASRError as e:
@@ -274,7 +274,7 @@ async def passkey_remove_challenge(request: Request):
 
 async def transaction_status(request: Request):
     s = runtime.sessions.get(request.path_params["session_id"])
-    r = runtime.bank.transaction(s.user_id, request.path_params["draft_id"])
+    r = runtime.wallet.transaction(s.user_id, request.path_params["draft_id"])
     if not r:
         return JSONResponse({"status": "NOT_POSTED", "phase": s.phase.value})
     card = r.get("verifiable", {}).get("card", {})
@@ -346,7 +346,7 @@ async def demo_model_mistake(request: Request):
     body = await _json(request)
     s = runtime.sessions.get(body.get("session_id"))
     text = (body.get("text") or "Send 50 to my daughter").strip()[:200]
-    result = Agent(runtime.bank, runtime.gateway, runtime.audit, lab.MistakenLLM()).run_turn(s, text)
+    result = Agent(runtime.wallet, runtime.gateway, runtime.audit, lab.MistakenLLM()).run_turn(s, text)
     # Tell the app this was the fault-injection demo, so it can show the comparison instead of a puzzling refusal
     d = s.current_draft
     heard = ((d.verification or {}).get("extracted") or {}) if d else {}
@@ -378,7 +378,7 @@ async def review_secondary(request: Request):
             d = runtime.kernel._get_draft(s, body["draft_id"])
             if d.digest != body["digest"]:
                 raise KernelError("The review ticket is for another card.", "DIGEST_MISMATCH")
-            return JSONResponse({"card": presenter.build_card(d, runtime.bank, s.phase, care=s.care_mode)})
+            return JSONResponse({"card": presenter.build_card(d, runtime.wallet, s.phase, care=s.care_mode)})
         if body.get("operation") != "approve":
             raise BadInput("operation must be inspect or approve")
         approval = runtime.kernel.approve_secondary(s, body["draft_id"], body["digest"])
@@ -440,8 +440,8 @@ async def current_card(request: Request):
     # once the cooling-off period ends, move to awaiting authorization
     runtime.kernel._refresh_cooling(s, d)  # noqa: SLF001
     if s.phase.value in ("COOLING", "AWAITING_AUTH"):
-        d.decision = contract.decision(d, s, runtime.bank, runtime.kernel.reviews)
-    return JSONResponse({"card": presenter.build_card(d, runtime.bank, s.phase, care=s.care_mode), "phase": s.phase.value})
+        d.decision = contract.decision(d, s, runtime.wallet, runtime.kernel.reviews)
+    return JSONResponse({"card": presenter.build_card(d, runtime.wallet, s.phase, care=s.care_mode), "phase": s.phase.value})
 
 
 async def trace(request: Request):
@@ -469,7 +469,7 @@ async def care_offer(request: Request):
     s = runtime.sessions.get(body.get("session_id"))
     if s.care_mode or any(m.get("role") == "user" for m in s.messages):
         return JSONResponse({"offer": None})
-    text = CARE_OFFER.format(name=runtime.bank.user(s.user_id)["name"])
+    text = CARE_OFFER.format(name=runtime.wallet.user(s.user_id)["name"])
     s.messages.append({"role": "assistant", "content": text})
     s.care_offer_pending = True
     return JSONResponse({"offer": text, "options": [
@@ -490,13 +490,13 @@ async def reset(request: Request):
         # their passkey stays enrolled.
         s = runtime.sessions.reset(sid) if sid else runtime.sessions.new_for_visitor(visitor)
         if body.get("world"):
-            runtime.bank.reset_user(s.user_id)
+            runtime.wallet.reset_user(s.user_id)
     else:
         if body.get("world"):
             if settings.public_demo:
-                runtime.bank.reset_user(DEMO_USER)     # a shared server never wipes every visitor at once
+                runtime.wallet.reset_user(DEMO_USER)     # a shared server never wipes every visitor at once
             else:
-                runtime.bank.reset()
+                runtime.wallet.reset()
         s = runtime.sessions.reset(sid) if sid else runtime.sessions.get(None)
     return JSONResponse({"session_id": s.session_id, "ts": time.time()})
 

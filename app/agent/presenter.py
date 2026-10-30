@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 
 from app.agent.textparse import amount_digits_spoken, amount_words_en
-from app.bank.mock_bank import MockBank, price_sgd_cents
+from app.wallet.ledger import Wallet, price_sgd_cents
 from app.models import Draft, Phase, RiskLevel, fmt_money
 
 
@@ -27,15 +27,15 @@ def product_line(p: dict, amount_cents: int) -> str:
     return f"Risk {p['risk']} of 5 · not a deposit, can lose value"
 
 
-def build_card(d: Draft, bank: MockBank, phase: Phase, care: bool = True) -> dict:
+def build_card(d: Draft, wallet: Wallet, phase: Phase, care: bool = True) -> dict:
     invest = d.kind == "investment"
-    payee = (bank.product(d.payee_id) if invest else bank.payee(d.user_id, d.payee_id)) or {}
-    acct = bank.account(d.user_id, d.from_account) or {}
+    payee = (wallet.product(d.payee_id) if invest else wallet.payee(d.user_id, d.payee_id)) or {}
+    acct = wallet.account(d.user_id, d.from_account) or {}
     relation = payee.get("relation", "")
     is_person = payee.get("type") == "person"
     own = payee.get("type") == "own"
     who = f"your {relation} {d.payee_name}" if relation and is_person else f"your {d.payee_name}" if own else d.payee_name
-    bill = bank.bill(d.user_id, d.bill_id) if d.bill_id else None
+    bill = wallet.bill(d.user_id, d.bill_id) if d.bill_id else None
     sched = d.schedule or {}
     words = amount_words_en(d.amount_cents)
     if invest:

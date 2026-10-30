@@ -3,7 +3,7 @@
 Out of the model's reach: the Agent's tool gateway can only call create_draft (a draft, no side effects).
 authorize / commit can only be called by the frontend over HTTP after the user's own device has signed. Even then,
 commit does not write to the ledger itself: it hands the signed instruction to the execution gateway
-(app/bank/gateway.py), which verifies the signature again on its own before posting.
+(app/wallet/gateway.py), which verifies the signature again on its own before posting.
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ import secrets
 import time
 import uuid
 
-from app.bank.gateway import ExecutionGateway, GatewayError
-from app.bank.mock_bank import MockBank
+from app.wallet.gateway import ExecutionGateway, GatewayError
+from app.wallet.ledger import Wallet
 from app.config import settings
 from app.kernel import crosscheck, p256, rules, webauthn
 from app.kernel import changes, contract
@@ -36,19 +36,19 @@ class KernelError(Exception):
 
 
 class Kernel:
-    def __init__(self, bank: MockBank, audit: AuditLog, tokens: TokenService | None = None,
+    def __init__(self, wallet: Wallet, audit: AuditLog, tokens: TokenService | None = None,
                  authenticator: MockAuthenticator | None = None, allow_mock: bool | None = None,
                  registry: CredentialRegistry | None = None, gateway: ExecutionGateway | None = None,
                  require_verification: bool = True, risk_hour: int | None = None):
         self.risk_hour = risk_hour  # injectable clock hour for isolated lab fixtures only
-        self.bank = bank
+        self.wallet = wallet
         self.audit = audit
         self.tokens = tokens or TokenService()
         self.authenticator = authenticator or MockAuthenticator()
         # The demo-string authenticator is OFF unless explicitly allowed: payments need a device signature.
         self.allow_mock = (settings.auth_mode == "mock") if allow_mock is None else allow_mock
         self.registry = registry or CredentialRegistry()
-        self.gateway = gateway or ExecutionGateway(bank, self.registry, audit, allow_unsigned=self.allow_mock)
+        self.gateway = gateway or ExecutionGateway(wallet, self.registry, audit, allow_unsigned=self.allow_mock)
         self.reviews = self.gateway.reviews
         # No independent-verifier verdict -> the draft can't be signed (fail closed)
         self.require_verification = require_verification
@@ -83,7 +83,7 @@ class Kernel:
         challenge = secrets.token_bytes(32)
         s.passkey_reg = {"challenge": webauthn.b64u(challenge), "expires_at": time.time() + settings.challenge_ttl,
                          "rp_id": site.rp_id}
-        user = self.bank.user(s.user_id)
+        user = self.wallet.user(s.user_id)
         return {"challenge": s.passkey_reg["challenge"], "rp_id": site.rp_id, "rp_name": "Star · the bank concept",
                 "user_id": webauthn.b64u(hashlib.sha256(s.user_id.encode()).digest()[:16]),
                 "user_name": s.user_id, "display_name": user["name"],
@@ -152,13 +152,13 @@ class Kernel:
             error = problem(utterance)
             if error:
                 raise KernelError(error, "REQUEST_UNSUPPORTED")
-        accounts = self.bank.accounts(s.user_id)
+        accounts = self.wallet.accounts(s.user_id)
         from_account = from_account or accounts[0]["account_id"]
         if kind == "investment":
-            target = self.bank.product(payee_id)
+            target = self.wallet.product(payee_id)
             name, asset = (target["name"], target["asset_class"]) if target else ("(unknown product)", "Unknown")
         else:
-            target = self.bank.payee(s.user_id, payee_id)
+            target = self.wallet.payee(s.user_id, payee_id)
             name, asset = (target["name"] if target else "(unknown payee)"), "Cash"
         now = time.time()
         draft = Draft(
@@ -167,9 +167,9 @@ class Kernel:
             amount_cents=amount_cents, bill_id=bill_id, created_at=now,
             expires_at=now + settings.draft_ttl, nonce=secrets.token_hex(6), taint=taint or [], schedule=schedule,
             plan_id=s.plan_id)
-        bill = self.bank.bill(s.user_id, bill_id) if bill_id else None
+        bill = self.wallet.bill(s.user_id, bill_id) if bill_id else None
         g = ground(user_utterances(s.messages), target, amount_cents, kind, bill=bill, model_quote=evidence,
-                   accounts=self.bank.accounts(s.user_id), from_account=from_account, heard=heard,
+                   accounts=self.wallet.accounts(s.user_id), from_account=from_account, heard=heard,
                    proposal=confirmed_proposal(s.messages))
         latest_user = next((m for m in reversed(s.messages) if m.get("role") == "user"), {})
         parent_id = latest_user.get("reference_parent_id")
@@ -196,14 +196,14 @@ class Kernel:
         from app.kernel.voice import task_audio
         draft.you_said_audio = task_audio(s)            # the recordings behind these words, signed with the card
         draft.digest = compute_digest(draft)
-        level = prot.effective(self.bank, s.user_id, now)
+        level = prot.effective(self.wallet, s.user_id, now)
         ctx = rules.RuleContext(now=now, scam_level=s.scam_level, scam_reasons=list(s.scam_reasons),
                                 local_hour=local_hour if local_hour is not None else self.risk_hour, grounding=g, protection=level)
-        draft.risk = rules.evaluate(draft, self.bank, ctx)
+        draft.risk = rules.evaluate(draft, self.wallet, ctx)
 
         # Dual-engine audit: compare with what the independent verifier heard (deterministic comparison)
         if verification is not None:
-            draft.verification = {**crosscheck.compare(draft, verification.get("extracted") or {}, self.bank),
+            draft.verification = {**crosscheck.compare(draft, verification.get("extracted") or {}, self.wallet),
                                   "engine": verification.get("engine", "?"),
                                   "extracted": verification.get("extracted"),
                                   "parallel": verification.get("parallel", False)}
@@ -245,7 +245,7 @@ class Kernel:
         return draft
 
     def record_decision(self, s, draft, **kwargs):
-        result = contract.decision(draft, s, self.bank, self.reviews, **kwargs)
+        result = contract.decision(draft, s, self.wallet, self.reviews, **kwargs)
         draft.decision = result
         self.audit.append("contract.decision", s.session_id, result)
         return result
@@ -260,7 +260,7 @@ class Kernel:
         if draft.verification.get("status") != "match":
             raise KernelError("The intent check must pass first.", "NOT_VERIFIED")
         self._recheck_risk(s, draft)
-        if not contract.secondary_required(draft.card_fields(), self.bank):
+        if not contract.secondary_required(draft.card_fields(), self.wallet):
             raise KernelError("This payment does not need secondary approval.", "REVIEW_NOT_REQUIRED")
         rec = self.reviews.approve(s.user_id, s.session_id, draft_id, digest, draft.expires_at)
         try:
@@ -398,9 +398,9 @@ class Kernel:
         return receipt
 
     def _recheck_risk(self, s: Session, draft: Draft) -> None:
-        current = rules.evaluate(draft, self.bank, rules.RuleContext(
+        current = rules.evaluate(draft, self.wallet, rules.RuleContext(
             scam_level=s.scam_level, scam_reasons=list(s.scam_reasons), local_hour=self.risk_hour,
-            protection=prot.effective(self.bank, s.user_id)))
+            protection=prot.effective(self.wallet, s.user_id)))
         old_hits = set(draft.risk.rule_hits if draft.risk else [])
         new_risk = current.level.rank > draft.risk.level.rank or bool(set(current.rule_hits) - old_hits)
         if current.level == RiskLevel.BLOCK or new_risk:
@@ -433,7 +433,7 @@ class Kernel:
 
     def change_protection(self, s: Session, to: str, assertion: dict | None = None, site: Site = DEFAULT_SITE) -> dict:
         if to == "enhanced":                          # raising (or cancelling a scheduled lowering) is instant
-            st = prot.raise_now(self.bank, s.user_id)
+            st = prot.raise_now(self.wallet, s.user_id)
             self.audit.append("settings.protection_raised", s.session_id, {"level": "enhanced"})
             return st
         if to != "standard":
@@ -445,7 +445,7 @@ class Kernel:
             raise KernelError("This confirmation expired. Please try again.", "EXPIRED")
         rec = self._signature(s, issued, assertion, site)
         s.setting_challenges.pop("protection", None)
-        st = prot.schedule_lowering(self.bank, s.user_id)
+        st = prot.schedule_lowering(self.wallet, s.user_id)
         self.audit.append("settings.protection_lowering_scheduled", s.session_id,
                           {"effective_at": st["pending"]["effective_at"] if st["pending"] else None,
                            "method": rec["method"], "key_id": rec["key_id"]})

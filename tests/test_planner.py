@@ -9,7 +9,7 @@ import os
 
 os.environ.setdefault("RULE_FIXED_HOUR", "14")
 
-from tests.test_bank_apis import ApiBase  # noqa: E402
+from tests.test_wallet_tools import ApiBase  # noqa: E402
 from app.agent import planner  # noqa: E402
 from app.agent.llm import OfflineLLM  # noqa: E402
 from app.agent.loop import Agent  # noqa: E402
@@ -49,7 +49,7 @@ WHATEVER_IS_LEFT = [
 class PlannerBase(ApiBase):
     def use_plan(self, steps):
         self.stub = PlanStub(steps)
-        self.agent = Agent(self.bank, self.gw, self.audit, self.stub)
+        self.agent = Agent(self.wallet, self.gw, self.audit, self.stub)
 
     def sign_all(self):
         """Sign the current card like the device does (answering a verification question, after any cooling-off)."""
@@ -226,7 +226,7 @@ class TestVerifierStaysIndependent(PlannerBase):
     def test_model_verifier_reads_the_original_words_and_the_step_number(self):
         self.use_plan(HALF_THAT_MONEY)
         self.turn("Put 1000 into the joint account, then use half that money for the bank stock")
-        utt, step = Verifier(self.stub, self.bank)._transcript(self.s)
+        utt, step = Verifier(self.stub, self.wallet)._transcript(self.s)
         self.assertEqual(utt, ["Put 1000 into the joint account, then use half that money for the bank stock"])
         self.assertEqual(step, {"current_step": 1, "steps_in_request": 2})
 

@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.bank.bank_api.base import NoArgs, Tool
+from app.wallet.tools.base import NoArgs, Tool
 
 
 class AddPayeeArgs(BaseModel):
     name: str = Field(max_length=60, description="The payee's name exactly as the user said it")
-    bank: str = Field(default="", max_length=30, description="Their bank, e.g. the bank, savings bank, OCBC, UOB")
+    wallet: str = Field(default="", max_length=30, description="Their wallet, e.g. the bank, savings bank, OCBC, UOB")
     account_number: str = Field(max_length=30, description="The account number exactly as the user said it")
     relation: str = Field(default="", max_length=30, description="Who they are to the user, e.g. friend; empty if not said")
     evidence: str = Field(default="", max_length=200, description="Quote the user's exact words")
@@ -16,7 +16,7 @@ class AddPayeeArgs(BaseModel):
 
 def list_payees(gw, s, _):
     return [{"payee_id": p["payee_id"], "name": p["name"], "relation": p["relation"], "type": p["type"],
-             "aliases": p["aliases"], "account": p["masked_account"]} for p in gw.bank.payees(s.user_id)]
+             "aliases": p["aliases"], "account": p["masked_account"]} for p in gw.wallet.payees(s.user_id)]
 
 
 def request_add_payee(gw, s, a: AddPayeeArgs):

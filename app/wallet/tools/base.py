@@ -44,7 +44,7 @@ class Tool:
 
 
 def bind(gw, tools: list[Tool]) -> list[Tool]:
-    """Give each module-level handler fn(gw, s, args) access to the gateway (bank, kernel, verifier)."""
+    """Give each module-level handler fn(gw, s, args) access to the gateway (wallet, kernel, verifier)."""
     out = []
     for t in tools:
         fn = t.fn

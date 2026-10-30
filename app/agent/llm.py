@@ -87,7 +87,7 @@ _RX = {
     "stop": r"\b(stop|cancel|end|terminate|remove)\b",
     "income": r"pension|\bcpf\b|payout|(come|came|gone) in|arrived|received",
     "balance": r"balance|how much (money )?(do i have|have i got|is (there )?in|is left|left)|"
-               r"\b(what|which|my) (bank )?accounts\b",
+               r"\b(what|which|my) (wallet )?accounts\b",
     "spending": r"\bspen[dt]|spending|expenses|transactions|history",
 }
 

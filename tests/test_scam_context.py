@@ -9,7 +9,7 @@ import os
 
 os.environ.setdefault("RULE_FIXED_HOUR", "14")
 
-from tests.test_hackathon import Base  # noqa: E402
+from tests.test_requirements import Base  # noqa: E402
 from app.agent.tools import ToolGateway  # noqa: E402
 from app.agent.loop import Agent  # noqa: E402
 from app.agent.llm import OfflineLLM  # noqa: E402
@@ -34,8 +34,8 @@ class TestScamReasonsBelongToTheirTask(Base):
     def setUp(self):
         super().setUp()
         self.judge = JudgeStub()
-        self.gw = ToolGateway(self.bank, self.kernel, judge=self.judge, verifier=self.verifier)
-        self.agent = Agent(self.bank, self.gw, self.audit, OfflineLLM())
+        self.gw = ToolGateway(self.wallet, self.kernel, judge=self.judge, verifier=self.verifier)
+        self.agent = Agent(self.wallet, self.gw, self.audit, OfflineLLM())
 
     def finish_task(self):
         self.kernel.cancel(self.s, self.s.current_draft_id)

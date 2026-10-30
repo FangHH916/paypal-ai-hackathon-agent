@@ -13,7 +13,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from app.bank.bank_api.base import MEANT_DESC, MISHEARD_DESC, NoArgs, Tool
+from app.wallet.tools.base import MEANT_DESC, MISHEARD_DESC, NoArgs, Tool
 from app.models import fmt_money
 
 _DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -54,7 +54,7 @@ class DraftSIArgs(BaseModel):
 
 
 def draft_standing_instruction(gw, s, a: DraftSIArgs):
-    from app.bank.bank_api.fund_transfer import create_transfer_draft
+    from app.wallet.tools.fund_transfer import create_transfer_draft
     return create_transfer_draft(gw, s, payee_id=a.payee_id, amount=a.amount, from_account=a.from_account,
                                  evidence=a.evidence, heard=(a.misheard, a.meant),
                                  schedule=make_schedule(a.frequency, a.day))
@@ -66,10 +66,10 @@ class CancelSIArgs(BaseModel):
 
 def list_standing_instructions(gw, s, _):
     out = []
-    for si in gw.bank.standing_instructions(s.user_id):
+    for si in gw.wallet.standing_instructions(s.user_id):
         if si["status"] != "active":
             continue
-        p = gw.bank.payee(s.user_id, si["payee_id"]) or {}
+        p = gw.wallet.payee(s.user_id, si["payee_id"]) or {}
         when = (f"every month on the {_ordinal(si['day'])}" if si["frequency"] == "monthly"
                 else f"every {_DAYS[si['day'] - 1]}")
         out.append({"si_id": si["si_id"], "to": p.get("name", si["payee_id"]), "relation": p.get("relation", ""),

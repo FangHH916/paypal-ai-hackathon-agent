@@ -105,13 +105,13 @@ def load_cases(suites: list[str]) -> list[dict]:
 
 def apply_setup(setup: dict):
     for bill_id, title in (setup or {}).get("bill_title", {}).items():
-        b = runtime.bank.bill("u_chen", bill_id)
+        b = runtime.wallet.bill("u_chen", bill_id)
         if b:
             b["title"] = title
 
 
 def run_case(case: dict, stats: dict, verbose: bool = False) -> dict:
-    runtime.bank.reset()
+    runtime.wallet.reset()
     apply_setup(case.get("setup"))
     s = runtime.sessions.get(None)
     for k in list(stats):
@@ -176,7 +176,7 @@ def run_case(case: dict, stats: dict, verbose: bool = False) -> dict:
         if "plan_len" in exp:
             check("plan_len", len(s.plan) == exp["plan_len"], s.plan)
     # Hard metric: the Agent on its own can never move money
-    check("HARD:no_exec_without_signature", not runtime.bank.executed, list(runtime.bank.executed))
+    check("HARD:no_exec_without_signature", not runtime.wallet.executed, list(runtime.wallet.executed))
 
     fell_back = any(t["kind"] == "fallback" for t in s.trace)
     guards = Counter()

@@ -10,7 +10,7 @@ from app.agent.llm import OfflineLLM
 from app.agent.loop import Agent
 from app.agent.tools import ToolGateway
 from app.agent.verifier import Verifier
-from app.bank.mock_bank import MockBank
+from app.wallet.ledger import Wallet
 from app.kernel.audit import AuditLog
 from app.kernel.credentials import CredentialRegistry
 from app.kernel.executor import Kernel, KernelError
@@ -25,10 +25,10 @@ class RecoveryTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / 'ledger.sqlite3'
-        self.bank = MockBank(self.path)
+        self.wallet = Wallet(self.path)
         self.audit = AuditLog(Path(self.tmp.name) / 'audit.jsonl')
-        self.kernel = Kernel(self.bank, self.audit, allow_mock=False, registry=CredentialRegistry())
-        self.agent = Agent(self.bank, ToolGateway(self.bank, self.kernel, verifier=Verifier(None, self.bank)),
+        self.kernel = Kernel(self.wallet, self.audit, allow_mock=False, registry=CredentialRegistry())
+        self.agent = Agent(self.wallet, ToolGateway(self.wallet, self.kernel, verifier=Verifier(None, self.wallet)),
                            self.audit, OfflineLLM())
         self.s = Session('recovery')
 
@@ -50,7 +50,7 @@ class RecoveryTest(unittest.TestCase):
 
     def test_receipt_recovers_after_ledger_reopen(self):
         d, receipt = self.pay()
-        reopened = MockBank(self.path)
+        reopened = Wallet(self.path)
         saved = reopened.transaction(self.s.user_id, d.draft_id)
         self.assertEqual(saved, receipt)
         self.assertEqual(reopened.account('u_chen', 'SAV-001')['balance_cents'], 320000)
@@ -58,12 +58,12 @@ class RecoveryTest(unittest.TestCase):
         self.assertIsNone(reopened.transaction('another-customer', d.draft_id))
 
     def test_storage_failure_rolls_back_balance_and_bill(self):
-        with patch.object(self.bank, '_save', side_effect=OSError('disk full')):
+        with patch.object(self.wallet, '_save', side_effect=OSError('disk full')):
             with self.assertRaises(OSError):
-                self.bank.execute_payment('u_chen', 'SAV-001', 'p_sp', 8640, 'bill', 'b_sp_oct')
-        self.assertEqual(self.bank.account('u_chen', 'SAV-001')['balance_cents'], 325000)
-        self.assertEqual(self.bank.bill('u_chen', 'b_sp_oct')['status'], 'unpaid')
-        self.assertFalse(self.bank.executed)
+                self.wallet.execute_payment('u_chen', 'SAV-001', 'p_sp', 8640, 'bill', 'b_sp_oct')
+        self.assertEqual(self.wallet.account('u_chen', 'SAV-001')['balance_cents'], 325000)
+        self.assertEqual(self.wallet.bill('u_chen', 'b_sp_oct')['status'], 'unpaid')
+        self.assertFalse(self.wallet.executed)
 
     def test_audit_failure_keeps_durable_outbox_then_recovers(self):
         original = self.audit.append
@@ -73,11 +73,11 @@ class RecoveryTest(unittest.TestCase):
             return original(event, *a, **kw)
         with patch.object(self.audit, 'append', side_effect=fail_posting):
             d, receipt = self.pay()
-        reopened = MockBank(self.path)
+        reopened = Wallet(self.path)
         self.assertEqual(len(reopened.outbox), 2)
         self.assertEqual(reopened.transaction('u_chen', d.draft_id), receipt)
         reopened.flush_audit(self.audit)
-        self.assertFalse(MockBank(self.path).outbox)
+        self.assertFalse(Wallet(self.path).outbox)
         events = self.audit.for_session(self.s.session_id)
         self.assertTrue(any(e['event'] == 'commit.executed' for e in events))
         self.assertTrue(self.audit.verify()['ok'])
@@ -85,18 +85,18 @@ class RecoveryTest(unittest.TestCase):
     def test_parallel_bill_posting_only_debits_once(self):
         def post(i):
             try:
-                return self.bank.execute_payment('u_chen', 'SAV-001', 'p_sp', 8640, f'bill-{i}', 'b_sp_oct')['status']
+                return self.wallet.execute_payment('u_chen', 'SAV-001', 'p_sp', 8640, f'bill-{i}', 'b_sp_oct')['status']
             except ValueError:
                 return 'REJECTED'
         with ThreadPoolExecutor(2) as pool:
             results = list(pool.map(post, range(2)))
         self.assertEqual(sorted(results), ['REJECTED', 'SUCCESS'])
-        self.assertEqual(self.bank.account('u_chen', 'SAV-001')['balance_cents'], 316360)
+        self.assertEqual(self.wallet.account('u_chen', 'SAV-001')['balance_cents'], 316360)
 
     def test_invalid_bill_amount_does_not_debit(self):
         with self.assertRaises(ValueError):
-            self.bank.execute_payment('u_chen', 'SAV-001', 'p_sp', 8641, 'bad', 'b_sp_oct')
-        self.assertFalse(self.bank.executed)
+            self.wallet.execute_payment('u_chen', 'SAV-001', 'p_sp', 8641, 'bad', 'b_sp_oct')
+        self.assertFalse(self.wallet.executed)
 
     def test_passkey_removal_requires_fresh_signed_approval(self):
         auth = self.enroll()

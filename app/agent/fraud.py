@@ -13,7 +13,7 @@ from app.models import RiskLevel
 
 # (category, weight, regex, plain-language explanation for the elderly user)
 PATTERNS = [
-    ("bank_impersonation", 3, r"(?:from|claims?.{0,15}) the bank.{0,20}(?:fraud|security) team|bank's (?:fraud|security) team",
+    ("bank_impersonation", 3, r"(?:from|claims?.{0,15}) the wallet.{0,20}(?:fraud|security) team|bank's (?:fraud|security) team",
      "A caller claiming to be bank staff and asking you to move money may be a scammer. Verify through your bank's official contact channel."),
     ("social_emergency", 3, r"(?:met on|on) (?:facebook|instagram|telegram|whatsapp).{0,100}(?:stuck|fees|emergency|needs)",
      "An online contact asking for emergency fees is a scam warning. Verify their identity before sending money."),

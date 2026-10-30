@@ -1,6 +1,6 @@
 """Reproducible fault injection, isolated from customer sessions and all online models.
 
-The comparison is a counterfactual replay of observed gate results, not a weakened production bank,
+The comparison is a counterfactual replay of observed gate results, not a weakened production wallet,
 not human-subject research, and not a live-model accuracy benchmark.
 """
 from __future__ import annotations
@@ -36,15 +36,15 @@ def run_showcase():
             start = time.perf_counter()
             if ident == "velocity":
                 from app.config import settings
-                sb.bank.recent_exec_times["u_chen"] = [time.time()] * settings.velocity_max
+                sb.wallet.recent_exec_times["u_chen"] = [time.time()] * settings.velocity_max
             sb.session.messages.append({"role": "user", "content": text,
                 **({"reference_parent_id": "unexecuted-parent"} if ident == "dependency" else {})})
             from app.agent.verifier import Verifier
             payee_id = "p_son" if ident == "payee" else "p_daughter"
             if ident == "secondary":   # someone the customer has never paid: the case that needs a second person
-                payee_id = sb.bank.add_payee("u_chen", "John Tan", "OCBC", "1234567890", "friend")["payee_id"]
+                payee_id = sb.wallet.add_payee("u_chen", "John Tan", "OCBC", "1234567890", "friend")["payee_id"]
             d = sb.kernel.create_draft(sb.session, kind="transfer", payee_id=payee_id,
-                amount_cents=cents, verification=Verifier(None, sb.bank).verdict(sb.session))
+                amount_cents=cents, verification=Verifier(None, sb.wallet).verdict(sb.session))
             created = d.decision
             code, receipt = "", None
             try:
@@ -55,12 +55,12 @@ def run_showcase():
                 if ident == "tamper":
                     d.amount_cents += 100
                 if ident == "balance":
-                    sb.bank.account("u_chen", "SAV-001")["balance_cents"] = 1
+                    sb.wallet.account("u_chen", "SAV-001")["balance_cents"] = 1
                 receipt = sb.pay(d, assertion, verify_answer=True)
             except KernelError as e:
                 code = e.code
                 sb.kernel.record_decision(sb.session, d, stage="rejected", rejection=code)
-            actual_debit = sum(r["amount_cents"] for r in sb.bank.executed.values())
+            actual_debit = sum(r["amount_cents"] for r in sb.wallet.executed.values())
             expected = code == EXPECTED_CODES[ident] and actual_debit == (5000 if ident == "normal" else 0)
             if ident in ("amount", "payee"):
                 expected = expected and created["checks"]["intent"]["status"] == "fail"
@@ -97,6 +97,6 @@ def run_showcase():
         "passed": sum(r["expected_behavior_met"] for r in rows), "total": len(rows),
         "comparison": comparison,
         "methodology": "Eight isolated deterministic scenarios use the real kernel, device signatures and gateway. "
-            "The five-candidate comparison replays recorded pre-authorization gates (confirmation answers assumed yes); it does not execute a weakened bank. "
+            "The five-candidate comparison replays recorded pre-authorization gates (confirmation answers assumed yes); it does not execute a weakened wallet. "
             "The verifier is an offline shared parser. No live-model accuracy, user friction or population failure rate is measured. "
             "Faults and the secondary-review fixture clock are injected only in fresh sandboxes."}

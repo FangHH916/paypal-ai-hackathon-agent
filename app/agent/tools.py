@@ -24,9 +24,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.agent import fraud
 from app.agent.textparse import account_id_for, find_account
-from app.bank import bank_api
-from app.bank.bank_api.base import MEANT_DESC, MISHEARD_DESC, NoArgs, Tool, bind
-from app.bank.mock_bank import MockBank, USD_SGD, price_sgd_cents
+from app.wallet import tools as wallet_tools
+from app.wallet.tools.base import MEANT_DESC, MISHEARD_DESC, NoArgs, Tool, bind
+from app.wallet.ledger import Wallet, USD_SGD, price_sgd_cents
 from app.kernel.changes import ChangeError
 from app.kernel import protection as prot
 from app.kernel.executor import Kernel, KernelError
@@ -96,8 +96,8 @@ def _sanitize(obj: Any) -> Any:
 
 
 class ToolGateway:
-    def __init__(self, bank: MockBank, kernel: Kernel, judge: Optional[Callable] = None, verifier=None):
-        self.bank = bank
+    def __init__(self, wallet: Wallet, kernel: Kernel, judge: Optional[Callable] = None, verifier=None):
+        self.wallet = wallet
         self.kernel = kernel
         self.judge = judge   # second model call for the scam assessment (optional)
         self.verifier = verifier   # independent read-only verifier (agent/verifier.py): the second engine
@@ -117,7 +117,7 @@ class ToolGateway:
                  self._draft_investment),
             Tool("lock_card", "control", "Lock a card straight away, e.g. when it is lost or stolen or the user "
                  "suspects fraud. Protective, so no confirmation card is needed. Unlocking is not possible here: the "
-                 "user must use the the bank app or call the bank.", LockCardArgs, self._lock_card),
+                 "user must use the the bank app or call the wallet.", LockCardArgs, self._lock_card),
             Tool("queue_follow_up", "control", "The user asked for more than one transaction in one message: draft the "
                  "FIRST one now, and call this once for each remaining one. It is prepared automatically right after "
                  "the user confirms or cancels the current card. Only for things the user actually asked for.",
@@ -129,7 +129,7 @@ class ToolGateway:
             Tool("handoff_to_human", "control", "Hand off to a human staff member when the user asks for a real person, or when you can't complete the task safely.",
                  HandoffArgs, self._handoff),
         ]}
-        for t in bind(self, bank_api.all_tools()):        # the bank API modules (Deposit, Payees, Limits, ...)
+        for t in bind(self, wallet_tools.all_tools()):        # the bank API modules (Deposit, Payees, Limits, ...)
             self.tools[t.name] = t
 
     # ---------------------------------------------------------------- Dynamic tool set
@@ -193,10 +193,10 @@ class ToolGateway:
     def _get_txns(self, s: Session, a: TxnArgs):
         return [{"date": t["date"], "desc": t["desc"], "payee_id": t["payee_id"], "amount_cents": t["amount_cents"],
                  "amount": ("+" if t["amount_cents"] > 0 else "-") + fmt_money(abs(t["amount_cents"]))}
-                for t in self.bank.transactions(s.user_id, a.limit)]
+                for t in self.wallet.transactions(s.user_id, a.limit)]
 
     def _list_investments(self, s: Session, _: NoArgs):
-        prof = self.bank.risk_profile(s.user_id)
+        prof = self.wallet.risk_profile(s.user_id)
 
         def item(p):
             d = {"product_id": p["product_id"], "name": p["name"], "asset_class": p["asset_class"],
@@ -207,12 +207,12 @@ class ToolGateway:
                 d["price"] = (f"US${p['price']:,.2f} (about {fmt_money(price_sgd_cents(p))}, demo price)"
                               if p.get("currency") == "USD" else f"S${p['price']:,.4g} (demo price)")
             return d
-        return {"risk_profile": prof["label"], "products": [item(p) for p in self.bank.products],
+        return {"risk_profile": prof["label"], "products": [item(p) for p in self.wallet.products],
                 "note": f"US shares are paid in SGD at a demo rate of {USD_SGD} SGD per USD. Other stocks or products "
                         "are not available through Star."}
 
     def _get_portfolio(self, s: Session, _: NoArgs):
-        rows = self.bank.portfolio(s.user_id)
+        rows = self.wallet.portfolio(s.user_id)
         return {"holdings": [{"name": r["name"], "asset_class": r["asset_class"], "units": round(r["units"], 2),
                               "value": fmt_money(r["value_cents"]),
                               "gain_or_loss": ("+" if r["gain_cents"] >= 0 else "-") + fmt_money(abs(r["gain_cents"]))}
@@ -227,8 +227,8 @@ class ToolGateway:
         task = a.task.strip()
         said_amounts = {c for u in said for c in amounts_in(u)}
         task_amounts = amounts_in(task)
-        names = [n for p in self.bank.payees(s.user_id) for n in [p["name"], *p["aliases"]]] + \
-                [n for p in self.bank.products for n in [p["name"], *p["aliases"]]]
+        names = [n for p in self.wallet.payees(s.user_id) for n in [p["name"], *p["aliases"]]] + \
+                [n for p in self.wallet.products for n in [p["name"], *p["aliases"]]]
         mentioned = lambda txt, n: re.search(rf"(?<![a-z]){re.escape(n.lower())}(?![a-z])", txt.lower())  # noqa: E731
         target_ok = any(mentioned(task, n) and any(mentioned(u, n) for u in said) for n in names)
         if not task_amounts or not task_amounts <= said_amounts or not target_ok:
@@ -245,7 +245,7 @@ class ToolGateway:
 
     def _get_cards(self, s: Session, _: NoArgs):
         return [{"card_id": c["card_id"], "name": c["name"], "number": c["masked"], "status": c["status"]}
-                for c in self.bank.cards(s.user_id)]
+                for c in self.wallet.cards(s.user_id)]
 
     def _lock_card(self, s: Session, a: LockCardArgs):
         text = next((m["content"] for m in reversed(s.messages) if m.get("role") == "user"), "")
@@ -256,10 +256,10 @@ class ToolGateway:
         named = next((i for word, i in (("debit", "c_debit"), ("credit", "c_credit")) if re.search(r"\b" + word + r"\b", text, re.I)), None)
         if named and a.card_id != named:
             raise KernelError("The selected card does not match your request.", "NOT_REQUESTED")
-        ids = [c["card_id"] for c in self.bank.cards(s.user_id)] if a.card_id == "all" else [a.card_id]
-        if any(self.bank.card(s.user_id, i) is None for i in ids):
+        ids = [c["card_id"] for c in self.wallet.cards(s.user_id)] if a.card_id == "all" else [a.card_id]
+        if any(self.wallet.card(s.user_id, i) is None for i in ids):
             raise KernelError(f"card_id={a.card_id} is not one of the user's cards. Call get_cards first.")
-        locked = [self.bank.lock_card(s.user_id, i) for i in ids]
+        locked = [self.wallet.lock_card(s.user_id, i) for i in ids]
         names = ", ".join(f"{c['name']} {c['masked']}" for c in locked)
         s.add_trace("guard", f"Card locked (protective action, takes effect immediately): {names}")
         self.kernel.audit.append("card.locked", s.session_id, {"cards": ids})
@@ -269,12 +269,12 @@ class ToolGateway:
 
     # ---------------------------------------------------------------- L2 draft
     def _account(self, s: Session, from_account: str | None) -> str | None:
-        if from_account and self.bank.account(s.user_id, from_account) is None:
+        if from_account and self.wallet.account(s.user_id, from_account) is None:
             raise KernelError(f"from_account={from_account} is not one of the user's accounts. Use an account_id "
                               "from get_balance, or omit it to use the main account.")
         if not from_account:
             # the model left it out, but the user named an account ("half of my joint account"): use what they said
-            accounts = self.bank.accounts(s.user_id)
+            accounts = self.wallet.accounts(s.user_id)
             for u in reversed([m["content"] for m in s.messages if m.get("role") == "user"][-2:]):
                 named = account_id_for(find_account(u), accounts)
                 if named:
@@ -287,7 +287,7 @@ class ToolGateway:
 
 
     def _draft_investment(self, s: Session, a: DraftInvestmentArgs):
-        prod = self.bank.product(a.product_id)
+        prod = self.wallet.product(a.product_id)
         if prod is None:
             raise KernelError(f"product_id={a.product_id} is not a product from list_investments. Call it first.")
         acct = self._account(s, a.from_account)
@@ -298,7 +298,7 @@ class ToolGateway:
         return self._draft_result(d)
 
     def _run_judge(self, s: Session, summary: str):
-        level_p = prot.effective(self.bank, s.user_id)
+        level_p = prot.effective(self.wallet, s.user_id)
         # Judge THIS request: the words of the current task, not earlier finished payments (their scam signs, if any,
         # already raised the session's level, which never goes down)
         utterances = s.task_utterances() or [m["content"] for m in s.messages if m["role"] == "user"][-1:]

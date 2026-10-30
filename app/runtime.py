@@ -4,8 +4,8 @@ from app.agent.llm import OfflineLLM, OpenAICompatLLM, build_llm
 from app.agent.loop import Agent
 from app.agent.tools import ToolGateway
 from app.agent.verifier import Verifier
-from app.bank.gateway import ExecutionGateway
-from app.bank.mock_bank import MockBank
+from app.wallet.gateway import ExecutionGateway
+from app.wallet.ledger import Wallet
 from app.config import settings
 from app.kernel.audit import AuditLog
 from app.kernel.credentials import CredentialRegistry
@@ -14,13 +14,13 @@ from app.kernel.state import SessionStore
 from app.kernel.voice import VoiceStore
 
 sessions = SessionStore(settings.ledger_path)
-bank = MockBank(settings.ledger_path)
+wallet = Wallet(settings.ledger_path)
 audit = AuditLog(settings.audit_path)
 voices = VoiceStore(settings.voice_dir)
-bank.flush_audit(audit)
+wallet.flush_audit(audit)
 registry = CredentialRegistry(settings.passkey_path)
-execution_gateway = ExecutionGateway(bank, registry, audit, allow_unsigned=settings.auth_mode == "mock")
-kernel = Kernel(bank, audit, registry=registry, gateway=execution_gateway)
+execution_gateway = ExecutionGateway(wallet, registry, audit, allow_unsigned=settings.auth_mode == "mock")
+kernel = Kernel(wallet, audit, registry=registry, gateway=execution_gateway)
 llm = build_llm()
 
 
@@ -40,8 +40,8 @@ def _judge(utterances, summary):
     return fraud.llm_judge(judge_llm, utterances, summary)
 
 
-verifier = Verifier(verifier_llm, bank)
-gateway = ToolGateway(bank, kernel, judge=_judge, verifier=verifier)
-agent = Agent(bank, gateway, audit, llm)
+verifier = Verifier(verifier_llm, wallet)
+gateway = ToolGateway(wallet, kernel, judge=_judge, verifier=verifier)
+agent = Agent(wallet, gateway, audit, llm)
 
-__all__ = ["audit", "bank", "kernel", "gateway", "agent", "sessions", "llm", "registry", "verifier"]
+__all__ = ["audit", "wallet", "kernel", "gateway", "agent", "sessions", "llm", "registry", "verifier"]

@@ -1,7 +1,7 @@
 """the bank Deposit API: the customer's deposit accounts (savings, current, joint) and their details."""
 from __future__ import annotations
 
-from app.bank.bank_api.base import NoArgs, Tool
+from app.wallet.tools.base import NoArgs, Tool
 from app.models import fmt_money
 
 
@@ -9,7 +9,7 @@ def list_accounts(gw, s, _):
     return [{"account_id": a["account_id"], "name": a["name"], "type": a.get("type", ""),
              "product": a.get("product", ""), "number": a.get("masked", ""), "balance": fmt_money(a["balance_cents"]),
              "interest": f"{a.get('interest_pct', 0):.2f}% a year (demo rate)", "holders": a.get("holders", [])}
-            for a in gw.bank.accounts(s.user_id)]
+            for a in gw.wallet.accounts(s.user_id)]
 
 
 TOOLS = [

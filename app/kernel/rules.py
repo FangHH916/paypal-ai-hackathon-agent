@@ -9,7 +9,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
 
-from app.bank.mock_bank import MockBank
+from app.wallet.ledger import Wallet
 from app.config import settings
 from app.kernel import protection as prot
 from app.models import Draft, RiskDecision, RiskLevel, fmt_money
@@ -27,7 +27,7 @@ class RuleContext:
     protection: str = "enhanced"                   # account protection level (kernel/protection.py)
 
 
-def evaluate(draft: Draft, bank: MockBank, ctx: RuleContext | None = None) -> RiskDecision:
+def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> RiskDecision:
     ctx = ctx or RuleContext()
     level = RiskLevel.LOW
     reasons: list[str] = []
@@ -44,8 +44,8 @@ def evaluate(draft: Draft, bank: MockBank, ctx: RuleContext | None = None) -> Ri
             blocking.append(why)
 
     invest = draft.kind == "investment"
-    payee = bank.product(draft.payee_id) if invest else bank.payee(draft.user_id, draft.payee_id)
-    acct = bank.account(draft.user_id, draft.from_account)
+    payee = wallet.product(draft.payee_id) if invest else wallet.payee(draft.user_id, draft.payee_id)
+    acct = wallet.account(draft.user_id, draft.from_account)
     enhanced = ctx.protection == "enhanced"
     threshold = prot.high_threshold(ctx.protection)
 
@@ -74,14 +74,14 @@ def evaluate(draft: Draft, bank: MockBank, ctx: RuleContext | None = None) -> Ri
         raise_to(RiskLevel.BLOCK, "R07_SAME_ACCOUNT", "The money would go to the same account it comes from.")
     # ---- Credit card bill: between nothing and the full statement (the bank Bill Payments API) ----
     if draft.kind == "bill" and draft.bill_id:
-        bill = bank.bill(draft.user_id, draft.bill_id)
+        bill = wallet.bill(draft.user_id, draft.bill_id)
         if bill and draft.amount_cents > bill["amount_cents"]:
             raise_to(RiskLevel.BLOCK, "R08_OVER_BILL",
                      f"That's more than the bill ({fmt_money(bill['amount_cents'])}).")
     # ---- Daily transfer limit (the bank Limits API): transfers to other people today, not own accounts ----
     if draft.kind == "transfer" and not own and not draft.schedule and payee is not None:
-        lim = bank.limits(draft.user_id)["daily_transfer_cents"]
-        used = bank.transferred_today(draft.user_id)
+        lim = wallet.limits(draft.user_id)["daily_transfer_cents"]
+        used = wallet.transferred_today(draft.user_id)
         if used + draft.amount_cents > lim:
             left = max(0, lim - used)
             raise_to(RiskLevel.BLOCK, "R13_DAILY_LIMIT",
@@ -90,7 +90,7 @@ def evaluate(draft: Draft, bank: MockBank, ctx: RuleContext | None = None) -> Ri
                      + " You can raise the limit, but a higher limit only starts after a waiting time.")
 
     if payee is not None and draft.kind == "transfer" and not own:
-        history = bank.payee_history(draft.user_id, draft.payee_id)
+        history = wallet.payee_history(draft.user_id, draft.payee_id)
         # ---- New payee (HIGH) ----
         if not history and payee.get("type") != "own":
             raise_to(RiskLevel.HIGH, "R10_NEW_PAYEE", "This is your first transfer to this person, so for safety we'll wait a little before confirming.")
@@ -109,7 +109,7 @@ def evaluate(draft: Draft, bank: MockBank, ctx: RuleContext | None = None) -> Ri
         if draft.amount_cents < payee["min_cents"]:
             raise_to(RiskLevel.BLOCK, "R71_BELOW_MINIMUM",
                      f"The minimum for {payee['name']} is {fmt_money(payee['min_cents'])}.")
-        profile = bank.risk_profile(draft.user_id)
+        profile = wallet.risk_profile(draft.user_id)
         if payee["risk"] > profile["max_product_risk"]:
             raise_to(RiskLevel.HIGH if enhanced else RiskLevel.MEDIUM, "R70_ABOVE_RISK_PROFILE",
                      (f"These shares have risk rating {payee['risk']} of 5, above your " if payee["asset_class"].startswith("Shares")
@@ -134,7 +134,7 @@ def evaluate(draft: Draft, bank: MockBank, ctx: RuleContext | None = None) -> Ri
     if enhanced and (hour >= settings.night_start or hour < settings.night_end):
         raise_to(RiskLevel.MEDIUM, "R20_NIGHT", "It's late at night, so let's double-check.")
     # Earlier steps of the same request (one sentence, each step signed on its own) don't count against the limit
-    recent = bank.recent_exec_count(draft.user_id, settings.velocity_window_min * 60, plan_id=draft.plan_id)
+    recent = wallet.recent_exec_count(draft.user_id, settings.velocity_window_min * 60, plan_id=draft.plan_id)
     if recent >= settings.velocity_max:
         raise_to(RiskLevel.BLOCK, "R21_VELOCITY", "Too many payments in a short time. Please wait until the transaction window clears, then prepare a new request.")
 

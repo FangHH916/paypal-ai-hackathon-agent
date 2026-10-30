@@ -9,8 +9,8 @@ from unittest.mock import patch
 from app.config import settings
 from app.contract_lab import run_showcase
 from app.lab import sandbox
-from app.bank.gateway import GatewayError
-from app.bank.mock_bank import MockBank
+from app.wallet.gateway import GatewayError
+from app.wallet.ledger import Wallet
 from app.kernel.executor import KernelError
 from app.kernel.signing import compute_digest
 from app.kernel.signing import build_challenge
@@ -26,7 +26,7 @@ class ContractTest(unittest.TestCase):
 
     def large(self):
         # a never-paid person: Enhanced protection also asks "is this your own idea?", answered yes below
-        stranger = self.sb.bank.add_payee("u_chen", "John Tan", "OCBC", "1234567890", "friend")["payee_id"]
+        stranger = self.sb.wallet.add_payee("u_chen", "John Tan", "OCBC", "1234567890", "friend")["payee_id"]
         d = self.sb.ask("Send 1500 to John Tan", payee=stranger, cents=150000)
         d.cooling_until = time.time() - 1
         return d
@@ -36,7 +36,7 @@ class ContractTest(unittest.TestCase):
         with self.assertRaises(KernelError) as e:
             self.sb.sign(d, verify_answer=True)
         self.assertEqual(e.exception.code, "SECONDARY_APPROVAL_REQUIRED")
-        self.assertEqual(self.sb.bank.executed, {})
+        self.assertEqual(self.sb.wallet.executed, {})
         self.assertEqual(d.decision["action"], "wait_for_secondary_approval")
 
     def test_approved_exact_card_executes_and_persists_evidence(self):
@@ -48,7 +48,7 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(record["checks"]["execution"]["status"], "pass")
         self.assertIsNotNone(record["secondary_approval"])
         self.assertTrue(all(ok for _, ok in check(r["verifiable"])))
-        self.assertEqual(self.sb.bank.transaction("u_chen", d.draft_id)["verifiable"]["decision"], record)
+        self.assertEqual(self.sb.wallet.transaction("u_chen", d.draft_id)["verifiable"]["decision"], record)
         self.assertIsNone(self.sb.kernel.reviews.valid("u_chen", self.sb.session.session_id, d.draft_id, d.digest))
 
     def test_expired_review_after_signing_stops_commit(self):
@@ -71,7 +71,7 @@ class ContractTest(unittest.TestCase):
                 card=d.card_fields(), digest=d.digest, auth=self.sb.session.signatures[d.draft_id],
                 idempotency_key=d.draft_id, decision={"secondary_approval": {"approved": True}})
         self.assertEqual(e.exception.code, "GW_SECONDARY_APPROVAL_REQUIRED")
-        self.assertFalse(self.sb.bank.executed)
+        self.assertFalse(self.sb.wallet.executed)
 
     def test_review_is_bound_to_customer_session_digest_and_cancel(self):
         d = self.large()
@@ -102,13 +102,13 @@ class ContractTest(unittest.TestCase):
             self.sb.kernel.gateway.execute(user_id="u_chen", session_id=self.sb.session.session_id,
                 card=d.card_fields(), digest=d.digest, auth=auth, idempotency_key=d.draft_id)
         self.assertEqual(e.exception.code, "GW_DEPENDENCY_NOT_COMPLETED")
-        self.assertFalse(self.sb.bank.executed)
+        self.assertFalse(self.sb.wallet.executed)
 
     def test_uncompleted_dependency_blocks_signature_and_is_signed_content(self):
         self.sb.session.messages.append({"role":"user", "content":"Send 50 to my daughter", "reference_parent_id":"not-posted"})
         from app.agent.verifier import Verifier
         d = self.sb.kernel.create_draft(self.sb.session, kind="transfer", payee_id="p_daughter", amount_cents=5000,
-            verification=Verifier(None, self.sb.bank).verdict(self.sb.session))
+            verification=Verifier(None, self.sb.wallet).verdict(self.sb.session))
         self.assertEqual(d.decision["checks"]["plan"]["status"], "fail")
         with self.assertRaises(KernelError) as e:
             self.sb.sign(d)
@@ -117,7 +117,7 @@ class ContractTest(unittest.TestCase):
         self.assertNotEqual(compute_digest(d), d.digest)
 
     def test_velocity_is_a_hard_stop_even_with_yes_answer(self):
-        self.sb.bank.recent_exec_times["u_chen"] = [time.time()] * settings.velocity_max
+        self.sb.wallet.recent_exec_times["u_chen"] = [time.time()] * settings.velocity_max
         d = self.sb.ask("Send 50 to my daughter", cents=5000)
         with self.assertRaises(KernelError):
             self.sb.sign(d, verify_answer=True)
@@ -125,18 +125,18 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(d.decision["action"], "reject")
 
     def test_atomic_last_velocity_slot_and_persistence(self):
-        bank = MockBank(self.tmp.name + "/ledger.sqlite3")
-        bank.recent_exec_times["u_chen"] = [time.time()] * (settings.velocity_max - 1)
+        wallet = Wallet(self.tmp.name + "/ledger.sqlite3")
+        wallet.recent_exec_times["u_chen"] = [time.time()] * (settings.velocity_max - 1)
         def attempt(i):
             try:
-                return bank.execute_payment("u_chen", "SAV-001", "p_daughter", 100, str(i))["status"]
+                return wallet.execute_payment("u_chen", "SAV-001", "p_daughter", 100, str(i))["status"]
             except ValueError as e:
                 return str(e)
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(attempt, [1, 2]))
         self.assertEqual(results.count("SUCCESS"), 1)
         self.assertTrue(any("R21_VELOCITY" in r for r in results))
-        restarted = MockBank(self.tmp.name + "/ledger.sqlite3")
+        restarted = Wallet(self.tmp.name + "/ledger.sqlite3")
         self.assertEqual(restarted.account("u_chen", "SAV-001")["balance_cents"], 324900)
         with self.assertRaisesRegex(ValueError, "R21_VELOCITY"):
             restarted.execute_payment("u_chen", "SAV-001", "p_daughter", 100, "third")
@@ -171,11 +171,11 @@ class WhoNeedsAReviewer(unittest.TestCase):
 
     def test_rules(self):
         from app.kernel.contract import secondary_required
-        new = self.sb.bank.add_payee("u_chen", "John Tan", "OCBC", "1234567890", "friend")["payee_id"]
-        self.assertFalse(secondary_required(self.card("p_daughter", 200000), self.sb.bank))   # family, paid before
-        self.assertFalse(secondary_required(self.card("own:JNT-003", 400000), self.sb.bank))  # own accounts
-        self.assertFalse(secondary_required(self.card("p_cc", 120000), self.sb.bank))         # a bill
-        self.assertFalse(secondary_required(self.card(new, 50000), self.sb.bank))             # new, small
-        self.assertTrue(secondary_required(self.card(new, 150000), self.sb.bank))             # new, large
-        self.assertFalse(secondary_required(self.card("s_aapl", 275000, "investment"), self.sb.bank))
-        self.assertTrue(secondary_required(self.card("s_aapl", 350000, "investment"), self.sb.bank))
+        new = self.sb.wallet.add_payee("u_chen", "John Tan", "OCBC", "1234567890", "friend")["payee_id"]
+        self.assertFalse(secondary_required(self.card("p_daughter", 200000), self.sb.wallet))   # family, paid before
+        self.assertFalse(secondary_required(self.card("own:JNT-003", 400000), self.sb.wallet))  # own accounts
+        self.assertFalse(secondary_required(self.card("p_cc", 120000), self.sb.wallet))         # a bill
+        self.assertFalse(secondary_required(self.card(new, 50000), self.sb.wallet))             # new, small
+        self.assertTrue(secondary_required(self.card(new, 150000), self.sb.wallet))             # new, large
+        self.assertFalse(secondary_required(self.card("s_aapl", 275000, "investment"), self.sb.wallet))
+        self.assertTrue(secondary_required(self.card("s_aapl", 350000, "investment"), self.sb.wallet))

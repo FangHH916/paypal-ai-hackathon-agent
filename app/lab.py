@@ -1,6 +1,6 @@
 """Security lab: real attacks against the real kernel, run on an isolated sandbox.
 
-Each attack gets a fresh bank, audit log and session, so running the lab never touches the user's demo
+Each attack gets a fresh wallet, audit log and session, so running the lab never touches the user's demo
 session. The "user's device" is played by a Python P-256 key; the attacker tries to move money without it,
 with the wrong key, with altered content, twice, too early, or by steering the model.
 
@@ -19,8 +19,8 @@ from typing import Callable
 
 from app.agent.tools import ToolGateway
 from app.agent.verifier import Verifier
-from app.bank.gateway import GatewayError
-from app.bank.mock_bank import MockBank
+from app.wallet.gateway import GatewayError
+from app.wallet.ledger import Wallet
 from app.kernel import p256, webauthn
 from app.kernel.audit import AuditLog
 from app.kernel.executor import Kernel, KernelError
@@ -33,26 +33,26 @@ SITE = Site("localhost", frozenset({"http://localhost:8000"}))
 
 @dataclass
 class Sandbox:
-    bank: MockBank
+    wallet: Wallet
     kernel: Kernel
     session: Session
     audit: AuditLog
     device_key: int
 
     def balance(self) -> int:
-        return self.bank.account("u_chen", "SAV-001")["balance_cents"]
+        return self.wallet.account("u_chen", "SAV-001")["balance_cents"]
 
     def ask(self, text: str, payee="p_daughter", cents=20000):
         """The user asks for a payment and the kernel drafts it (as if the agent had called draft_transfer),
         with the independent verifier's reading of the user's words attached."""
         self.session.messages.append({"role": "user", "content": text})
         return self.kernel.create_draft(self.session, kind="transfer", payee_id=payee, amount_cents=cents,
-                                        local_hour=14, verification=Verifier(None, self.bank).verdict(self.session))
+                                        local_hour=14, verification=Verifier(None, self.wallet).verdict(self.session))
 
     def model_drafts(self, text: str, tool: str, args: dict):
         """A misbehaving model: the user says `text`, the model calls `tool` with wrong `args`."""
         self.session.messages.append({"role": "user", "content": text})
-        gw = ToolGateway(self.bank, self.kernel, verifier=Verifier(None, self.bank))
+        gw = ToolGateway(self.wallet, self.kernel, verifier=Verifier(None, self.wallet))
         res = gw.call(self.session, tool, args)
         assert res.get("ok"), res
         return self.session.current_draft
@@ -68,14 +68,14 @@ class Sandbox:
 
 
 def sandbox(tmpdir: str) -> Sandbox:
-    bank = MockBank()
+    wallet = Wallet()
     audit = AuditLog(os.path.join(tmpdir, f"lab-{os.urandom(4).hex()}.jsonl"))
-    kernel = Kernel(bank, audit, allow_mock=False, require_verification=True, risk_hour=14)
+    kernel = Kernel(wallet, audit, allow_mock=False, require_verification=True, risk_hour=14)
     kernel.registry.allow_browser_key = True      # the sandbox's simulated device signs with a browser key
     s = Session(session_id="lab-" + os.urandom(3).hex())
     d, jwk = p256.generate_keypair()
     kernel.register_key(s, jwk)
-    return Sandbox(bank, kernel, s, audit, d)
+    return Sandbox(wallet, kernel, s, audit, d)
 
 
 ATTACKS: list[tuple[str, str, str]] = [
@@ -138,7 +138,7 @@ def _attack(name: str, sb: Sandbox) -> tuple[str, str]:
         try:
             sb.pay(d, a)
         except KernelError as e:
-            assert sb.balance() == after and len(sb.bank.executed) == 1, "second debit happened"
+            assert sb.balance() == after and len(sb.wallet.executed) == 1, "second debit happened"
             return e.code, "First payment went through once; replaying its signature did nothing."
         raise AssertionError("replay accepted")
     elif name == "expired":
@@ -155,7 +155,7 @@ def _attack(name: str, sb: Sandbox) -> tuple[str, str]:
         d = sb.ask("Send 200 to my daughter")
         a = sb.sign(d)
         tok = sb.kernel.authorize(sb.session, d.draft_id, d.digest, a)
-        sb.bank.account("u_chen", "SAV-001")["balance_cents"] = 1_000      # balance drops before execution
+        sb.wallet.account("u_chen", "SAV-001")["balance_cents"] = 1_000      # balance drops before execution
         before = sb.balance()
         try:
             sb.kernel.commit(sb.session, d.draft_id, tok)
@@ -178,7 +178,7 @@ def _attack(name: str, sb: Sandbox) -> tuple[str, str]:
         return "SANITIZED", f"The model only ever sees: “{clean}”"
     elif name == "no_exec_tool":
         from app.agent.tools import ToolGateway
-        names = [t["function"]["name"] for t in ToolGateway(sb.bank, sb.kernel).schemas(sb.session)]
+        names = [t["function"]["name"] for t in ToolGateway(sb.wallet, sb.kernel).schemas(sb.session)]
         assert not any(w in n for n in names for w in ("commit", "execute", "pay_now", "send_money", "authorize"))
         return "NO_SUCH_TOOL", "Tools the model can see: " + ", ".join(names)
     elif name == "audit_tamper":
@@ -246,7 +246,7 @@ def _attack(name: str, sb: Sandbox) -> tuple[str, str]:
             sb.kernel.change_protection(sb.session, "standard", None)
         except KernelError as e:
             from app.kernel import protection
-            assert protection.effective(sb.bank, "u_chen") == "enhanced"
+            assert protection.effective(sb.wallet, "u_chen") == "enhanced"
             return e.code, ("Refused without a fingerprint. Even when signed, lowering only takes effect after a "
                             "delay, so a scammer on the phone can't rush it.")
         raise AssertionError("protection lowered without a signature")
@@ -270,7 +270,7 @@ def run_lab() -> list[dict]:
             rec["code"], rec["detail"] = code, detail
             # No money may move because of the attack. (replay / audit_tamper make one legitimate payment first.)
             allowed = 1 if name in ("replay", "audit_tamper") else 0
-            no_extra_payment = len(sb.bank.executed) <= allowed
+            no_extra_payment = len(sb.wallet.executed) <= allowed
             rec["blocked"] = code != "NOT_BLOCKED" and (expected == "*" or code == expected) and no_extra_payment
             rec["no_money_moved"] = no_extra_payment
             results.append(rec)

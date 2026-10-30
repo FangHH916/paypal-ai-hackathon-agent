@@ -5,7 +5,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from app.bank.bank_api.base import MEANT_DESC, MISHEARD_DESC, NoArgs, Tool
+from app.wallet.tools.base import MEANT_DESC, MISHEARD_DESC, NoArgs, Tool
 from app.kernel.executor import KernelError
 from app.models import fmt_money, to_cents
 
@@ -24,7 +24,7 @@ class DraftBillArgs(BaseModel):
 
 def get_bills(gw, s, _):
     out = []
-    for b in gw.bank.bills(s.user_id):
+    for b in gw.wallet.bills(s.user_id):
         item = {"bill_id": b["bill_id"], "title": b["title"], "amount": fmt_money(b["amount_cents"]),
                 "due": b["due"], "payee_id": b["payee_id"]}
         if "min_due_cents" in b:
@@ -36,7 +36,7 @@ def get_bills(gw, s, _):
 
 
 def draft_bill_payment(gw, s, a: DraftBillArgs):
-    bill = gw.bank.bill(s.user_id, a.bill_id)
+    bill = gw.wallet.bill(s.user_id, a.bill_id)
     if bill is None or bill["status"] != "unpaid":
         raise KernelError(f"bill_id={a.bill_id} is not an unpaid bill. Call get_bills first.")
     card_bill = "min_due_cents" in bill

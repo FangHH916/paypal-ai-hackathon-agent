@@ -38,8 +38,8 @@ class GatewayError(Exception):
 
 
 class ExecutionGateway:
-    def __init__(self, bank, registry, audit=None, allow_unsigned: bool = False):
-        self._bank, self.registry, self.audit = bank, registry, audit
+    def __init__(self, wallet, registry, audit=None, allow_unsigned: bool = False):
+        self._wallet, self.registry, self.audit = wallet, registry, audit
         self.allow_unsigned = allow_unsigned          # only for quick scripts in AUTH_MODE=mock; never in the demo
         self.reviews = SecondaryReviews()
         self._consumed: set[str] = set()
@@ -50,10 +50,10 @@ class ExecutionGateway:
         try:
             method = self._check(user_id, session_id, card, digest, auth)
             approval = self.reviews.valid(user_id, session_id, card["draft_id"], digest)
-            if secondary_required(card, self._bank) and not approval:
+            if secondary_required(card, self._wallet) and not approval:
                 raise GatewayError("The independent demo review is missing or expired.", "GW_SECONDARY_APPROVAL_REQUIRED")
             for ref in card.get("dependency_ids", []):
-                if (self._bank.transaction(user_id, ref) or {}).get("status") != "SUCCESS":
+                if (self._wallet.transaction(user_id, ref) or {}).get("status") != "SUCCESS":
                     raise GatewayError("A required earlier transaction is not complete.", "GW_DEPENDENCY_NOT_COMPLETED")
         except GatewayError as e:
             self._log("gateway.rejected", session_id, {"draft_id": card.get("draft_id"), "reason": e.code})
@@ -69,18 +69,18 @@ class ExecutionGateway:
             metadata["decision"] = recorded
         try:
             if card.get("schedule"):
-                receipt = self._bank.create_standing_instruction(user_id, card["from_account"], card["payee_id"],
+                receipt = self._wallet.create_standing_instruction(user_id, card["from_account"], card["payee_id"],
                     card["amount_cents"], card["schedule"], idempotency_key=idempotency_key, metadata=metadata)
             elif card["kind"] == "investment":
-                receipt = self._bank.execute_investment(user_id, card["from_account"], card["payee_id"],
+                receipt = self._wallet.execute_investment(user_id, card["from_account"], card["payee_id"],
                     card["amount_cents"], idempotency_key=idempotency_key, metadata=metadata)
             else:
-                receipt = self._bank.execute_payment(user_id, card["from_account"], card["payee_id"], card["amount_cents"],
+                receipt = self._wallet.execute_payment(user_id, card["from_account"], card["payee_id"], card["amount_cents"],
                     idempotency_key=idempotency_key, bill_id=card.get("bill_id"), metadata=metadata)
         except (ValueError, OSError) as e:
             raise GatewayError(str(e), "GW_LEDGER_REJECTED") from e
         if self.audit:
-            self._bank.flush_audit(self.audit)
+            self._wallet.flush_audit(self.audit)
         return receipt
 
     # ------------------------------------------------------------------ checks

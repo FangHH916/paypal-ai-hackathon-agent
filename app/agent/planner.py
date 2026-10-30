@@ -165,10 +165,10 @@ class Unresolved(Exception):
     """A reference can't be worked out yet (e.g. the earlier step wasn't signed): the agent asks instead."""
 
 
-def resolve(step: dict, bank, user_id: str, receipts: list[dict], step_drafts: dict) -> tuple[str, dict | None]:
+def resolve(step: dict, wallet, user_id: str, receipts: list[dict], step_drafts: dict) -> tuple[str, dict | None]:
     """Turn a step into the concrete instruction for the agent, computing any referenced amount in code.
     Returns (text, resolved) where resolved = {"amount_cents", "why", "from_account"} or None."""
-    accounts = bank.accounts(user_id)
+    accounts = wallet.accounts(user_id)
     text, amount = step["request"], step["amount"]
     cents, why, from_id = None, "", None
     dependency_ids = []
@@ -184,7 +184,7 @@ def resolve(step: dict, bank, user_id: str, receipts: list[dict], step_drafts: d
 
     def account(word: str | None, fallback: str | None) -> dict:
         aid = account_id_for(_ACCOUNT_WORDS.get(word or "", None), accounts) or fallback or accounts[0]["account_id"]
-        acct = bank.account(user_id, aid)
+        acct = wallet.account(user_id, aid)
         if not acct:
             raise Unresolved("that account isn't one of yours")
         return acct
@@ -209,7 +209,7 @@ def resolve(step: dict, bank, user_id: str, receipts: list[dict], step_drafts: d
     src = step["from"]
     if src["kind"] == "destination_of_step":
         card = parent(src["step"])
-        payee = bank.payee(user_id, card.get("payee_id", "")) or {}
+        payee = wallet.payee(user_id, card.get("payee_id", "")) or {}
         if payee.get("type") == "own":
             from_id = payee["account_id"]
     if cents is not None and cents <= 0:
@@ -217,7 +217,7 @@ def resolve(step: dict, bank, user_id: str, receipts: list[dict], step_drafts: d
     if cents is not None:
         text += f" with {cents // 100}.{cents % 100:02d} SGD"
     if from_id and not re.search(r"\bfrom\b", text, re.I):
-        text += f" from my {bank.account(user_id, from_id)['name']}"
+        text += f" from my {wallet.account(user_id, from_id)['name']}"
     resolved = {"amount_cents": cents, "why": why, "from_account": from_id,
                 "dependency_ids": dependency_ids} if (cents is not None or from_id) else None
     return text, resolved

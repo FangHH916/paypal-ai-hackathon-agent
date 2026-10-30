@@ -1,7 +1,7 @@
-"""Mock bank: a fixed "test world". For a real integration, replace only this module; the Agent code stays the same.
+"""Mock wallet: a fixed "test world". For a real integration, replace only this module; the Agent code stays the same.
 
 Note: the Agent (model) never calls this directly. The tool gateway reads; writes go only through the execution
-gateway (app/bank/gateway.py), which re-verifies the customer's signature before posting to the ledger.
+gateway (app/wallet/gateway.py), which re-verifies the customer's signature before posting to the ledger.
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import copy
 import hashlib
 import json
 
-from app.bank.storage import LedgerStorage, atomic_write
+from app.wallet.storage import LedgerStorage, atomic_write
 import threading
 import time
 import uuid
@@ -151,7 +151,7 @@ def price_sgd_cents(prod: dict) -> int:
     return round(prod["price"] * (USD_SGD if prod.get("currency") == "USD" else 1) * 100)
 
 
-class MockBank(LedgerStorage):
+class Wallet(LedgerStorage):
     def __init__(self, path=None):
         self._lock = threading.RLock()
         self.path = None
@@ -532,4 +532,4 @@ class MockBank(LedgerStorage):
             return dict(lim)
 
 
-bank = MockBank()
+wallet = Wallet()

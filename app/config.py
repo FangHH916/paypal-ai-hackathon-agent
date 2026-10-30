@@ -57,7 +57,7 @@ class Settings:
     user_high_threshold = float(_f("RULE_HIGH_THRESHOLD", "1000")) # above this: cooling-off period (enhanced protection)
     user_high_threshold_standard = float(_f("RULE_HIGH_THRESHOLD_STANDARD", "3000"))  # same, standard protection
     # Lowering protection (enhanced -> standard) is signed on the device and only takes effect after this delay
-    protection_delay = int(_f("PROTECTION_LOWER_DELAY", "120"))   # demo: 2 min; a real bank: 86400 (24 h)
+    protection_delay = int(_f("PROTECTION_LOWER_DELAY", "120"))   # demo: 2 min; a real wallet: 86400 (24 h)
     cooldown_seconds = int(_f("RULE_COOLDOWN_SECONDS", "20"))      # 20 s for the demo, e.g. 600 in production
     velocity_window_min = int(_f("RULE_VELOCITY_WINDOW_MIN", "10"))
     velocity_max = int(_f("RULE_VELOCITY_MAX", "3"))
@@ -97,7 +97,7 @@ class Settings:
     # ---- Storage ----
     audit_path = Path(_f("AUDIT_PATH", str(ROOT / "data" / "audit.jsonl")))
     voice_dir = Path(_f("VOICE_DIR", str(ROOT / "data" / "voice")))   # recordings kept for the audit trail
-    # Enrolled passkeys (public keys only). Kept across demo resets, like a phone enrolled with the bank.
+    # Enrolled passkeys (public keys only). Kept across demo resets, like a phone enrolled with the wallet.
     passkey_path = Path(_f("PASSKEY_PATH", str(ROOT / "data" / "passkeys.json")))
 
     @property

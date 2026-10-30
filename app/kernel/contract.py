@@ -16,7 +16,7 @@ from app.kernel import protection
 POLICY_VERSION = "star-contract-1.0"
 
 
-def secondary_required(card, bank):
+def secondary_required(card, wallet):
     """Who must a separate bank reviewer look at? Money to someone the customer has never paid before, above the
     protection threshold (impersonation scams always use a new account), and large investments. Not: moves between
     the customer's own accounts, bills, or family / payees they have paid before (cooling-off, the verification
@@ -24,10 +24,10 @@ def secondary_required(card, bank):
     user = card["user_id"]
     if card.get("kind") == "investment":
         return card["amount_cents"] > settings.review_invest_threshold * 100
-    payee = bank.payee(user, card["payee_id"]) or {}
-    if payee.get("type") in ("own", "biller") or bank.payee_history(user, card["payee_id"]):
+    payee = wallet.payee(user, card["payee_id"]) or {}
+    if payee.get("type") in ("own", "biller") or wallet.payee_history(user, card["payee_id"]):
         return False
-    return card["amount_cents"] > protection.high_threshold(protection.effective(bank, user)) * 100
+    return card["amount_cents"] > protection.high_threshold(protection.effective(wallet, user)) * 100
 
 
 class SecondaryReviews:
@@ -57,7 +57,7 @@ class SecondaryReviews:
             self.records.pop((session_id, draft_id), None)
 
 
-def decision(draft, session, bank, reviews, *, stage="before_authorization", signature=False,
+def decision(draft, session, wallet, reviews, *, stage="before_authorization", signature=False,
              verify_answer=False, execution=False, rejection=None):
     """Build a fail-closed decision. Only explicit observations produce a pass."""
     check = lambda status, detail: {"status": status, "detail": detail}
@@ -67,7 +67,7 @@ def decision(draft, session, bank, reviews, *, stage="before_authorization", sig
         "fail" if v.get("status") == "mismatch" else "pending",
         "; ".join(v.get("mismatches", [])) or "Verifier: " + v.get("engine", "not available"))
     missing = [ref for ref in draft.dependency_ids if not
-        ((bank.transaction(draft.user_id, ref) or {}).get("status") == "SUCCESS")]
+        ((wallet.transaction(draft.user_id, ref) or {}).get("status") == "SUCCESS")]
     checks["plan"] = check("fail" if missing else "pass" if draft.dependency_ids else "not_applicable",
         "Uncompleted dependencies: " + ", ".join(missing) if missing else
         "Completed ledger receipts: " + ", ".join(draft.dependency_ids) if draft.dependency_ids else "No prior transaction is required.")
@@ -77,7 +77,7 @@ def decision(draft, session, bank, reviews, *, stage="before_authorization", sig
     question = bool(risk and risk.verify_question and not verify_answer)
     checks["policy"] = check("fail" if blocked else "pending" if cooling or question else "pass",
         " ".join(risk.reasons) if risk and risk.reasons else "Transaction rules passed." if risk else "Rules have not run.")
-    required = secondary_required(draft.card_fields(), bank)
+    required = secondary_required(draft.card_fields(), wallet)
     approval = reviews.valid(draft.user_id, session.session_id, draft.draft_id, draft.digest)
     checks["secondary_approval"] = check("pass" if required and approval else "pending" if required else "not_applicable",
         "Simulated bank reviewer approved this exact card." if required and approval else

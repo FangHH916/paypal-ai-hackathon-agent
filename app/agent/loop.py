@@ -25,7 +25,7 @@ from app.agent.prompts import _unexpected_answer, state_summary, system_prompt
 from app.agent.textparse import money_mentions, parse_amount, relative_in
 from app.kernel.evidence import derived_amounts, user_utterances
 from app.agent.tools import ToolGateway
-from app.bank.mock_bank import MockBank
+from app.wallet.ledger import Wallet
 from app.config import settings
 from app.kernel import protection as prot
 from app.kernel.audit import AuditLog
@@ -174,8 +174,8 @@ def split_plan(text: str) -> list[str]:
 
 
 class Agent:
-    def __init__(self, bank: MockBank, gateway: ToolGateway, audit: AuditLog, llm, fallback=None):
-        self.bank, self.gateway, self.audit, self.llm = bank, gateway, audit, llm
+    def __init__(self, wallet: Wallet, gateway: ToolGateway, audit: AuditLog, llm, fallback=None):
+        self.wallet, self.gateway, self.audit, self.llm = wallet, gateway, audit, llm
         self.fallback = fallback or OfflineLLM()
 
     # ------------------------------------------------------------------ One turn
@@ -218,7 +218,7 @@ class Agent:
                 # A separate follow-up may explicitly identify the account just credited.
                 from app.agent.textparse import account_id_for, find_account
                 previous = s.receipts[0].get("card", {})
-                account_id = account_id_for(find_account(text), self.bank.accounts(s.user_id))
+                account_id = account_id_for(find_account(text), self.wallet.accounts(s.user_id))
                 if account_id and previous.get("payee_id") == "own:" + account_id:
                     parent_id = previous.get("draft_id")
             receipt = next((r for r in s.receipts if r.get("card", {}).get("draft_id") == parent_id), None)
@@ -230,7 +230,7 @@ class Agent:
             reference_parent_id = parent_id
             text = _RELATIVE.sub(f"{cents // 100}.{cents % 100:02d} SGD", text)
             # For an owned-account transfer, "of it" means funds in that destination account.
-            target = self.bank.payee(s.user_id, receipt["card"]["payee_id"])
+            target = self.wallet.payee(s.user_id, receipt["card"]["payee_id"])
             if target and target.get("type") == "own" and not re.search(r"\bfrom\b", text, re.I):
                 text += " from my " + target["name"]
             s.add_trace("reference", "Amount resolved from the completed, signed parent transaction",
@@ -259,7 +259,7 @@ class Agent:
             s.messages.append({"role": "user", "content": text})
             error = request_guard.problem(text)
             raw_level, reasons, _ = fraud.scan(text)
-            s.escalate_scam(prot.cap_scam(raw_level, prot.effective(self.bank, s.user_id)), reasons)
+            s.escalate_scam(prot.cap_scam(raw_level, prot.effective(self.wallet, s.user_id)), reasons)
             if s.scam_level.rank >= RiskLevel.HIGH.rank:
                 return self._locked(s, start, text)
             # Amount-only corrections may not silently discard a new recipient/account instruction.
@@ -278,7 +278,7 @@ class Agent:
                         s.plan_drafts[pos] = d.draft_id
                 reply = "The old confirmation is cancelled. Please review the corrected payment."
                 s.messages.append({"role": "assistant", "content": reply})
-                card = presenter.build_card(d, self.bank, s.phase, care=s.care_mode)
+                card = presenter.build_card(d, self.wallet, s.phase, care=s.care_mode)
                 return TurnResult(reply, {"type": {Phase.FROZEN: "frozen", Phase.BLOCKED: "blocked", Phase.COOLING: "cooldown"}.get(s.phase, "confirm"), "card": card},
                                   reply, s.trace[start:], "request correction")
             reply = error or "Please make a new payment request with the recipient and amount."
@@ -292,7 +292,7 @@ class Agent:
 
         # 0. pre-hook, before any model sees the words (the planner included): deterministic scam scan
         #    (standard protection turns HIGH into a warning; BLOCK stops everyone)
-        level_p = prot.effective(self.bank, s.user_id)
+        level_p = prot.effective(self.wallet, s.user_id)
         raw_level, reasons, cats = fraud.scan(text)
         level = prot.cap_scam(raw_level, level_p)
         if level != RiskLevel.LOW:
@@ -358,10 +358,10 @@ class Agent:
         # "half of my money" / "with half of it" / "whatever is left": the bank's code works the amount out
         s.amount_hint = None
         if relative_in(OfflineLLM._effective_text(s.messages)):    # also "Yes" after "that is S$812.50, shall I?"
-            cands = derived_amounts(user_utterances(s.messages), self.bank.accounts(s.user_id), None)
+            cands = derived_amounts(user_utterances(s.messages), self.wallet.accounts(s.user_id), None)
             if cands:
                 s.amount_hint = cands[0]
-                s.add_trace("evidence", f"Amount worked out by the bank: {cands[0][1]} = {fmt_money(cands[0][0])}")
+                s.add_trace("evidence", f"Amount worked out by the wallet: {cands[0][1]} = {fmt_money(cands[0][0])}")
         history = s.messages[-settings.max_history_turns * 2:]
         draft_before = s.current_draft_id
         change_before = (s.pending_change or {}).get("change_id")
@@ -374,7 +374,7 @@ class Agent:
             # Only finish locally when both target and exact amount are unambiguous; the
             # independent verifier and all normal kernel checks still apply to this draft.
             from app.agent.verifier import catalog, extract_offline
-            known = extract_offline(s.task_utterances(), catalog(self.bank, s.user_id))
+            known = extract_offline(s.task_utterances(), catalog(self.wallet, s.user_id))
             gave_up = bool(known.get("payee") and known.get("amount"))
         if gave_up and s.current_draft_id == draft_before and s.phase == Phase.IDLE and \
                 (s.pending_change or {}).get("change_id") == change_before:
@@ -405,7 +405,7 @@ class Agent:
         ui = {"type": "text"}
         speak = reply
         if new_draft:
-            card = presenter.build_card(new_draft, self.bank, s.phase, care=s.care_mode)
+            card = presenter.build_card(new_draft, self.wallet, s.phase, care=s.care_mode)
             ui = {"type": {Phase.BLOCKED: "blocked", Phase.COOLING: "cooldown", Phase.FROZEN: "frozen"}.get(
                 s.phase, "confirm"), "card": card}
             if s.phase not in (Phase.BLOCKED, Phase.FROZEN):
@@ -413,7 +413,7 @@ class Agent:
         elif pending and s.phase in (Phase.AWAITING_AUTH, Phase.COOLING):
             # Whatever the user asked, keep the waiting card in front of them (e.g. after "I'm ready")
             ui = {"type": "cooldown" if s.phase == Phase.COOLING else "confirm",
-                  "card": presenter.build_card(pending, self.bank, s.phase, care=s.care_mode), "reopened": True}
+                  "card": presenter.build_card(pending, self.wallet, s.phase, care=s.care_mode), "reopened": True}
         elif s.pending_change and s.pending_change["change_id"] != change_before:
             ui = {"type": "change", "card": s.pending_change["card"]}     # add payee / raise limit / GIRO: sign it
         elif s.phase == Phase.HANDOFF:
@@ -425,7 +425,7 @@ class Agent:
                 request = next((u for u in reversed(s.task_utterances()) if detect_intent(u) in _MONEY_INTENTS), text_now)
                 s.pending_choice = {"request": request, "options": [
                     {"payee_id": p["payee_id"], "name": p["name"], "relation": p["relation"]}
-                    for p in self.bank.payees(s.user_id) if p["name"] in [o["send"] for o in options]]}
+                    for p in self.wallet.payees(s.user_id) if p["name"] in [o["send"] for o in options]]}
                 s.add_trace("ui", "Offered tap-to-choose buttons", [o["label"] for o in options])
         if ui["type"] != "choose":
             s.pending_choice = None
@@ -453,7 +453,7 @@ class Agent:
             return None
         from app.agent.verifier import catalog
         t0 = time.time()
-        steps, err = planner.plan(self.llm, text, catalog(self.bank, s.user_id))
+        steps, err = planner.plan(self.llm, text, catalog(self.wallet, s.user_id))
         took = time.time() - t0
         if not steps:
             s.add_trace("plan", f"Model planner unavailable ({err}); rule-based splitter used", rule_parts)
@@ -481,7 +481,7 @@ class Agent:
         """Work out a planned step's referenced amount / account in code (from signed, executed earlier steps and real
         balances). Returns (instruction, step_meta), or a TurnResult asking the user when it can't be worked out."""
         try:
-            text, resolved = planner.resolve(spec, self.bank, s.user_id, s.receipts, s.plan_drafts)
+            text, resolved = planner.resolve(spec, self.wallet, s.user_id, s.receipts, s.plan_drafts)
         except planner.Unresolved as e:
             reply = (f"I can't work out the amount for “{spec['said']}” yet: {e}. "
                      "Which exact amount in SGD should I use?")
@@ -520,7 +520,7 @@ class Agent:
             # Fixed prefix (system prompt) first, dynamic state after: works with APIs that accept only one system
             # message, and helps prompt caching
             msgs = [{"role": "system", "content": system_prompt("senior" if s.care_mode else "everyday") +
-                     "\n\n" + state_summary(s, self.bank)},
+                     "\n\n" + state_summary(s, self.wallet)},
                     *history, *working]
             forced = money and step == 0 and getattr(llm, "supports_tool_choice", False)
             kw = {"tool_choice": "required"} if forced else {}
@@ -622,11 +622,11 @@ class Agent:
         if not reply or not reply.rstrip().endswith("?"):
             return []
         low = reply.lower()
-        people = [p for p in self.bank.payees(s.user_id) if p["type"] == "person" and p["name"].lower() in low]
+        people = [p for p in self.wallet.payees(s.user_id) if p["type"] == "person" and p["name"].lower() in low]
         if len(people) >= 2:
             return [{"label": f"{p['name']} ({p['relation']})", "detail": p["masked_account"], "send": p["name"]}
                     for p in people]
-        bills = [b for b in self.bank.bills(s.user_id) if b["title"].lower() in low]
+        bills = [b for b in self.wallet.bills(s.user_id) if b["title"].lower() in low]
         if len(bills) >= 2:
             return [{"label": b["title"], "detail": fmt_money(b["amount_cents"]), "send": f"Pay the {b['title']}"}
                     for b in bills]
@@ -642,7 +642,7 @@ class Agent:
         s.add_trace("guard", "A payment is still waiting for the user; showing its card again and queuing the new request",
                     {"pending": d.draft_id, "queued": text})
         self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "confirm", "llm": "guard"})
-        card = presenter.build_card(d, self.bank, s.phase, care=s.care_mode)
+        card = presenter.build_card(d, self.wallet, s.phase, care=s.care_mode)
         return TurnResult(reply=reply, ui={"type": "cooldown" if s.phase == Phase.COOLING else "confirm", "card": card,
                                            "reopened": True}, speak=reply, trace=s.trace[start:], llm="guard")
 
@@ -684,7 +684,7 @@ class Agent:
                         if not s.care_mode else
                         f"Please check the card: {fmt_money(draft.amount_cents)} {prep} {draft.payee_name}.")
             if draft.risk and draft.risk.level == RiskLevel.BLOCK:
-                # Stopped by the bank: always the code's wording and the rule that actually stopped it
+                # Stopped by the wallet: always the code's wording and the rule that actually stopped it
                 s.add_trace("guard", "Draft blocked by the rules; using the code template", {"model_reply": reply})
                 return "I can't process this: " + " ".join((draft.risk.blocking or draft.risk.reasons)[:2])
             elif draft.verification.get("status") == "mismatch":

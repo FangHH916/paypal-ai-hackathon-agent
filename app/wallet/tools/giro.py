@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.bank.bank_api.base import NoArgs, Tool
+from app.wallet.tools.base import NoArgs, Tool
 from app.models import fmt_money, to_cents
 
 
@@ -24,7 +24,7 @@ def list_giro(gw, s, _):
     return [{"giro_id": g["giro_id"], "biller": g["biller"], "aliases": g.get("aliases", []), "status": g["status"],
              "max_each_time": fmt_money(g["limit_cents"]) if g.get("limit_cents") else "each bill in full",
              "last_deduction": g["last_deduction"], "from_account": g["from_account"]}
-            for g in gw.bank.giro(s.user_id) if g["status"] != "cancelled"]
+            for g in gw.wallet.giro(s.user_id) if g["status"] != "cancelled"]
 
 
 def cancel_giro(gw, s, a: CancelGiroArgs):

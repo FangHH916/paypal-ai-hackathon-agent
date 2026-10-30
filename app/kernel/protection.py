@@ -29,18 +29,18 @@ from app.models import RiskLevel
 LEVELS = ("standard", "enhanced")
 
 
-def effective(bank, user_id: str, now: float | None = None) -> str:
+def effective(wallet, user_id: str, now: float | None = None) -> str:
     """Current level, applying a scheduled lowering once its time has come."""
-    p = bank.protection(user_id)
+    p = wallet.protection(user_id)
     pend = p.get("pending")
     if pend and (now or time.time()) >= pend["effective_at"]:
-        p = bank.update_protection(user_id, level=pend["to"])
+        p = wallet.update_protection(user_id, level=pend["to"])
     return p["level"]
 
 
-def status(bank, user_id: str) -> dict:
-    level = effective(bank, user_id)
-    pend = bank.protection(user_id).get("pending")
+def status(wallet, user_id: str) -> dict:
+    level = effective(wallet, user_id)
+    pend = wallet.protection(user_id).get("pending")
     return {"level": level, "pending": dict(pend) if pend else None, "delay_seconds": settings.protection_delay,
             "delay_words": delay_words(),
             "high_threshold": high_threshold(level)}
@@ -69,16 +69,16 @@ def cap_scam(level: RiskLevel, protection: str) -> RiskLevel:
     return level
 
 
-def raise_now(bank, user_id: str) -> dict:
-    p = bank.protection(user_id)
-    bank.update_protection(user_id, level="enhanced")
-    return status(bank, user_id)
+def raise_now(wallet, user_id: str) -> dict:
+    p = wallet.protection(user_id)
+    wallet.update_protection(user_id, level="enhanced")
+    return status(wallet, user_id)
 
 
-def schedule_lowering(bank, user_id: str, now: float | None = None) -> dict:
-    p = bank.protection(user_id)
-    if effective(bank, user_id) == "standard":
-        return status(bank, user_id)
-    bank.update_protection(user_id, pending={"to": "standard", "effective_at": int((now or time.time()) + settings.protection_delay),
+def schedule_lowering(wallet, user_id: str, now: float | None = None) -> dict:
+    p = wallet.protection(user_id)
+    if effective(wallet, user_id) == "standard":
+        return status(wallet, user_id)
+    wallet.update_protection(user_id, pending={"to": "standard", "effective_at": int((now or time.time()) + settings.protection_delay),
                     "requested_at": int(now or time.time())})
-    return status(bank, user_id)
+    return status(wallet, user_id)

@@ -8,7 +8,7 @@ os.environ.setdefault("RULE_FIXED_HOUR", "14")
 
 from app.agent.textparse import amount_words_en, parse_amount  # noqa: E402
 from app.agent.verifier import Verifier  # noqa: E402
-from app.bank.mock_bank import MockBank  # noqa: E402
+from app.wallet.ledger import Wallet  # noqa: E402
 from app.kernel.audit import AuditLog  # noqa: E402
 from app.kernel.executor import Kernel, KernelError  # noqa: E402
 from app.kernel.signing import TokenService  # noqa: E402
@@ -19,9 +19,9 @@ from app.models import Phase, RiskLevel  # noqa: E402
 class KernelTestBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.bank = MockBank()
+        self.wallet = Wallet()
         self.audit = AuditLog(os.path.join(self.tmp.name, "audit.jsonl"))
-        self.kernel = Kernel(self.bank, self.audit, TokenService(b"test-secret"), allow_mock=True)
+        self.kernel = Kernel(self.wallet, self.audit, TokenService(b"test-secret"), allow_mock=True)
         self.s = Session(session_id="t")
 
     def tearDown(self):
@@ -32,10 +32,10 @@ class KernelTestBase(unittest.TestCase):
 
     def draft(self, payee="p_daughter", cents=20000, said=True, **kw):
         # By default the user actually asked for this payment (evidence grounding needs the user's words)
-        p = self.bank.payee("u_chen", payee)
+        p = self.wallet.payee("u_chen", payee)
         if said and p:
             self.say(f"Send {cents / 100:g} to {p['name']}")
-        kw.setdefault("verification", Verifier(None, self.bank).verdict(self.s))   # the independent check
+        kw.setdefault("verification", Verifier(None, self.wallet).verdict(self.s))   # the independent check
         return self.kernel.create_draft(self.s, kind="transfer", payee_id=payee, amount_cents=cents,
                                         local_hour=14, **kw)
 
@@ -86,7 +86,7 @@ class TestSigningAndExecution(KernelTestBase):
         tok = self.kernel.authorize(self.s, d.draft_id, d.digest, "demo-fingerprint")
         r = self.kernel.commit(self.s, d.draft_id, tok)
         self.assertEqual(r["status"], "SUCCESS")
-        self.assertEqual(self.bank.account("u_chen", "SAV-001")["balance_cents"], 325000 - 20000)
+        self.assertEqual(self.wallet.account("u_chen", "SAV-001")["balance_cents"], 325000 - 20000)
 
     def test_digest_mismatch_rejected(self):
         d = self.draft()
@@ -100,7 +100,7 @@ class TestSigningAndExecution(KernelTestBase):
         d.amount_cents = 999900
         with self.assertRaises(KernelError):
             self.kernel.commit(self.s, d.draft_id, tok)
-        self.assertEqual(self.bank.executed, {})
+        self.assertEqual(self.wallet.executed, {})
 
     def test_token_replay_rejected_by_token_service(self):
         ts = TokenService(b"k")
@@ -132,10 +132,10 @@ class TestSigningAndExecution(KernelTestBase):
         self.kernel.authorize(self.s, d.draft_id, d.digest, "demo-fingerprint", verify_answer=True)
 
     def test_idempotent_execution(self):
-        r1 = self.bank.execute_payment("u_chen", "SAV-001", "p_son", 100, "same-key")
-        r2 = self.bank.execute_payment("u_chen", "SAV-001", "p_son", 100, "same-key")
+        r1 = self.wallet.execute_payment("u_chen", "SAV-001", "p_son", 100, "same-key")
+        r2 = self.wallet.execute_payment("u_chen", "SAV-001", "p_son", 100, "same-key")
         self.assertEqual(r1["txn_id"], r2["txn_id"])
-        self.assertEqual(self.bank.account("u_chen", "SAV-001")["balance_cents"], 325000 - 100)
+        self.assertEqual(self.wallet.account("u_chen", "SAV-001")["balance_cents"], 325000 - 100)
 
     def test_second_draft_while_pending_rejected(self):
         self.draft()
@@ -251,7 +251,7 @@ class TestDeviceKeySigning(KernelTestBase):
         with self.assertRaises(KernelError) as e:
             self.kernel.authorize(self.s, d.draft_id, d.digest, self.signed(d, priv=attacker))
         self.assertEqual(e.exception.code, "INVALID_SIGNATURE")
-        self.assertEqual(self.bank.executed, {})
+        self.assertEqual(self.wallet.executed, {})
 
     def test_tampered_payload_rejected(self):
         import json
