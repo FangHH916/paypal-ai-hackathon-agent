@@ -3,7 +3,7 @@
 ## Set up once
 
 ```bash
-git clone https://github.com/team/voice-agent && cd voice-agent
+git clone <this repository> star && cd star
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env        # works with no keys (offline rule model); add your own keys to use the real model

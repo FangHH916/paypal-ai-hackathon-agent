@@ -102,7 +102,7 @@ def main():
     pay = res["payment"]
     check("awaiting approval, with a same-origin simulator link", pay["state"] == "AWAITING_APPROVAL" and res["next_step"]["url"].startswith("/simulator/checkout"))
     page = requests.get(BASE + res["next_step"]["url"], timeout=10)
-    print("      simulator page status:", page.status_code, "(404 until the Product stage adds web/simulator.html)")
+    check("the simulator page is served", page.status_code == 200 and "NOT PAYPAL" in page.text, page.status_code)
     token = res["next_step"]["url"].split("token=")[1]
     forged = post("/api/paypal/orders/return", {"session_id": c.sid, "payment_id": pay["payment_id"]})
     check("return without approval: not paid, no capture", forged["payment"]["state"] == "AWAITING_APPROVAL" and not forged["payment"]["verified"])

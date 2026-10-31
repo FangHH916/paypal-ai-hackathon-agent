@@ -46,11 +46,6 @@ button:disabled{cursor:not-allowed}
 .skip-link:focus{top:12px}
 .eyebrow{margin:0 0 .3em;font-size:.82em;letter-spacing:.04em;color:var(--muted);font-weight:600}
 
-/* Figures in the sans face: the serif's old-style numerals are harder to read, and these are the numbers that matter */
-.stat-value,.crow.amount .amt,.tracker-amt,.inv-amt,.offer-price,.counter b,.g-amount,.lab-score,.care-left b,.stop-count b,.cg strong{font-family:var(--body);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
-.cg .quote{font-family:var(--head);font-weight:600}
-.small-value{font-family:var(--head)}
-
 /* Buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.45em;min-height:44px;padding:.5em 1em;border-radius:10px;border:1.5px solid transparent;font-weight:600;text-decoration:none;text-align:center;line-height:1.2}
 .btn.primary{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
@@ -179,6 +174,7 @@ main#main{flex:1;padding:clamp(16px,3vw,32px);outline:none;min-width:0}
 .assistant{display:flex;flex-direction:column;min-height:min(72dvh,720px);min-width:0}
 .assistant .section-top{padding:14px 18px 0}
 .tiny-badge{font-size:.76em;padding:.15em .55em;border-radius:999px;background:var(--surface-2);color:var(--muted);font-weight:600}
+.stage>*{scroll-margin:12px 0 100px}
 .stage{flex:1;overflow-y:auto;max-height:62dvh;padding:8px 18px 16px;display:flex;flex-direction:column;gap:12px;min-height:220px}
 body.care .stage{max-height:none}
 .welcome-msg{display:flex;gap:.8em;align-items:flex-start;margin:6px 0}
@@ -418,6 +414,10 @@ body.care .grid-host{height:620px}
 .ag-row.row-attention{background:var(--warn-bg)}
 .ag-row.row-total{background:var(--surface-2);font-weight:650}
 .ag-cell .pp-badge{vertical-align:middle;flex-wrap:nowrap}
+.grid-card{display:flex;flex-direction:column;gap:3px;padding:8px 0;line-height:1.3;white-space:normal}
+.grid-card.one{flex-direction:row;justify-content:space-between;padding:0;height:100%;align-items:center}
+.grid-card-top{display:flex;justify-content:space-between;gap:10px}
+.grid-card small{color:var(--muted)}
 .hash{font-size:.82em}
 .tick{color:var(--ok);font-size:.84em;font-weight:650}
 .voices{margin:.6em 0;padding:.6em .8em;background:var(--surface-2);border-radius:10px}
@@ -519,6 +519,11 @@ body.guardian-page .page-foot{max-width:1200px;margin:0 auto}
 .sim-page .pill-status{background:#ddd;color:#111}
 .sim-page :focus-visible{outline-color:#0040ff}
 
+/* Figures in the sans face: the serif's old-style numerals are harder to read, and these are the numbers that matter */
+.stat-value,.crow.amount .amt,.tracker-amt,.inv-amt,.offer-price,.counter b,.g-amount,.lab-score,.care-left b,.stop-count b,.cg strong{font-family:var(--body);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.cg .quote{font-family:var(--head);font-weight:600}
+.small-value{font-family:var(--head)}
+
 /* Phone and tablet */
 @media (max-width:900px){
   .layout{display:block;padding-bottom:calc(84px + env(safe-area-inset-bottom))}
@@ -533,7 +538,13 @@ body.guardian-page .page-foot{max-width:1200px;margin:0 auto}
   .mobile-brand{display:inline-flex}
   .topbar{align-items:center}
   .top-actions{gap:6px}
-  .model-pill,.prot,.icon-btn .label{display:none}
+  .model-pill,.prot,.icon-btn .label,.care-more{display:none}
+  .top-actions{flex-wrap:nowrap;flex:none}
+  .top-title{flex:1 1 0}
+  .top-title strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .care-toggle,.icon-btn{font-size:.8rem}
+  .chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:3px;width:100%}
+  .chip{flex:none}
   .stats{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .stat-main{grid-column:1/-1}
   .star-grid{grid-template-columns:minmax(0,1fr)}

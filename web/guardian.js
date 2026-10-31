@@ -54,7 +54,7 @@ function renderPending(list){
       <dl class="facts"><dt>To</dt><dd>${esc(p.payee_name)}${p.payee_handle ? ` <small>${esc(p.payee_handle)}</small>` : ''}</dd>
         <dt>She said</dt><dd><q>${esc(p.you_said)}</q></dd>
         ${(p.items || []).length ? `<dt>Buying</dt><dd>${p.items.map(i => esc(i.name)).join(', ')}</dd>` : ''}
-        <dt>Why you're asked</dt><dd><ul>${p.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul></dd>
+        <dt>Star told her</dt><dd><ul>${p.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul></dd>
         <dt>Exact card</dt><dd><code>${esc(p.digest_short)}…</code> <small>Your signature covers this card only. If it changes, your approval no longer counts.</small></dd></dl>
       <div class="row-actions"><button class="btn danger" data-draft="${esc(p.draft_id)}" data-decide="deny" type="button">Deny</button>
         <button class="btn primary" data-draft="${esc(p.draft_id)}" data-decide="approve" type="button">${icon('fingerprint')}Approve</button></div>

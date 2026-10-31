@@ -63,12 +63,20 @@ export async function mountGrid(host, opts){
     if(p.data.outcome === 'stopped') return p.value ? `${m} not sent` : '$0 moved';
     return (p.value < 0 ? '−' : '+') + m;
   };
+  const cardCell = p => {
+    const d = p.data, m = p.colDef.cardMoney({value:d.amount_cents, data:d});
+    if(d.pinnedTotal) return `<div class="grid-card one"><b>${esc(d.to)}</b><b>${esc(m)}</b></div>`;
+    return `<div class="grid-card"><div class="grid-card-top"><b>${esc(d.to || d.type)}</b><b>${esc(m)}</b></div>${ppBadge(d.status, getMode(), d.verified)}<small>${esc(d.type)}, ${esc(new Date(d.time * 1000).toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}))}</small></div>`;
+  };
   const columns = [
-    {field:'time', headerName:'Time', colId:'time', sort:'desc', minWidth:176, flex:1, filter:'agDateColumnFilter', filterParams:{comparator:dateMatches},
+    // Phones: one card-like column, so the table never needs sideways scrolling. Keyboard and sorting work as usual.
+    {colId:'card', headerName:'Activity', flex:1, minWidth:200, hide:true, sortable:false, floatingFilter:false, filter:false, cardMoney:moneyCell, cellRenderer:cardCell,
+     valueGetter:p => `${p.data.to || ''} ${p.data.type || ''} ${p.data.pinnedTotal ? '' : statusInfo(p.data.status, p.data.verified).word}`},
+    {field:'time', headerName:'Time', colId:'time', sort:'desc', minWidth:200, flex:1, filter:'agDateColumnFilter', filterParams:{comparator:dateMatches},
      valueGetter:p => p.data.time ? new Date(p.data.time * 1000) : null,
      valueFormatter:p => p.value ? p.value.toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : ''},
-    {field:'type', headerName:'Type', minWidth:120, flex:1, filter:'agTextColumnFilter'},
-    {field:'to', headerName:'To / from', minWidth:150, flex:1.3, filter:'agTextColumnFilter',
+    {field:'type', headerName:'Type', minWidth:150, flex:1, filter:'agTextColumnFilter'},
+    {field:'to', headerName:'To / from', minWidth:150, flex:1.3, filter:'agTextColumnFilter', valueFormatter:p => p.value || 'No one: stopped before a draft',
      tooltipValueGetter:p => p.data.handle || ''},
     {field:'amount_cents', headerName:'Amount', type:'rightAligned', minWidth:158, flex:1, filter:'agNumberColumnFilter',
      filterValueGetter:p => Math.abs(p.data.amount_cents || 0) / 100, valueFormatter:moneyCell},
@@ -85,17 +93,20 @@ export async function mountGrid(host, opts){
     {field:'audit_hash', headerName:'Audit hash', minWidth:170, filter:'agTextColumnFilter',
      cellRenderer:p => p.value ? `<code class="hash">${esc(p.value)}</code> <span class="tick" title="Chain verified">✓ verified</span>` : ''},
   ];
+  const isNarrow = () => (host.clientWidth || window.innerWidth) < 620;
   const sets = () => {
-    const w = host.clientWidth || window.innerWidth;
-    if(care || w < 620) return ['time', 'to', 'amount_cents', 'status'].filter(c => !(w < 520 && c === 'time'));
-    if(w < 1000) return ['time', 'type', 'to', 'amount_cents', 'status', 'why'];
-    return null;     // every column
+    if(isNarrow()) return ['card'];
+    if(care) return ['time', 'to', 'amount_cents', 'status'];
+    if((host.clientWidth || window.innerWidth) < 1000) return ['time', 'type', 'to', 'amount_cents', 'status', 'why'];
+    return columns.map(c => c.colId || c.field).filter(c => c !== 'card');
   };
   const applyColumns = () => {
     if(!api) return;
     const show = sets();
     api.setColumnsVisible(columns.map(c => c.colId || c.field), false);
-    api.setColumnsVisible(show || columns.map(c => c.colId || c.field), true);
+    api.setColumnsVisible(show, true);
+    api.setGridOption('floatingFiltersHeight', isNarrow() ? 0 : undefined);
+    api.resetRowHeights();
   };
   const totals = () => {
     let sent = 0, back = 0, kept = 0;
@@ -106,7 +117,7 @@ export async function mountGrid(host, opts){
       else if(r.outcome === 'moved' && r.amount_cents < 0) sent += Math.abs(r.amount_cents);
     });
     const line = (id, to, cents) => ({row_id:`total_${id}`, pinnedTotal:true, to, type:'This demo', amount_cents:cents, currency});
-    api.setGridOption('pinnedBottomRowData', [line('sent', 'Total sent', sent), line('back', 'Total refunded', back), line('kept', 'Total stopped, kept safe', kept)]);
+    api.setGridOption('pinnedBottomRowData', [line('sent', 'Total sent', sent), line('back', 'Total refunded', back), line('kept', 'Total kept safe', kept)]);
     const count = api.getDisplayedRowCount();
     $('.grid-count', host).textContent = `${count} row${count === 1 ? '' : 's'} shown. Totals are this demo's numbers, from the rows shown.`;
   };
@@ -115,6 +126,7 @@ export async function mountGrid(host, opts){
     columnDefs: columns, rowData: [],
     defaultColDef:{sortable:true, resizable:true, floatingFilter:!care, filter:true, minWidth:90, wrapText:false},
     getRowId: p => p.data.row_id,
+    getRowHeight: p => !isNarrow() ? undefined : p.data.pinnedTotal ? (care ? 52 : 40) : (care ? 142 : 104),
     getRowClass: p => p.data.pinnedTotal ? 'row-total' : p.data.outcome === 'stopped' ? 'row-stopped' : NEEDS.has(p.data.status) ? 'row-attention' : '',
     isExternalFilterPresent: () => chip !== 'all',
     doesExternalFilterPass: n => CHIPS.find(c => c[0] === chip)[2](n.data),

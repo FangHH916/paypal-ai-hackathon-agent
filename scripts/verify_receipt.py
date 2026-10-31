@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.kernel import p256, webauthn  # noqa: E402
 from app.kernel.signing import canonical, verify_device_signature  # noqa: E402
+from app.wallet.payments import receipt_hash  # noqa: E402
 
 
 # The same functions as app/paypal/ids.py, on purpose: a checker should not need the thing it checks.
@@ -34,8 +35,7 @@ _KEY_FOR_RAIL = {"payouts": lambda d: "star-" + d[:40], "orders": lambda d: "ord
 
 def check(receipt: dict) -> list[tuple[str, bool]]:
     out = []
-    body = {k: v for k, v in receipt.items() if k != "receipt_sha256"}
-    out.append(("Receipt not edited", hashlib.sha256(canonical(body).encode()).hexdigest() == receipt.get("receipt_sha256")))
+    out.append(("Receipt not edited", receipt_hash(receipt) == receipt.get("receipt_sha256")))
     card, digest = receipt["card"], receipt["digest"]
     out.append(("Card matches its digest", hashlib.sha256(canonical(card).encode()).hexdigest() == digest))
     pp = receipt.get("paypal") or {}
@@ -75,7 +75,7 @@ def main():
     receipt = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     results = check(receipt)
     card = receipt["card"]
-    print(f"Receipt {receipt['txn_id']}: S${card['amount_cents'] / 100:,.2f} to {card['payee_name']}")
+    print(f"Receipt {receipt['txn_id']}: ${card['amount_cents'] / 100:,.2f} to {card['payee_name']}")
     for name, ok in results:
         print(f"  {'✓' if ok else '✗'} {name}")
     ok = all(ok for _, ok in results)

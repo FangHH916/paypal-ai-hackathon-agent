@@ -182,7 +182,7 @@ function render(){
           <span class="pill model-pill" title="The model behind Star"><span class="dot ${live() ? 'on' : ''}"></span>${esc(state.health.engine || (live() ? 'Live model' : 'Offline rules'))}</span>
           <button class="pill prot ${protLevel()}${protPending() ? ' queued' : ''}" id="prot-pill" type="button" aria-label="Account protection: ${protLevel()}. Open settings">${icon('shield')}${protLabel()}</button>
           <button class="icon-btn" id="trace-toggle" type="button" aria-pressed="${$('#trace').classList.contains('open')}">${icon('trace')}<span class="label">Agent trace</span></button>
-          <button class="care-toggle" id="care-toggle" type="button" aria-pressed="${state.care}">${icon('care')}<span>${state.care ? 'Standard view' : 'Care mode'}</span></button>
+          <button class="care-toggle" id="care-toggle" type="button" aria-pressed="${state.care}">${icon('care')}<span>${state.care ? 'Standard<span class="care-more"> view</span>' : 'Care mode'}</span></button>
         </div>
       </header>
       <main id="main" tabindex="-1"></main>
@@ -197,14 +197,15 @@ function render(){
 }
 function go(page){
   if(state.care && CARE_HIDES.has(page)) page = 'home';
-  state.page = page; render(); $('#main')?.focus({preventScroll:true}); window.scrollTo(0, 0);
+  state.page = page; try{ sessionStorage.setItem('page', page); }catch{}
+  render(); $('#main')?.focus({preventScroll:true}); window.scrollTo(0, 0);
 }
 function setCare(on, quiet = false){
   state.care = on; store.set('care', on);
   if(on && CARE_HIDES.has(state.page)) state.page = 'home';
   state.messages.forEach(m => { if(m.type === 'choices' && m.care) m.done = true; });   // the switch answers the offer
   if(state.sid) api('/api/care', {session_id: state.sid, on}).catch(() => {});   // Star talks to match the screen
-  render(); if(!quiet) toast(on ? 'Care mode: larger text, read aloud. Take your time.' : 'Standard view');
+  render(); if(!quiet) toast(on ? 'Care mode is on.' : 'Standard view');
 }
 // When the customer arrives, Star asks once whether they'd like the easier version (answer by tapping, typing or voice)
 async function offerCare(){
@@ -370,7 +371,7 @@ function assistantHtml(){
   const engine = state.health.engine || 'Offline rules';
   return `<section class="card assistant" aria-label="Star assistant">
     <div class="section-top"><h2>${icon('spark')}Star</h2><span class="tiny-badge ${live() ? 'live' : ''}">${esc(engine)}</span></div>
-    <div class="stage" id="stage" aria-live="polite"></div>
+    <div class="stage" id="stage"></div>
     <div class="composer-wrap">
       <form class="composer" id="composer">
         <button type="button" class="mic" id="mic" aria-label="Tap to speak, tap again to stop">${icon('mic')}<span>${state.care ? 'Tap to speak' : 'Speak'}</span></button>
@@ -409,16 +410,16 @@ function stageHtml(m, i){
     `<button class="choice" type="button" data-i="${i}" data-j="${j}"><span>${esc(o.label)}</span><small>${esc(o.detail || '')}</small></button>`).join('')}</div>`;
   if(m.type === 'plan') return `<div class="plan" role="note"><b>I'll do this in ${m.items.length} steps. You check and confirm each one.</b>
     <ol>${m.items.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
-  if(m.type === 'frozen') return `<div class="stop-block frozen" role="alert"><h3>${icon('freeze')}Frozen: this didn't match what you said</h3>
+  if(m.type === 'frozen') return `<div class="stop-block frozen"><h3>${icon('freeze')}Frozen: this didn't match what you said</h3>
     <ul class="why-list">${m.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="muted small">A second, independent check re-read your own words. Nothing went to PayPal.</p>
     ${stopCount(m)}<div class="acts"><button class="btn secondary again" type="button">Say it again</button></div></div>`;
-  if(m.type === 'blocked') return `<div class="stop-block" role="alert"><h3>${icon('shield')}I've stopped this for you</h3>
+  if(m.type === 'blocked') return `<div class="stop-block"><h3>${icon('shield')}${m.scam === false ? "I can't do this one" : "I've stopped this for you"}</h3>
     <p>${esc(m.text)}</p>${state.care || m.reasons?.length ? `<details class="why" ${state.care ? 'open' : ''}><summary>Why I stopped this</summary>${whyHtml(m.reasons?.length ? m.reasons : [m.text])}</details>` : ''}
     ${m.hint ? `<small class="muted">${esc(m.hint)}</small>` : ''}${stopCount(m)}
-    <div class="acts"><a class="btn danger" href="tel:${esc(hotline().number)}">${icon('phone')}Call ${esc(hotline().spoken)}</a>
+    <div class="acts">${m.scam === false ? '' : `<a class="btn danger" href="tel:${esc(hotline().number)}">${icon('phone')}Call ${esc(hotline().spoken)}</a>`}
       <button class="btn secondary notify" type="button">${icon('family')}Tell ${esc(guardianName())}</button>
       <button class="replay btn secondary small" type="button" data-i="${i}" aria-label="Read this aloud">${icon('speaker')}</button></div>
-    <p class="muted small">${esc(hotline().name[0].toUpperCase() + hotline().name.slice(1))}, ${esc(hotline().number)}.</p></div>`;
+    ${m.scam === false ? '' : `<p class="muted small">${esc(hotline().name[0].toUpperCase() + hotline().name.slice(1))}, ${esc(hotline().number)}.</p>`}</div>`;
   if(m.type === 'next') return m.done ? '' : `<div class="next-chips"><button class="btn primary small nx-go" type="button" data-i="${i}">Continue: ${esc(m.task)}</button><button class="btn secondary small nx-no" type="button" data-i="${i}">Not now</button></div>`;
   return `<div class="msg bot"><span class="who">Star</span>${esc(m.text)}<button class="replay" type="button" data-i="${i}" aria-label="Read this aloud">${icon('speaker')}</button></div>`;
 }
@@ -448,14 +449,24 @@ function renderStage(){
   st.querySelectorAll('.tr-receipt').forEach(b => b.onclick = () => { const r = state.messages[b.dataset.i].pay.receipt; download(`receipt-${r.txn_id}.json`, r); });
   st.querySelectorAll('.tr-refund').forEach(b => b.onclick = () => send('I want my money back'));
   st.scrollTop = st.scrollHeight;
+  // In Care mode and on phones the page itself scrolls. A long stop is read from its first line.
+  const last = st.lastElementChild;
+  last?.scrollIntoView({block: last.getBoundingClientRect().height > innerHeight * .55 ? 'start' : 'nearest'});
 }
-function push(m){ state.messages.push(m); renderStage(); saveChat(); }
+function announce(text, urgent = false){ const el = $(urgent ? '#sr-alert' : '#sr-live'); if(el && text){ el.textContent = ''; setTimeout(() => { el.textContent = text; }, 30); } }
+function push(m){
+  state.messages.push(m); renderStage(); saveChat();
+  if(m.role === 'bot' && m.type === 'blocked') announce(`Stopped. ${m.text}`, true);
+  else if(m.role === 'bot') announce(m.text);
+  else if(m.type === 'frozen') announce("Frozen: this didn't match what you said. Nothing went to PayPal.", true);
+  else if(m.type === 'caught') announce('Caught and frozen. The wrong amount never reached you.', true);
+}
 
 // ---------------------------------------------------------------- Tracker: what PayPal really says about one payment
 const FLOW = {
   transfer: [['Sent to PayPal', ['PROCESSING', 'HELD', 'UNCLAIMED', 'SENT']], ['Delivered', ['SENT']]],
   purchase: [['Sent to PayPal', ['AWAITING_APPROVAL', 'APPROVED', 'CAPTURING', 'CAPTURE_PENDING', 'PAID', 'REFUNDED', 'REVERSED']],
-             ['Approved by you', ['APPROVED', 'CAPTURING', 'CAPTURE_PENDING', 'PAID', 'REFUNDED', 'REVERSED']], ['Paid', ['PAID', 'REFUNDED']]],
+             ['Approved by you', ['APPROVED', 'CAPTURING', 'CAPTURE_PENDING', 'PAID', 'REFUNDED', 'REVERSED']], ['Payment taken', ['PAID', 'REFUNDED']]],
   bill: [['Sent to PayPal', ['AWAITING_PAYMENT', 'PAID', 'REFUNDED']], ['Paid by you', ['PAID', 'REFUNDED']]],
   refund: [['Asked PayPal', ['REFUND_PENDING', 'REFUNDED']], ['Money on its way back', ['REFUNDED']]],
   money_request: [['Request sent', ['SENT_TO_PAYER', 'PAID']], ['They paid', ['PAID']]],
@@ -468,7 +479,7 @@ function verifiedWords(by){
 }
 function trackerHtml(m, i){
   const p = m.pay;
-  if(!p) return `<div class="tracker" role="status"><h3>Checking with PayPal…</h3><p class="muted small">Coming back from an approval page proves nothing, so Star is asking PayPal itself.</p></div>`;
+  if(!p) return `<div class="tracker"><h3>Checking with PayPal…</h3><p class="muted small">Coming back from an approval page proves nothing, so Star is asking PayPal itself.</p></div>`;
   const flow = FLOW[p.kind] || FLOW.transfer, end = BAD_END.has(p.state), s = p.state;
   const steps = [['Signed by you', true], ...flow.map(([label, states]) => [label, states.includes(s)])];
   let currentSet = false;
@@ -479,8 +490,8 @@ function trackerHtml(m, i){
   }).join('');
   const verified = p.verified ? `<li class="done verified"><span aria-hidden="true">✓</span>Verified by ${esc(verifiedWords(p.verified_by))}</li>` : (end ? '' : '<li class="todo"><span aria-hidden="true"></span>Verified<span class="sr"> not yet</span></li>');
   const redirect = p.next_step?.type === 'redirect';
-  const canRefund = p.kind !== 'refund' && p.state === 'PAID' && p.verified && p.kind === 'purchase';
-  return `<div class="tracker tone-${statusInfo(s, p.verified).tone}" role="status">
+  const canRefund = p.state === 'PAID' && p.verified && p.kind === 'purchase';
+  return `<div class="tracker tone-${statusInfo(s, p.verified).tone}">
     <header><h3>${esc(p.what)}</h3><span class="tracker-amt">${esc(p.amount)}</span></header>
     <p class="tracker-status">${ppBadge(s, p.mode_label, p.verified)}<span class="muted small">${esc(p.to)}${p.handle ? ` · ${esc(p.handle)}` : ''}</span></p>
     <ol class="steps">${items}${verified}${end ? `<li class="stopped"><span aria-hidden="true">✕</span>${esc(statusInfo(s).word)}</li>` : ''}</ol>
@@ -500,7 +511,7 @@ function liveTracker(m){
     try{
       const r = await api(`/api/payments/${encodeURIComponent(state.sid)}/${encodeURIComponent(m.pay.payment_id)}`);
       const was = `${m.pay.state}|${m.pay.verified}`; m.pay = r.payment;
-      if(`${m.pay.state}|${m.pay.verified}` !== was){ renderStage(); saveChat(); refresh(); }
+      if(`${m.pay.state}|${m.pay.verified}` !== was){ renderStage(); saveChat(); refresh(); announce(`${m.pay.what}: ${statusInfo(m.pay.state, m.pay.verified).word}`); }
       loadCalls();
     }catch{}
     const done = SETTLED.has(m.pay.state) && (m.pay.verified || BAD_END.has(m.pay.state));
@@ -535,7 +546,7 @@ function showCaught(r){
 }
 function caughtHTML(m){
   const stage = (label, cls, note) => `<li class="${cls}"><span>${label}</span><small>${note}</small></li>`;
-  return `<div class="caught" role="alert">
+  return `<div class="caught">
     <div class="caught-head"><span class="caught-badge">${m.frozen ? 'Caught and frozen' : 'Caught and stopped'}</span>
       <b>The wrong amount never reached you. Nothing went to PayPal.</b></div>
     <div class="caught-grid">
@@ -624,7 +635,9 @@ function handleTurn(r){
     renderSafety(); refresh(); return;
   }
   if(ui.card && ui.type === 'blocked'){
-    push({type:'blocked', role:'bot', text:r.reply, reasons: ui.card.reasons, calls}); speak(r.speak, true);
+    // The hotline is for scam signs (R8x invoices, R9x sellers). A daily limit or a PayPal outage isn't a scam.
+    const scam = (ui.card.decision?.reason_codes || []).some(code => /^R[89]\d_/.test(code));
+    push({type:'blocked', role:'bot', text:r.reply, reasons: ui.card.reasons, calls, scam}); speak(r.speak, true);
     state.check = checksFromCard(ui.card); renderSafety();
     if(ui.offer_next) offerNext(ui.offer_next);
     refresh(); return;
@@ -694,14 +707,14 @@ function openConfirm(c){
   state.change = null;
   state.card = c; state.verify = null; clearInterval(state.coolTimer); clearInterval(state.guardTimer);
   renderConfirm(); const dlg = $('#confirm'); if(!dlg.open) dlg.showModal();
-  setTimeout(() => $('#c-go:not([disabled])')?.focus() || $('#c-cancel')?.focus(), 50);
+  setTimeout(() => ($('#c-go:not([disabled])') || $('#c-cancel'))?.focus(), 50);
   if(c.cooldown_left > 0){
     state.coolTimer = setInterval(async () => {
       state.card.cooldown_left = Math.max(0, state.card.cooldown_left - 1);
       if(state.card.cooldown_left === 0){
         clearInterval(state.coolTimer);
         try{ const r = await api('/api/card/' + state.sid); if(r.card) state.card = r.card; }catch{}
-        renderConfirm(); return;
+        renderConfirm(); $('#c-go:not([disabled])')?.focus(); return;
       }
       const left = $('#c-cool-left'); if(left) left.textContent = coolWords(state.card.cooldown_left);
     }, 1000);
@@ -733,7 +746,9 @@ function renderConfirm(){
   const c = state.card; if(!c) return;
   const needVerify = !!c.verify_question, cooling = c.cooldown_left > 0;
   const canGo = c.can_confirm && !cooling && (!needVerify || state.verify === true) && state.signMode !== 'none';
-  const rel = c.payee_relation ? ` (${esc(c.payee_relation)})` : '';
+  const rel = c.payee_relation && c.payee_relation !== 'payee' ? ` (${esc(c.payee_relation)})` : '';
+  const goLabel = state.signMode === 'none' ? "Can't sign in this browser" : c.guardian_required ? `Waiting for ${esc(guardianName())}` : cooling ? 'Please wait'
+    : needVerify && state.verify !== true ? 'Answer the question first' : 'Confirm with fingerprint';
   const off = c.offers_checked || [];
   const trust = c.trust?.reasons?.length ? c.trust.reasons : [];
   $('#confirm').innerHTML = `
@@ -754,23 +769,23 @@ function renderConfirm(){
       ${['refund', 'money_request'].includes(c.kind) ? '' : `<div class="crow"><span class="k">Counts against</span><span class="v">${esc(c.from_account)}</span></div>`}
       ${off.length ? `<details class="offers" ${c.kind === 'purchase' ? 'open' : ''}><summary>Star checked ${off.length} offer${off.length === 1 ? '' : 's'}</summary><ul>${off.map(o => `<li class="offer-line verdict-${esc(o.verdict)}"><span><b>${esc(o.merchant)}</b> ${esc(o.price)}</span><span class="verdict">${esc(verdictWord(o.verdict))}</span>${o.reasons?.length ? `<small>${esc(o.reasons[0])}</small>` : ''}</li>`).join('')}</ul></details>` : ''}
       ${trust.length ? `<div class="risk ${c.trust.level === 'BLOCK' ? 'BLOCK' : 'MEDIUM'}"><b>Seller check</b><ul>${trust.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
-      <div class="next-step">${icon('transfer')}<span>${esc(c.next_step_words)}</span></div>
-      ${c.verification?.status === 'match' ? `<div class="vcheck">${icon('shield')}<span>${/offline/i.test(c.verification.engine) ? 'An offline check (shared parser)' : 'A separate model check'} matched your words.</span></div>` : ''}
-      ${c.guardian_required ? `<div class="family-wait" role="status"><b>${icon('family')}Waiting for ${esc(guardianName())}</b><p>This one needs your family's OK. ${esc(guardianName())} sees this exact card on her own device. ${guardianPaired() ? '' : `She isn't paired yet: invite her from the Family page.`}</p></div>` : ''}
-      ${c.guardian_approved ? `<div class="family-ok" role="status">${icon('family')}<span>${esc(guardianName())} approved this exact card, signed on her device.</span></div>` : ''}
-      ${c.decision ? decisionPanel(c.decision) : ''}
       ${c.risk_level !== 'LOW' ? `<div class="risk ${esc(c.risk_level)}"><b>${c.risk_level === 'MEDIUM' ? 'Please take a second look' : "For your safety, let's wait a little"}</b><ul>${c.reasons.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
       ${needVerify ? `<div class="verify"><div class="q">${esc(c.verify_question)}</div><div class="yesno">
         <button type="button" class="btn secondary" data-v="yes" aria-pressed="${state.verify === true}">${c.verify_kind === 'new_payee' ? 'Yes, my own idea' : 'Yes'}</button>
         <button type="button" class="btn secondary" data-v="no" aria-pressed="${state.verify === false}">${c.verify_kind === 'new_payee' ? 'No, someone asked me' : 'No, or not sure'}</button></div></div>` : ''}
+      ${c.guardian_required ? `<div class="family-wait" role="status"><b>${icon('family')} Waiting for ${esc(guardianName())}</b><p>This one needs your family's OK. ${esc(guardianName())} sees this exact card on her own device. ${guardianPaired() ? '' : `She isn't paired yet: invite her from the Family page.`}</p></div>` : ''}
+      ${c.guardian_approved ? `<div class="family-ok" role="status">${icon('family')}<span>${esc(guardianName())} approved this exact card, signed on her device.</span></div>` : ''}
+      ${cooling ? `<div class="cool" role="timer">Please wait <span id="c-cool-left">${coolWords(c.cooldown_left)}</span><small>A good moment to call your family and check.</small></div>` : ''}
       ${state.uvFail ? `<div class="uvhelp">${icon('fingerprint')}<div><b>Your fingerprint wasn't checked</b><small>A password manager signed without asking for your fingerprint, face or PIN, so Star refused it. Set it up again and choose <b>Windows Hello / this device</b> when asked where to save it.</small>
         <button type="button" class="btn secondary" id="c-repk">Set up fingerprint again</button></div></div>` : ''}
-      ${cooling ? `<div class="cool" role="timer">Please wait <span id="c-cool-left">${coolWords(c.cooldown_left)}</span><small>A good moment to call your family and check.</small></div>` : ''}
+      <div class="next-step">${icon('transfer')}<span>${esc(c.next_step_words)}</span></div>
+      ${c.verification?.status === 'match' ? `<div class="vcheck">${icon('shield')}<span>${/offline/i.test(c.verification.engine) ? 'An offline check (shared parser)' : 'A separate model check'} matched your words.</span></div>` : ''}
+      ${c.decision ? decisionPanel(c.decision) : ''}
       <div class="ticker-host compact" data-compact="1"></div>
     </div>
     <div class="cfoot">
       <button type="button" class="btn secondary" id="c-cancel">Cancel</button>
-      <button type="button" class="btn primary" id="c-go" ${canGo ? '' : 'disabled'}>${icon('fingerprint')}${state.signMode === 'none' ? "Can't sign in this browser" : 'Confirm with fingerprint'}</button>
+      <button type="button" class="btn primary" id="c-go" ${canGo ? '' : 'disabled'}>${icon('fingerprint')}${goLabel}</button>
     </div>
     <div class="signnote">Confirmation code ${esc(c.digest.slice(0, 8))}…${esc(c.digest.slice(-4))}. ${state.signMode === 'none' ? esc(NO_SIGNER) : state.signMode === 'device'
       ? "Demo: the fingerprint sensor is simulated. Your tap unlocks this browser's private key, which signs exactly this card. Star and its payment gateway each verify that signature."
@@ -1548,11 +1563,16 @@ async function init(){
   await refresh();
   if(!state.data) throw new Error('The demo service is not ready. Please try again in a moment.');
   loadChat();
+  try{ const p = sessionStorage.getItem('page'); if(NAV.some(n => n[0] === p)) state.page = (state.care && CARE_HIDES.has(p)) ? 'home' : p; }catch{}
   state.signMode = await detectSignMode();      // after refresh: an enrolled passkey keeps being used
   render();
   loadCalls();
+}
+// With the app on screen: "Checking with PayPal" must really be visible, and scrolling needs real sizes.
+async function afterEnter(){
   const q = new URLSearchParams(location.search);
   const pending = store.get('pendingPayment', null);
+  renderStage();
   if(q.get('pp_return') || q.get('pp_cancel') || store.get('tracking', null)) await handleReturn();
   else if(pending && pending.sid === state.sid){ state.card = pending.card; openConfirm(pending.card); await recoverPayment(pending.card); }
   else restorePending();
@@ -1573,7 +1593,9 @@ async function enterApp(){
     const skip = $('#skip'); skip.href = '#main'; skip.textContent = 'Skip to main content';
     $('#main')?.focus({preventScroll:true});
     try{ sessionStorage.setItem('entered', '1'); }catch{}
+    await afterEnter();
   }catch(e){
+    welcome.hidden = false;
     $('#welcome-status').textContent = 'Unable to connect to the demo. Please try again in a moment.';
     enter.disabled = false; enter.removeAttribute('aria-busy');
   }
@@ -1583,5 +1605,5 @@ enter.addEventListener('click', enterApp);
   // Coming back from an approval page, or reloading: go straight in.
   let entered = false; try{ entered = sessionStorage.getItem('entered') === '1'; }catch{}
   const q = new URLSearchParams(location.search);
-  if(entered || q.get('pp_return') || q.get('pp_cancel') || store.get('tracking', null)) enterApp();
+  if(entered || q.get('pp_return') || q.get('pp_cancel') || store.get('tracking', null)){ welcome.hidden = true; enterApp(); }
 })();

@@ -46,7 +46,7 @@ def step(name: str, page: Page, fn) -> None:
     try:
         fn()
     except Exception as e:  # noqa: BLE001
-        msg = str(e).split("\n")[0][:300]
+        msg = " ".join(str(e).split())[:700]
         check(f"{name}: finished without error", False, msg)
         for i, target in enumerate(LAST or [page]):
             try:
@@ -60,7 +60,7 @@ def watch(page: Page, label: str) -> None:
     LAST.append(page)
 
     def on_console(m):
-        if m.type == "error" and not re.search(r"Failed to load resource.*(400|403|404|409)", m.text):
+        if m.type == "error" and not re.search(r"Failed to load resource.*(400|403|404|409)|ERR_CONNECTION_RESET", m.text):   # the lost-reply story resets a connection on purpose
             PROBLEMS.append(f"{label} console: {m.text[:600]}")
 
     page.on("console", on_console)
@@ -94,10 +94,10 @@ def last_tracker(page: Page):
     return page.locator(".tracker").last
 
 
-def start_server(port: int, data: str):
+def start_server(port: int, data: str, extra: dict | None = None):
     env = {**os.environ, "PAYPAL_MODE": "simulator", "LLM_PROVIDER": "offline", "ASR_PROVIDER": "browser", "PAYPAL_CLIENT_ID": "", "PAYPAL_CLIENT_SECRET": "", "PUBLIC_DEMO": "",
            "LEDGER_PATH": os.path.join(data, "ledger.sqlite3"), "AUDIT_PATH": os.path.join(data, "audit.jsonl"),
-           "PASSKEY_PATH": os.path.join(data, "passkeys.json"), "VOICE_DIR": os.path.join(data, "voice")}
+           "PASSKEY_PATH": os.path.join(data, "passkeys.json"), "VOICE_DIR": os.path.join(data, "voice"), **(extra or {})}
     proc = subprocess.Popen([PY, "-m", "uvicorn", "app.server:app", "--port", str(port), "--log-level", "warning"], cwd=ROOT, env=env)
     for _ in range(80):
         try:
@@ -278,6 +278,7 @@ def run(browser, base: str, args) -> None:
         say(page, "Pay the SecureTech bill")
         expect(page.locator(".stop-block").last).to_contain_text("stopped this")
         expect(page.locator(".stop-block .stop-count b").last).to_have_text("0")
+        expect(page.locator(".stop-block a.btn.danger").last).to_contain_text("833-FRAUD-11")
         expect(page.locator(".ticker-host .counter.zero").first).to_be_visible()
         shot(page, "23-scam-stopped")
 
@@ -380,12 +381,13 @@ def run(browser, base: str, args) -> None:
     def activity():
         nav(page, "Activity")
         grid = page.locator(".grid-host")
-        expect(grid.locator(".ag-center-cols-container .ag-row").first).to_be_visible(timeout=20000)
+        rows = grid.locator(".ag-row:not(.row-total)")
+        expect(rows.first).to_be_visible(timeout=20000)
         time.sleep(1)
         shot(page, "36-activity-grid", True)
-        check("status always has its tag", "SIMULATED" in grid.locator(".ag-center-cols-container").inner_text())
+        check("status always has its tag", "SIMULATED" in grid.inner_text())
         check("stops are in the grid", grid.locator(".row-stopped").count() >= 1, grid.locator(".row-stopped").count())
-        check("totals are pinned at the bottom", "Total sent" in grid.locator(".ag-floating-bottom").inner_text())
+        check("totals are pinned at the bottom", grid.locator(".row-total", has_text="Total sent").count() == 1)
         before = page.locator(".grid-count").inner_text()
         page.locator(".chip", has_text="Stopped").click()
         expect(page.locator(".chip", has_text="Stopped")).to_have_attribute("aria-pressed", "true")
@@ -395,25 +397,27 @@ def run(browser, base: str, args) -> None:
         page.locator(".chip", has_text="All").click()
         page.locator(".grid-search input").fill("Tom Reed")
         time.sleep(0.5)
-        check("search filters rows", "Tom Reed" in grid.locator(".ag-center-cols-container").inner_text())
+        check("search filters rows", "Tom Reed" in grid.inner_text())
         page.locator(".grid-search input").fill("")
         grid.locator(".ag-header-cell", has_text="Amount").first.click()   # sort, then a real filter from the floating row
         time.sleep(0.3)
-        grid.locator(".ag-floating-filter-input input").nth(2).fill("Tom")
+        grid.get_by_label("To / from Filter Input").fill("Tom")
         time.sleep(0.8)
-        check("text column filter works", "Tom Reed" in grid.locator(".ag-center-cols-container").inner_text())
+        check("text column filter works", "Tom Reed" in grid.inner_text())
         shot(page, "38-grid-filter")
-        grid.locator(".ag-floating-filter-input input").nth(2).fill("")
+        grid.get_by_label("To / from Filter Input").fill("")
         time.sleep(0.5)
         grid.locator(".ag-floating-filter-button button").first.click()    # open a popup filter: more inline styles to test the CSP
         time.sleep(0.5)
-        page.keyboard.press("Escape")
+        check("the filter popup opens", page.locator(".ag-filter-wrapper, .ag-filter").count() >= 1)
+        page.locator(".page-head h1").click()                              # clicking elsewhere closes it
+        time.sleep(0.3)
         with page.expect_download() as dl:
             page.locator("[data-act=csv]").click()
         path = dl.value.path()
-        rows = list(csv.reader(open(path, encoding="utf-8")))
-        check("CSV export has the rows and the totals", len(rows) > 3 and any("Total sent" in r for r in rows), len(rows))
-        grid.locator(".ag-center-cols-container .ag-row", has_text="Money sent").first.click()
+        lines = list(csv.reader(open(path, encoding="utf-8")))
+        check("CSV export has the rows and the totals", len(lines) > 3 and any("Total sent" in r for r in lines), len(lines))
+        rows.filter(has_text="Money sent").first.click()
         expect(page.locator("#detail")).to_be_visible()
         expect(page.locator("#detail .timeline")).to_be_visible()
         check("timeline names a verified source", "Source" in page.locator("#detail .timeline").inner_text())
@@ -422,12 +426,15 @@ def run(browser, base: str, args) -> None:
             page.locator("#d-receipt").click()
         receipt = dl.value.path()
         out = subprocess.run([PY, str(ROOT / "scripts" / "verify_receipt.py"), str(receipt)], capture_output=True, text=True, cwd=ROOT)
-        check("a downloaded receipt verifies offline", out.returncode == 0, (out.stdout or out.stderr).strip().split("\n")[-1][:100])
+        check("a downloaded receipt verifies offline", out.returncode == 0, (out.stdout + out.stderr).strip()[-500:])
         page.locator("#d-close").click()
         expect(page.locator("#integrity")).to_contain_text("Chain intact")
-        cell = grid.locator(".ag-center-cols-container .ag-cell").first
-        cell.click()
-        page.keyboard.press("ArrowDown")
+        cell = rows.first.locator(".ag-cell").first
+        cell.click()                                 # a click opens the panel; Escape brings focus back to the cell
+        expect(page.locator("#detail")).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(page.locator("#detail")).to_be_hidden()
+        page.keyboard.press("ArrowRight")
         focused = page.evaluate("document.activeElement?.className || ''")
         check("grid keyboard navigation moves focus", "ag-cell" in focused, focused[:50])
 
@@ -471,6 +478,7 @@ def run(browser, base: str, args) -> None:
         check("phone Care stop fits", overflow(pp) <= 0, overflow(pp))
         pp.locator(".nav-btn", has_text="Activity").click()
         expect(pp.locator(".grid-host .ag-row").first).to_be_visible(timeout=20000)
+        expect(pp.locator(".grid-card .pp-badge").first).to_be_visible()
         shot(pp, "46-phone-care-grid")
         check("phone Care grid fits", overflow(pp) <= 0, overflow(pp))
         phone.close()
@@ -512,6 +520,58 @@ def run(browser, base: str, args) -> None:
         expect(q.locator(".g-pair .alert-text")).to_contain_text("isn't valid")
         c.close()
 
+    def lost_reply():
+        # The signed card reaches the server and PayPal, then the browser never hears back. It must not offer to pay again.
+        nav(page, "Talk to Star")
+        writes = lambda: requests.get(f"{base}/api/paypal/calls", params={"session_id": page.evaluate("JSON.parse(localStorage.getItem('sid'))")}, timeout=5).json()["money_moving_total"]
+        before = writes()
+
+        def lose(route):
+            route.fetch()
+            route.abort("connectionreset")
+        page.route("**/api/confirm", lose)
+        trackers = page.locator(".tracker").count()
+        say(page, "Send 25 to my son")
+        expect(page.locator("#confirm .amt")).to_have_text("$25.00")
+        sign_card(page)
+        expect(page.locator(".tracker")).to_have_count(trackers + 1, timeout=20000)
+        expect(last_tracker(page)).to_contain_text("Sent, verified", timeout=30000)
+        page.unroute("**/api/confirm")
+        check("a lost reply still made exactly one payout", writes() == before + 1, writes() - before)
+        shot(page, "51-lost-reply")
+        page.reload()
+        expect(page.locator(".tracker").last).to_contain_text("Sent, verified")
+        check("a reload keeps the conversation and skips the landing", page.locator("#welcome").is_hidden())
+        check("a reload pays nothing", writes() == before + 1)
+
+    def misconfigured():
+        if args.base:
+            return
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data, {"PAYPAL_MODE": "sandbox"})
+            c = browser.new_context(viewport={"width": 1280, "height": 860})
+            q = c.new_page()
+            watch(q, "sandbox-without-keys")
+            try:
+                q.goto(f"http://localhost:{port}/")
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".band-bad")).to_contain_text("isn't set up")
+                check("no SIMULATED success in a misconfigured sandbox", q.locator(".band-sim").count() == 0)
+                shot(q, "52-sandbox-without-keys")
+                q.locator(".nav-btn", has_text="Talk to Star").click()
+                say(q, "Send 50 to my daughter")
+                expect(q.locator(".stop-block").last).to_contain_text("can't reach PayPal")
+                check("fails closed: no card and no tracker", q.locator(".tracker").count() == 0 and not q.locator("#confirm").evaluate("d => d.open"))
+                check("an outage doesn't offer the scam hotline", q.locator(".stop-block a.btn.danger").count() == 0)
+                shot(q, "53-sandbox-refused")
+            finally:
+                c.close()
+                server.terminate()
+                server.wait(10)
+
     def no_stale_screens():
         check("/api/world is gone", requests.get(base + "/api/world", timeout=5).status_code == 404)
 
@@ -519,6 +579,7 @@ def run(browser, base: str, args) -> None:
                      ("Agentic purchase, approval, capture, refund", purchase_and_refund), ("Cancel on the approval page", cancel_on_approval),
                      ("Pay a bill by invoice", pay_bill), ("The fake invoice", fake_invoice), ("A spoken scam", spoken_scam),
                      ("Family guardian, two devices", guardian), ("Security lab and model mistake", lab), ("Activity grid", activity),
+                     ("The reply gets lost", lost_reply), ("Sandbox without keys", misconfigured),
                      ("Phone widths and Care mode", phone_and_care), ("Dark theme and focus", dark_and_focus),
                      ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens)]:
         step(name, page, fn)

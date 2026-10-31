@@ -80,7 +80,7 @@ AG Grid and Render.
 | D7 | Approval UX | Full-page redirect to the approval link. No JS SDK | Keeps CSP free of third-party scripts; the spec documents redirect to `rel:approve` |
 | D8 | Agent Toolkit / MCP | Not used at runtime. `paypal-agent-toolkit` hands a model tools such as `pay_order`, which is the exact pattern Star rejects. README explains this choice without criticising the toolkit, which is a reasonable tool for other uses | Stays out of the money path, adds no value on reads |
 | D9 | Simulator | `requests` transport adapter mounted on the same `requests.Session` as the real client, base URL `https://paypal-simulator.invalid`. The client code is identical in both modes. Hostname cannot resolve, so a bug can't reach a network | Real client code always exercised |
-| D10 | Speech | Remove the speech vendor ASR code. Default: browser speech recognition, as now. Optional `ASR_PROVIDER=openai_compat` calling `POST {base}/audio/transcriptions`, which keeps the signed-recording feature. Without it, no recordings exist and the UI says so | Removes old vendor, keeps the feature optional |
+| D10 | Speech | Remove the old speech vendor code. Default: browser speech recognition, as now. Optional `ASR_PROVIDER=openai_compat` calling `POST {base}/audio/transcriptions`, which keeps the signed-recording feature. Without it, no recordings exist and the UI says so | Removes old vendor, keeps the feature optional |
 | D11 | LLM default | `LLM_BASE_URL` has no vendor default. `LLM_PROVIDER=offline` remains the keyless fallback and the UI **names it**: "Offline rule engine (no AI model connected)". See risk R1 | Honesty |
 | D12 | Cut | Investments, GIRO, standing instructions, own-account transfers, multiple accounts, cards and lock card, risk profile and suitability, holdings | Don't belong in a PayPal wallet. Details in section 5 |
 | D13 | Replaces lock card | `freeze_payments` control tool and a big "Freeze everything" button. Instant, for Mrs. Lee or Anna. Lifting needs Mrs. Lee's signature plus Anna's | Keeps the protective-action pattern |
@@ -321,13 +321,13 @@ Local development without a public URL: webhooks can't arrive. Polling GETs give
 | `app/bank/mock_bank.py` `MockBank` | `app/wallet/ledger.py` `Wallet` | `DEMO_USER = "u_lee"`, new world |
 | `app/bank/gateway.py` | `app/wallet/gateway.py` | Dispatch changes in section 6 |
 | `app/bank/storage.py` | `app/wallet/storage.py` | Add tables in section 7 |
-| `app/bank/bank_api/` | `app/wallet/tools/` | Trace label "PayPal <API>" or "Star" |
-| `tests/test_bank_apis.py` | `tests/test_wallet_tools.py` | |
+| the old API package | `app/wallet/tools/` | Trace label "PayPal <API>" or "Star" |
+| the old API test file | `tests/test_wallet_tools.py` | |
 | `CHALLENGE_DOMAIN "STAR-DCTA-AUTH-V1"` | `"STAR-PAY-AUTH-V1"` | |
 
 ### Delete
 
-- `web/bank-logo.svg`; `docs/images/banner.jpg`, `home.jpg`, `care-card.jpg` (replaced by new screenshots).
+- the old logo; `docs/images/banner.jpg`, `home.jpg`, `care-card.jpg` (replaced by new screenshots).
 - `qa/` entirely, except a new `qa/README.md` and `qa/e2e_demo.py` (section 12). All reports, results and PNGs show the old
   identity, and the harnesses assert old copy. Port what's useful from `qa/run_browser.py` first.
 - `eval/contract-report.json`: regenerated. `eval/cases*.json`: rewritten, removed cases noted.
@@ -659,7 +659,7 @@ Label: "Alerts appear here. This demo doesn't send real texts or emails."
 
 **Lab**: adds attacks and the Failure drill and naive-agent comparison (labelled "scripted illustration, not a test of any real product").
 
-Copy rule: no "bank", "branch", "bank app". "Fingerprint" stays. The simulated fingerprint stays labelled.
+Copy rule: no "bank" or "branch". "Fingerprint" stays. The simulated fingerprint stays labelled.
 
 ---
 
@@ -673,7 +673,7 @@ Run with `D:\Python\.venv_hack\Scripts\python.exe -m unittest discover tests`. B
 | --- | --- |
 | `test_kernel` (41), `test_recovery` (12), `test_scam_context` (4), `test_care_mode` (7), `test_agent` (17), `test_http` (20), `test_contract` (13), `test_contract_http` (5) | Keep. Change names and amounts; reviewer tests become guardian tests covering the same properties |
 | `test_voice` (7) | Keep; ASR tests move to the new provider via stubbed HTTP |
-| `test_wallet_tools`, was `test_bank_apis` (41) | Keep payees, limits, bills, false-claim, tool offering. Remove GIRO, standing instruction, own-account, deposit-account tests with the features |
+| `test_wallet_tools`, renamed (41) | Keep payees, limits, bills, false-claim, tool offering. Remove GIRO, standing instruction, own-account, deposit-account tests with the features |
 | `test_hackathon` (84) | Rename by purpose to `test_requirements.py`. Remove only investment, suitability, own-account and schedule cases; move their safety properties (grounding, frozen mismatch, reference amounts) onto purchase or transfer |
 | `test_planner` (15) | Keep; rewrite invest examples as purchase or bill |
 
@@ -822,7 +822,7 @@ Each item ends in a commit with tests green, unless marked. English commit messa
 5. Repo clean-up: run the identity grep over the tree, delete this plan, full secret scan on tree and history (see section 16), `.gitignore` review.
 6. `docs/SUBMISSION_CHECKLIST.md`: section 16's human actions.
 
-Identity grep (case-insensitive, whole tree): `bank|savings bank|bank app|speech vendor|hosted model|ocbc|singtel|giro|cpf|mdm chen|s\$`. Reports of false positives are fine; hits are not.
+Identity grep: the terms in `tests/test_identity.py`, over the whole tree. Reports of false positives are fine; hits are not.
 
 ### Fixed order constraints
 
@@ -898,7 +898,7 @@ Done: sections 3 to 10 and 12 server side, items 1 to 16 of the Backend list. Di
 
 `web/app.js` and `web/index.html` still describe the old product and are expected to be rewritten. They currently break on:
 
-- Removed: `POST /api/review/secondary` (`app.js` line ~363), `GET /api/world`, `/bank-logo.svg`.
+- Removed: `POST /api/review/secondary` (`app.js` line ~363), `GET /api/world`, the old logo.
 - `/api/state` no longer has `bills` (now `invoices`), `holdings`, `cards`, `standing_instructions`, `giro`, `risk_profile`. New: `allowance`, `paypal`, `engine`,
   `guardian`, `alerts`, `frozen`, `hotline`, `currency`.
 - Cards: `secondary_required` is now `guardian_required` (with `guardian_approved`, `guardian_denied`). `schedule` and `asset_class` are gone. New: `items`, `invoice`,
@@ -911,6 +911,17 @@ Done: sections 3 to 10 and 12 server side, items 1 to 16 of the Backend list. Di
 - CSP: `/` and `/guardian` get `grid_csp(nonce)`. A literal `__STYLE_NONCE__` in the HTML is replaced with the nonce, for `<meta name="style-nonce">`. Put the AG Grid hashes
   from section 10 in `GRID_STYLE_HASHES` in `app/security.py`.
 - Every PayPal status needs its tag: `mode_label` on payments and panels, `paypal.label` on state.
+
+## 19. Product stage: what was built
+
+Every page in section 11 exists: landing, Home, Talk to Star, Shop, Bills, Family, Activity & audit, Security lab, Settings, `/guardian`, the simulator pages. `web/common.js` holds
+`ppBadge`, the device key and the labelled sensor. `qa/e2e_demo.py` drives the stories in Edge and fails on any CSP violation or page error. Differences from the plan:
+
+- **Receipts hash integers for whole-number floats** (`payments.receipt_hash`). The browser run found that a receipt saved by a browser failed `verify_receipt.py`, because JavaScript writes 50.0 as 50.
+- **`task_started_at` is set when a request starts in `/api/chat`**, not on settle: the ticker counter was falling back to 0 the moment a payment finished.
+- **On a phone the grid is one card-like column**, rather than a column subset, so there is never sideways scrolling.
+- **The landing particle animation is gone.** Payment wording in Star's own replies was extended in `presenter.receipt_text` for PAID and the failure states.
+- **The scam hotline button only shows for scam stops** (scam judge, rules R8x and R9x). A limit or a PayPal outage says "I can't do this one".
 
 ### Handoff to the Materials stage
 

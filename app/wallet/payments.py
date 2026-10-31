@@ -131,8 +131,23 @@ def receipt_body(rec: dict, mode: str) -> dict:
                        "event_ids": list(rec["event_ids"])}}
     if rec.get("decision"):
         body["decision"] = rec["decision"]
-    body["receipt_sha256"] = hashlib.sha256(_canonical(body).encode()).hexdigest()
+    body["receipt_sha256"] = receipt_hash(body)
     return body
+
+
+def _plain_numbers(v):
+    """A browser saving the receipt turns 50.0 into 50. Hash the form that survives that, so a saved receipt still verifies."""
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    if isinstance(v, dict):
+        return {k: _plain_numbers(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_plain_numbers(x) for x in v]
+    return v
+
+
+def receipt_hash(body: dict) -> str:
+    return hashlib.sha256(_canonical(_plain_numbers({k: v for k, v in body.items() if k != "receipt_sha256"})).encode()).hexdigest()
 
 
 _KIND_WORD = {"transfer": "Money sent", "bill": "Bill", "purchase": "Purchase", "refund": "Refund", "money_request": "Money request"}

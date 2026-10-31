@@ -3,11 +3,11 @@
 The transaction contract update adds server-owned, expiring secondary approvals bound to customer/session/card digest,
 independently checked again at the gateway; hard velocity limits enforced under the ledger write lock (steps of one spoken request share a signed `plan_id` and
 don't count against each other; a plan has at most 5 steps, and anything said separately counts as usual); and signed plan
-dependency IDs checked against completed ledger receipts. The reviewer is a simulated bank role authenticated by a
-separate configured secret, not a real out-of-band banking channel or KYC. See [RISK_CONTRACT.md](RISK_CONTRACT.md).
+dependency IDs checked against completed ledger receipts. The family guardian is a second device with its own key, whose signature over the exact card the
+gateway re-verifies; it is not KYC or a real out-of-band channel. See [RISK_CONTRACT.md](RISK_CONTRACT.md).
 Decision records are server observations: only the transaction card is covered by the customer's device signature.
 
-Star is a local prototype with synthetic money. It does not claim production bank security, legal
+Star is a local prototype with synthetic money. It does not claim production payment security, legal
 non-repudiation or resistance to every attack. This table is meant to be read by judges as-is.
 
 ## Threats
@@ -40,8 +40,8 @@ non-repudiation or resistance to every attack. This table is meant to be read by
   biometric is checked (the screen says so).
 - **Credential enrolment**: the first passkey (or browser key) is accepted for the one demo customer without an
   identity check (trust on first use). Attestation is "none".
-- **Bank**: synthetic accounts, payees and bills persisted to local SQLite (`LEDGER_PATH`, default `data/ledger.sqlite3`). No real money or bank API.
-- **Family alert / staff handoff**: unavailable in this demo; the screen explicitly directs the user to contact them.
+- **Wallet**: synthetic allowance, people and invoices persisted to local SQLite (`LEDGER_PATH`, default `data/ledger.sqlite3`). PayPal is the keyless simulator by default; the sandbox uses test money. Live is not supported.
+- **Family alerts**: shown on the guardian page only. This demo sends no real texts or emails.
 
 ## What the security lab proves
 
