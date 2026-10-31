@@ -10,6 +10,6 @@ Python 3.14.7 on Windows, offline model and PayPal simulator. No real payment cr
 - Gitleaks 8.30.1 scanned the full local history and working folder. No actionable credential was found. The history finding at `eae29f4:app/lab.py:239` is the constant `idempotency_key="attack"`; two working-folder findings are generated idempotency identifiers in ignored `eval/contract-report.json`. These are not service credentials. No broad scanner exclusions were added.
 - `scripts/capture_demo.py --publish`: completed; 13 current screenshots and silent customer/guardian footage. Customer footage is approximately 161 seconds. The final competition video still needs narration and a public upload.
 
-Clean-checkout results are appended after they run. Hosted CI is a separate environment; local passing results do not establish a CI pass.
+Fresh local clone of `a71418a`, with no ignored data or output files: 489/489 tests passed with no skips, and the full Edge browser run passed. No tracked file exceeds 5 MB. Hosted CI is a separate environment; local passing results do not establish a CI pass.
 
 Unverified: actual PayPal sandbox API acceptance, online-model behaviour, hosted deployment, real microphone and mobile passkeys, and older-adult usability. No real-world fraud prevention or user-adoption claim is made. Silent local footage is draft material, not a final narrated competition video.

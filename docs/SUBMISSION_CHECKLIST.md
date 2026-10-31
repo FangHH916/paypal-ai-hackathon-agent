@@ -23,7 +23,7 @@ Deadline: **Nov 12, 2026, 12:00 PT** (Nov 13, 04:00 Singapore time). Nothing bel
 ## Final checks
 
 - [ ] Fill in every **[TEAM: ...]** in `docs/SUBMISSION.md`, and confirm "Other AI tools used".
-- [ ] Make the repository public, fix the "Payal" typo in its description, and add collaborators. Check GitHub detects the licence.
+- [ ] After rights are confirmed, make the repository public and add the intended collaborators. The PayPal description typo has been corrected. Check GitHub detects the licence.
 - [ ] Open the National Elder Fraud Hotline link in `docs/IMPACT.md` and confirm the number. If `SCAM_HOTLINE_COUNTRY=SG` is ever shown, verify that number first; it's marked as not re-verified.
 - [ ] As far as reasonably possible, check that the fictional merchants and people (`app/wallet/catalogue.py`, `app/wallet/ledger.py`) aren't real businesses or people.
 - [ ] Fill in and submit the form.

@@ -126,7 +126,7 @@ def demo(r: Run) -> None:
 
     r.scene("Hook: landing")
     page.goto(r.base + "/")
-    expect(page.locator("#welcome-title")).to_contain_text("really pay")
+    expect(page.locator("#welcome-title")).to_contain_text("A second check before money moves")
     time.sleep(0.5)
     r.shot(page, "01-landing")
     time.sleep(9)
