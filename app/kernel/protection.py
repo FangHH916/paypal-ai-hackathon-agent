@@ -43,7 +43,8 @@ def status(wallet, user_id: str) -> dict:
     pend = wallet.protection(user_id).get("pending")
     return {"level": level, "pending": dict(pend) if pend else None, "delay_seconds": settings.protection_delay,
             "delay_words": delay_words(),
-            "high_threshold": high_threshold(level)}
+            "high_threshold": high_threshold(level), "enhanced_threshold": settings.user_high_threshold,
+            "standard_threshold": settings.user_high_threshold_standard}
 
 
 def delay_words(seconds: int | None = None) -> str:

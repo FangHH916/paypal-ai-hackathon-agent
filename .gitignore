@@ -23,3 +23,4 @@ eval/report.html
 
 # Voice recordings kept for the audit trail (never committed)
 /data/voice/
+/qa/shots/

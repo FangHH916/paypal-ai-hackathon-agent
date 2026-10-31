@@ -131,7 +131,7 @@ async def guardian_page(_: Request):
 
 
 # Only these files are ever served: source code and .env can never be fetched.
-STATIC = {"/styles.css": ("styles.css", "text/css"), "/app.js": ("app.js", "text/javascript"),
+STATIC = {"/styles.css": ("styles.css", "text/css"), "/app.js": ("app.js", "text/javascript"), "/common.js": ("common.js", "text/javascript"),
           "/logo.svg": ("logo.svg", "image/svg+xml"), "/favicon.svg": ("favicon.svg", "image/svg+xml"),
           "/activity.js": ("activity.js", "text/javascript"), "/guardian.js": ("guardian.js", "text/javascript"),
           "/simulator.js": ("simulator.js", "text/javascript"),
@@ -228,6 +228,8 @@ async def chat(request: Request):
     if isinstance(body.get("care"), bool):
         # the screen the customer is looking at decides how Star talks (survives a server restart)
         s.care_mode = body["care"]
+    if s.phase.value == "IDLE":
+        s.task_started_at = time.time()       # the ticker's "this request": it stays readable after the payment settles
     from app.kernel.voice import bind_utterance
     s.turn_audio = bind_utterance(s, text, body.get("audio_sha256"))   # spoken: link the words to the recording
 
@@ -408,6 +410,7 @@ async def demo_model_mistake(request: Request):
     body = await _json(request)
     s = runtime.sessions.get(body.get("session_id"))
     text = (body.get("text") or "Send 50 to my daughter").strip()[:200]
+    s.task_started_at = time.time()
     result = Agent(runtime.wallet, runtime.gateway, runtime.audit, lab.MistakenLLM()).run_turn(s, text)
     # Tell the app this was the fault-injection demo, so it can show the comparison instead of a puzzling refusal
     d = s.current_draft

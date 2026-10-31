@@ -24,9 +24,17 @@ from app.config import settings
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; "
        "media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 # AG Grid writes inline styles, so pages that show the grid get a per-response nonce plus these hashes. The script policy
-# never changes. Hashes pinned for AG Grid Community 36.2.0: re-capture them whenever web/vendor/ag-grid is updated
-# (qa/e2e_demo.py fails on any CSP violation, which catches drift). Filled in by the Product stage.
-GRID_STYLE_HASHES: tuple[str, ...] = ()
+# never changes. Hashes pinned for AG Grid Community 36.2.0, captured from real Edge runs: re-capture them whenever
+# web/vendor/ag-grid is updated (qa/e2e_demo.py fails on any CSP violation, which catches drift).
+GRID_STYLE_HASHES: tuple[str, ...] = (
+    "sha256-d0lJUpvoC2AtY1hfNkYtQ3PTwyHQPioPc8nziQ4oZnI=", "sha256-rQlkWiJKE/MPGpwDe69lvmDFJRUg9V88F/ZeiWtTua0=",
+    "sha256-oXAVhm/Tmpemvg4pcBJYYAks/omJTSfcyO5A4dtV1VA=", "sha256-N9lQmoTBNVuB9veR0ObhN5kBeM45U2ObJtzGeUlbsaU=",
+    "sha256-6m0aDqwUs2k+1epVPH0ywm4WKo7YiYU2NgwB3DT9gMc=", "sha256-dtD/sM2v5XlIn1wPYyUEm43xidPdaI0LF4PajtmJiSE=",
+    "sha256-vPdwiprKoXKg1P/2L54QAIcS+CWfQAE/S6dhZDsBI3o=", "sha256-ThSUXmROfoNAIvSF4+uzed2+dZV0uXiqvHSgMxUl2VE=",
+    "sha256-+JAU1ADRr5m4X8K1hi1NIH2tj4DgFFXD8S67RY4KM+s=", "sha256-aXKz0aUlehLPnZcEUwqL32uuvVpsAEJcnJ4Jtx1ZrDM=",
+    "sha256-cNiyk3T2wgewzNCZqAIpEXsfcOcxlj47HLSXcOfZdm0=", "sha256-fHF/8NDSsl9iq2ju6JN1VXolna7LUFRnPKsAsAXKwRU=",
+    "sha256-ca2uO9X/1nVOZdm86QHPggbRkppfti9qReD+I87mzh4=", "sha256-S+wf3bS9OU4MKKlzUQCDrmGl48WJ8KRt0aZuzxJsenQ=",
+)
 
 
 def grid_csp(nonce: str) -> str:

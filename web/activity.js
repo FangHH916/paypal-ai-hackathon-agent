@@ -1,0 +1,167 @@
+// The Activity & audit grid, built on AG Grid Community only. Set filters, master-detail and row grouping are Enterprise features,
+// so this uses column filters, an external filter for the chips, pinned rows and a side panel instead.
+// The same module draws the guardian's view (role "guardian"): masked handles and pending approvals pinned at the top.
+import {$, esc, store, money, ppBadge, statusInfo} from '/common.js';
+
+const STATE_KEY = 'star-grid-columns-v1';
+const STOP_STATES = new Set(['STOPPED', 'FROZEN', 'BLOCKED', 'DENIED']);
+const NEEDS = new Set(['UNKNOWN', 'AWAITING_APPROVAL', 'AWAITING_PAYMENT', 'HELD', 'ANOMALY', 'UNCLAIMED', 'PENDING_APPROVAL']);
+const CHIPS = [
+  ['all', 'All', () => true],
+  ['out', 'Money out', r => r.amount_cents < 0 && r.outcome !== 'stopped'],
+  ['stopped', 'Stopped', r => r.outcome === 'stopped'],
+  ['needs', 'Needs attention', r => NEEDS.has(r.status)],
+  ['family', 'Family decisions', r => !!r.family],
+];
+
+let loading = null;
+function loadLibrary(){
+  if(window.agGrid) return Promise.resolve(window.agGrid);
+  loading ||= new Promise((ok, no) => {          // 2 MB: only when a grid actually opens. Same origin, so the script policy doesn't change.
+    const s = document.createElement('script');
+    s.src = '/vendor/ag-grid/ag-grid-community.min.js';
+    s.onload = () => ok(window.agGrid); s.onerror = () => no(new Error('The grid could not be loaded.'));
+    document.head.appendChild(s);
+  });
+  return loading;
+}
+
+function theme(agGrid, care){
+  // App tokens, so it follows the light and dark palettes. Larger rows and text in Care mode.
+  return agGrid.themeQuartz.withParams({
+    backgroundColor:'var(--surface)', foregroundColor:'var(--ink)', headerBackgroundColor:'var(--surface-2)', headerTextColor:'var(--ink)',
+    borderColor:'var(--line)', accentColor:'var(--brand)', oddRowBackgroundColor:'var(--surface)', chromeBackgroundColor:'var(--surface-2)',
+    inputBackgroundColor:'var(--surface)', inputTextColor:'var(--ink)', inputBorder:{color:'var(--line)', width:1},
+    fontFamily:'inherit', fontSize: care ? 19 : 14, headerFontSize: care ? 18 : 13, rowHeight: care ? 72 : 46, headerHeight: care ? 58 : 42,
+  });
+}
+
+const dateMatches = (filterDate, cell) => {
+  if(!cell) return -1;
+  const day = new Date(cell.getFullYear(), cell.getMonth(), cell.getDate());
+  return day < filterDate ? -1 : day > filterDate ? 1 : 0;
+};
+
+export async function mountGrid(host, opts){
+  const {role = 'owner', care = false, currency = 'USD', onRow = () => {}, getMode = () => 'SIMULATED'} = opts;
+  const agGrid = await loadLibrary();
+  const nonce = $('meta[name="style-nonce"]')?.content;
+  host.innerHTML = `
+    <div class="grid-tools">
+      <div class="chips" role="group" aria-label="Show">${CHIPS.map(([id, label], i) =>
+        `<button type="button" class="chip" data-chip="${id}" aria-pressed="${i === 0}">${label}</button>`).join('')}</div>
+      <label class="grid-search"><span class="sr">Search all activity</span><input type="search" placeholder="Search names, reasons, references"></label>
+      <button type="button" class="btn secondary small" data-act="csv">Export CSV</button>
+    </div>
+    <p class="muted small grid-count" role="status" aria-live="polite"></p>
+    <div class="grid-host" role="region" aria-label="Activity table"></div>`;
+  let chip = 'all', rows = [], api = null;
+  const moneyCell = p => {
+    if(p.value == null) return '';
+    const m = money(Math.abs(p.value), p.data.currency || currency);
+    if(p.data.pinnedTotal) return m;
+    if(p.data.outcome === 'stopped') return p.value ? `${m} not sent` : '$0 moved';
+    return (p.value < 0 ? '−' : '+') + m;
+  };
+  const columns = [
+    {field:'time', headerName:'Time', colId:'time', sort:'desc', minWidth:176, flex:1, filter:'agDateColumnFilter', filterParams:{comparator:dateMatches},
+     valueGetter:p => p.data.time ? new Date(p.data.time * 1000) : null,
+     valueFormatter:p => p.value ? p.value.toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : ''},
+    {field:'type', headerName:'Type', minWidth:120, flex:1, filter:'agTextColumnFilter'},
+    {field:'to', headerName:'To / from', minWidth:150, flex:1.3, filter:'agTextColumnFilter',
+     tooltipValueGetter:p => p.data.handle || ''},
+    {field:'amount_cents', headerName:'Amount', type:'rightAligned', minWidth:158, flex:1, filter:'agNumberColumnFilter',
+     filterValueGetter:p => Math.abs(p.data.amount_cents || 0) / 100, valueFormatter:moneyCell},
+    {field:'status', headerName:'Status', minWidth:270, flex:1.6, filter:'agTextColumnFilter', enableCellChangeFlash:true,
+     valueGetter:p => p.data.pinnedTotal ? '' : `${p.data.status}|${p.data.verified ? 1 : 0}`,
+     filterValueGetter:p => p.data.pinnedTotal ? '' : statusInfo(p.data.status, p.data.verified).word,
+     valueFormatter:p => p.data.pinnedTotal ? '' : `${statusInfo(p.data.status, p.data.verified).word} (${getMode()})`,
+     cellRenderer:p => p.data.pinnedTotal ? '' : ppBadge(p.data.status, getMode(), p.data.verified)},
+    {field:'stopped_by', headerName:'Stopped by', minWidth:220, flex:1.2, filter:'agTextColumnFilter'},
+    {field:'why', headerName:'Why', minWidth:260, flex:2, filter:'agTextColumnFilter', tooltipField:'why'},
+    {field:'reference', headerName:'PayPal reference', minWidth:170, filter:'agTextColumnFilter'},
+    {field:'signed_with', headerName:'Signed with', minWidth:130, filter:'agTextColumnFilter'},
+    {field:'family', headerName:'Family', minWidth:110, filter:'agTextColumnFilter', valueFormatter:p => p.value || (p.data.pinnedTotal ? '' : '—')},
+    {field:'audit_hash', headerName:'Audit hash', minWidth:170, filter:'agTextColumnFilter',
+     cellRenderer:p => p.value ? `<code class="hash">${esc(p.value)}</code> <span class="tick" title="Chain verified">✓ verified</span>` : ''},
+  ];
+  const sets = () => {
+    const w = host.clientWidth || window.innerWidth;
+    if(care || w < 620) return ['time', 'to', 'amount_cents', 'status'].filter(c => !(w < 520 && c === 'time'));
+    if(w < 1000) return ['time', 'type', 'to', 'amount_cents', 'status', 'why'];
+    return null;     // every column
+  };
+  const applyColumns = () => {
+    if(!api) return;
+    const show = sets();
+    api.setColumnsVisible(columns.map(c => c.colId || c.field), false);
+    api.setColumnsVisible(show || columns.map(c => c.colId || c.field), true);
+  };
+  const totals = () => {
+    let sent = 0, back = 0, kept = 0;
+    api.forEachNodeAfterFilter(n => {
+      const r = n.data;
+      if(r.outcome === 'stopped') kept += Math.abs(r.amount_cents);
+      else if(r.outcome === 'moved' && r.kind === 'refund') back += Math.abs(r.amount_cents);
+      else if(r.outcome === 'moved' && r.amount_cents < 0) sent += Math.abs(r.amount_cents);
+    });
+    const line = (id, to, cents) => ({row_id:`total_${id}`, pinnedTotal:true, to, type:'This demo', amount_cents:cents, currency});
+    api.setGridOption('pinnedBottomRowData', [line('sent', 'Total sent', sent), line('back', 'Total refunded', back), line('kept', 'Total stopped, kept safe', kept)]);
+    const count = api.getDisplayedRowCount();
+    $('.grid-count', host).textContent = `${count} row${count === 1 ? '' : 's'} shown. Totals are this demo's numbers, from the rows shown.`;
+  };
+  api = agGrid.createGrid($('.grid-host', host), {
+    theme: theme(agGrid, care), styleNonce: nonce,
+    columnDefs: columns, rowData: [],
+    defaultColDef:{sortable:true, resizable:true, floatingFilter:!care, filter:true, minWidth:90, wrapText:false},
+    getRowId: p => p.data.row_id,
+    getRowClass: p => p.data.pinnedTotal ? 'row-total' : p.data.outcome === 'stopped' ? 'row-stopped' : NEEDS.has(p.data.status) ? 'row-attention' : '',
+    isExternalFilterPresent: () => chip !== 'all',
+    doesExternalFilterPass: n => CHIPS.find(c => c[0] === chip)[2](n.data),
+    onFilterChanged: totals, onRowDataUpdated: totals,
+    multiSortKey:'ctrl', alwaysMultiSort:false, tooltipShowDelay:300, animateRows:false, suppressCellFocus:false,
+    overlayNoRowsTemplate:'<span class="muted">Nothing here yet. Payments and stops appear as they happen.</span>',
+    onRowClicked: e => { if(!e.data.pinnedTotal) onRow(e.data); },
+    onCellKeyDown: e => { if(e.event?.key === 'Enter' && e.data && !e.data.pinnedTotal) onRow(e.data); },
+    onGridSizeChanged: applyColumns,
+    onColumnResized: e => { if(e.finished && e.source === 'uiColumnResized') saveColumns(); },
+    onSortChanged: () => saveColumns(),
+    onColumnMoved: e => { if(e.finished) saveColumns(); },
+  });
+  function saveColumns(){ if(role === 'owner' && !care) store.set(STATE_KEY, api.getColumnState().map(({colId, width, sort, sortIndex}) => ({colId, width, sort, sortIndex}))); }
+  const saved = !care && role === 'owner' ? store.get(STATE_KEY, null) : null;
+  if(Array.isArray(saved)) api.applyColumnState({state: saved, applyOrder:true});
+  applyColumns();
+
+  host.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+    chip = b.dataset.chip;
+    host.querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    api.onFilterChanged();
+  });
+  $('.grid-search input', host).oninput = e => api.setGridOption('quickFilterText', e.target.value);
+  $('[data-act="csv"]', host).onclick = () => api.exportDataAsCsv({
+    fileName:'star-activity.csv', columnKeys:columns.map(c => c.colId || c.field), skipPinnedBottom:false,
+    processCellCallback:p => {
+      if(p.column.getColId() === 'time') return p.value ? p.value.toISOString() : '';
+      if(p.column.getColId() === 'amount_cents') return p.value == null ? '' : (p.value / 100).toFixed(2);
+      return p.formatValue ? p.formatValue(p.value) : p.value;
+    },
+  });
+  return {
+    // Live updates: only what changed, so the webhook's arrival flashes the Status cell.
+    update(next){
+      const before = new Map(rows.map(r => [r.row_id, r]));
+      const ids = new Set(next.map(r => r.row_id));
+      const add = next.filter(r => !before.has(r.row_id));
+      const update = next.filter(r => before.has(r.row_id) && JSON.stringify(before.get(r.row_id)) !== JSON.stringify(r));
+      const remove = rows.filter(r => !ids.has(r.row_id));
+      rows = next;
+      if(add.length || update.length || remove.length) api.applyTransaction({add, update, remove});
+      else totals();
+    },
+    pinPending(list){ api.setGridOption('pinnedTopRowData', list); },
+    destroy(){ api.destroy(); },
+    api,
+  };
+}
+export const isStop = status => STOP_STATES.has(status);

@@ -94,7 +94,6 @@ class Session:
         task's own: an earlier, finished payment's story must never be read out as the reason for a new one."""
         self.task_start = len(self.messages)
         self.scam_reasons = []
-        self.task_started_at = time.time()
         self.last_offers = []
 
     @property

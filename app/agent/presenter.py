@@ -130,8 +130,16 @@ def receipt_text(d: Draft, receipt: dict) -> str:
         return f"PayPal has sent {m}, and it's waiting for {who} to claim it. You can still stop this."
     if state == "PROCESSING":
         return f"Sent to PayPal: {m} to {who}. Checking with PayPal now."
+    if state == "PAID" and verified:
+        return f"Done. PayPal confirms you've paid {m} to {who}."
     if state == "REFUNDED" and verified:
         return f"Done. PayPal confirms {m} is on its way back to you."
     if state == "REFUND_PENDING":
         return f"PayPal is working on your {m}. I'll tell you when it's done."
+    if state == "BUYER_CANCELLED":
+        return "You cancelled it on the approval page. No money moved."
+    if state in ("FAILED", "DECLINED", "EXPIRED", "ABANDONED", "INVOICE_CANCELLED"):
+        return f"That didn't go through, so {m} stays with you. PayPal's answer: {state.replace('_', ' ').lower()}."
+    if state in ("RETURNED", "REVERSED"):
+        return f"PayPal says the {m} to {who} came back or was reversed."
     return f"{who}: {state.replace('_', ' ').lower()}."

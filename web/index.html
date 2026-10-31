@@ -3,42 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#e50019">
-  <meta name="description" content="Star — conversational banking for everyone, designed first for elderly customers. the bank challenge prototype with synthetic funds.">
-  <title>the bank bank app · Star concept</title>
+  <meta name="theme-color" content="#0f5c4d">
+  <meta name="style-nonce" content="__STYLE_NONCE__">
+  <meta name="description" content="Star is a voice payment agent for seniors and their families, built on the PayPal sandbox. It can really pay, and it can't be talked into a scam.">
+  <title>Star Family Payments</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body class="welcome-active">
-  <a class="skip-link" href="#welcome-enter">Skip to start</a>
-  <section class="launch-screen" id="welcome" aria-labelledby="welcome-title">
-    <canvas id="welcome-canvas" aria-hidden="true"></canvas>
-    <header class="welcome-header">
-      <div class="welcome-brand"><img src="/bank-logo.svg" alt="the bank"><span class="welcome-brand-divider"></span><span>Star<span class="welcome-brand-star">✦</span></span></div>
-      <span class="welcome-edition">A new way to bank</span>
+  <a class="skip-link" href="#welcome-enter" id="skip">Skip to start</a>
+  <section class="welcome" id="welcome" aria-labelledby="welcome-title">
+    <header class="welcome-top">
+      <span class="brand"><img src="/logo.svg" alt="" width="36" height="36"><span>Star</span></span>
+      <span class="mode-chip" id="welcome-mode">Keyless demo</span>
     </header>
     <main class="welcome-main">
-      <p class="welcome-eyebrow"><span></span> LIVE MORE. BANK LESS.</p>
-      <h1 id="welcome-title">Banking, simply<br><span>by speaking.</span></h1>
-      <p class="welcome-description">Meet Star, your conversational banking assistant.<br>Just say what's on your mind. We'll take it one step at a time.</p>
-      <button class="welcome-enter" id="welcome-enter" type="button"><span>Meet Star <span class="welcome-button-divider">/</span> Get started</span><span class="welcome-arrow" aria-hidden="true">↗</span></button>
-      <p class="welcome-caption">Your voice. Your pace. Always your decision.</p>
+      <p class="eyebrow">A voice payment agent for seniors and their families</p>
+      <h1 id="welcome-title">An agent that can really pay, and can't be talked into a scam.</h1>
+      <p class="welcome-lead">Tell Star what you need in your own words. It finds the bill, the person or the best offer, and prepares the payment. Then you check it, and your own device signs it.</p>
+      <ol class="welcome-rule">
+        <li><b>The model understands.</b><span>It has no tool that moves money.</span></li>
+        <li><b>Code decides.</b><span>Fixed rules stop scams and mistakes.</span></li>
+        <li><b>You authorize.</b><span>Your device signs the exact card.</span></li>
+      </ol>
+      <div class="welcome-actions">
+        <button class="btn primary big" id="welcome-enter" type="button">Start as Mrs. Lee</button>
+        <a class="btn secondary big" href="/guardian">I'm family: guardian page</a>
+      </div>
       <p class="welcome-status" id="welcome-status" role="status" aria-live="polite"></p>
-      <noscript><p>Please enable JavaScript and refresh this page to enter the demo.</p></noscript>
+      <noscript><p>Please turn on JavaScript and refresh this page to use the demo.</p></noscript>
     </main>
-    <footer class="welcome-footer">
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/></svg>Every transaction, confirmed by you.</span>
-      <span>Prototype · Not an official the bank product · Synthetic funds</span>
-    </footer>
+    <footer class="welcome-foot">Mrs. Lee and her family are fictional. Built on the PayPal sandbox; not affiliated with PayPal.</footer>
   </section>
   <div id="app" hidden></div>
   <aside class="trace" id="trace" aria-label="Agent trace" aria-hidden="true">
-    <header><h3>Agent trace</h3><button type="button" id="trace-close">Close</button></header>
-    <div class="sub">Thought → Action → Observation · evidence · rules · signature · execution. Every step is also written to a hash-chained audit log.</div>
+    <header><h2>Agent trace</h2><button type="button" class="btn secondary small" id="trace-close">Close</button></header>
+    <p class="muted small">Thought, action, observation, evidence, rules, signature, execution. Every step is also written to a hash-chained audit log.</p>
     <div class="tlist" id="tlist"></div>
   </aside>
   <dialog class="confirm" id="confirm" aria-labelledby="c-title"></dialog>
+  <dialog class="side" id="detail" aria-labelledby="d-title"></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
