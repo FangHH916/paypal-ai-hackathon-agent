@@ -12,13 +12,18 @@ def atomic_write(fn):
     def wrapped(self, *args, **kwargs):
         with self._lock:
             before = copy.deepcopy(self._snapshot())
+            depth = getattr(self, "_write_depth", 0)
+            self._write_depth = depth + 1
             try:
                 result = fn(self, *args, **kwargs)
-                self._save()
+                if depth == 0:
+                    self._save()
                 return result
             except Exception:
                 self._restore(before)
                 raise
+            finally:
+                self._write_depth = depth
     return wrapped
 
 

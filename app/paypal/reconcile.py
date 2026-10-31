@@ -19,6 +19,8 @@ invoice create    search by invoice number                                found:
 from __future__ import annotations
 
 import time
+import re
+from decimal import Decimal
 
 from app.config import settings
 from app.paypal import calls, ids
@@ -32,10 +34,14 @@ TERMINAL_INVOICE = {"PAID": "PAID", "CANCELLED": "INVOICE_CANCELLED", "AUTO_CANC
 
 
 def _cents(value) -> int | None:
-    try:
-        return int(round(float(value) * 100))
-    except (TypeError, ValueError):
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,13}(?:\.[0-9]{1,2})?", value):
         return None
+    return int(Decimal(value) * 100)
+
+
+def _amount_matches(amount, rec, currency_key="currency_code") -> bool:
+    return (isinstance(amount, dict) and _cents(amount.get("value")) == rec["amount_cents"]
+            and amount.get(currency_key) == rec["currency"])
 
 
 def batch_id_from_links(err: PayPalError) -> str:
@@ -128,7 +134,7 @@ class Reconciler:
         url = ((r.get("detail") or {}).get("metadata") or {}).get("recipient_view_url", "")
         if r.get("status") in ("PAID", "MARKED_AS_PAID", "PAID_EXTERNAL", "CANCELLED", "AUTO_CANCELLED") or not url:
             raise PayPalError(422, "UNPROCESSABLE_ENTITY", "This invoice can't be paid any more.")
-        if _cents((r.get("due_amount") or r.get("amount") or {}).get("value")) != rec["amount_cents"]:
+        if not _amount_matches(r.get("due_amount") or r.get("amount"), rec):
             self.wallet.update_payment(rec["payment_id"], "ANOMALY", source="GET invoice", note="The amount changed after you signed.")
             self._flush()
             return
@@ -221,12 +227,16 @@ class Reconciler:
     def apply_item(self, rec: dict, item: dict, verified_by: str, *, event_id: str = "", event_type: str = "") -> None:
         pay_item = item.get("payout_item") or {}
         amount = _cents((pay_item.get("amount") or {}).get("value"))
-        if amount is not None and amount != rec["amount_cents"]:
+        if pay_item.get("amount") and not _amount_matches(pay_item["amount"], rec, "currency"):
             self._anomaly(rec, "The payout amount doesn't match what you signed.", event_id, event_type)
             return
         to = {"SUCCESS": "SENT", "UNCLAIMED": "UNCLAIMED", "PENDING": "PROCESSING", "ONHOLD": "HELD", "FAILED": "FAILED",
               "BLOCKED": "FAILED", "RETURNED": "RETURNED", "REFUNDED": "RETURNED", "REVERSED": "REVERSED"}.get(item.get("transaction_status"))
         ids_ = {"item_id": item.get("payout_item_id", "")}
+        if to and to != rec["state"] and payments.can_move(rec["state"], to) and to in ("SENT", "UNCLAIMED", "RETURNED", "REVERSED") \
+                and not _amount_matches(pay_item.get("amount"), rec, "currency"):
+            self._anomaly(rec, "The payout amount or currency is missing or doesn't match what you signed.", event_id, event_type)
+            return
         if not to or (to == rec["state"]) or not payments.can_move(rec["state"], to):
             self.wallet.update_payment(rec["payment_id"], paypal=ids_, event_id=event_id)
             return
@@ -255,7 +265,7 @@ class Reconciler:
     def apply_capture(self, rec: dict, cap: dict, verified_by: str, *, event_id: str = "", event_type: str = "") -> None:
         amount = _cents((cap.get("amount") or {}).get("value"))
         custom = cap.get("custom_id")
-        if amount != rec["amount_cents"] or (custom and custom != ids.custom_id(rec["digest"])):
+        if not _amount_matches(cap.get("amount"), rec) or (custom and custom != ids.custom_id(rec["digest"])):
             self._anomaly(rec, "What PayPal captured doesn't match what you signed.", event_id, event_type)
             return
         pp = {"capture_id": cap.get("id", "")}
@@ -361,7 +371,7 @@ class Reconciler:
 
     def apply_refund(self, rec: dict, r: dict, verified_by: str, *, event_id: str = "", event_type: str = "") -> None:
         status = r.get("status")
-        if status in ("COMPLETED", None) and _cents((r.get("amount") or {}).get("value")) != rec["amount_cents"]:
+        if status in ("COMPLETED", None) and not _amount_matches(r.get("amount"), rec):
             self._anomaly(rec, "The refund amount doesn't match what you signed.", event_id, event_type)
             return
         if status == "COMPLETED" and rec["state"] != "REFUNDED":
@@ -376,6 +386,9 @@ class Reconciler:
         it = self.client.get_payout_item(item_id)
         status = it.get("transaction_status")
         if status in ("RETURNED", "REFUNDED"):
+            if not _amount_matches((it.get("payout_item") or {}).get("amount"), rec, "currency"):
+                self._anomaly(rec, "The returned payout amount or currency doesn't match what you signed.")
+                return
             self.wallet.update_payment(rec["payment_id"], "REFUNDED", paypal={"item_id": item_id}, verified_by=f"get:/v1/payments/payouts-item/{item_id}",
                                        source="get", note="Payout returned")
         elif status == "SUCCESS":
@@ -391,7 +404,7 @@ class Reconciler:
         to = TERMINAL_INVOICE.get(inv.get("status"))
         if not to or rec["state"] == to:
             return
-        if to == "PAID" and _cents((inv.get("amount") or {}).get("value")) != rec["amount_cents"]:
+        if to == "PAID" and not _amount_matches(inv.get("amount"), rec):
             self._anomaly(rec, "The invoice amount doesn't match what you signed.", event_id, event_type)
             return
         self.wallet.update_payment(rec["payment_id"], to, verified_by=verified_by if to == "PAID" else "", source=verified_by.split(":", 1)[0],

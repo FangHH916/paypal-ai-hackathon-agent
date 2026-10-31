@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TERMS = re.compile(r"\bbank\b|\bsavings\b|bank app|speech vendor|hosted model|\bocbc\b|singtel|\bgiro\b|\bcpf\b|mdm chen|\bS\$\d|\bSGD\b", re.I)
-PENDING = {"docs/PLAN.md"}                               # deleted by the Materials stage
+PENDING = set()
 ALLOWED = {"tests/test_identity.py", "app/agent/request_guard.py"}     # this list itself; a refusal that names other currencies
 SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".pdf", ".wav", ".webm"}
 

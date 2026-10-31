@@ -1,5 +1,8 @@
 """Webhooks: nothing changes until PayPal verifies the signature. Dedup, out-of-order, amounts, terminal states."""
 import json
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from tests.paypal_helpers import USER, StubAdapter, World, sandbox_cfg
 
@@ -120,6 +123,42 @@ class TestNotConfigured(World):
 
 
 class TestDedupAndOrdering(Base):
+    def test_currency_mismatch_cannot_confirm_a_payout(self):
+        rec = self.send()
+        event = {"id": "WH-CURRENCY", "event_type": "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", "resource": {
+            "payout_batch_id": rec["paypal"]["batch_id"], "payout_item": {"amount": {"currency": "EUR", "value": "50.00"}}}}
+        raw = json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+        self.gateway.webhooks.handle(raw, self.sim._sign(event))
+        self.assertEqual((rec["state"], rec["verified"]), ("ANOMALY", False))
+
+    def test_missing_amount_cannot_confirm_a_payout(self):
+        rec = self.send()
+        event = {"id": "WH-NO-AMOUNT", "event_type": "PAYMENT.PAYOUTS-ITEM.SUCCEEDED",
+                 "resource": {"payout_batch_id": rec["paypal"]["batch_id"]}}
+        raw = json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+        self.gateway.webhooks.handle(raw, self.sim._sign(event))
+        self.assertEqual((rec["state"], rec["verified"]), ("ANOMALY", False))
+
+    def test_failed_webhook_commit_is_not_deduplicated_on_retry(self):
+        from app.wallet.ledger import Wallet
+        with tempfile.TemporaryDirectory() as folder:
+            self.wallet.path = Path(folder) / "ledger.sqlite3"
+            self.wallet._load()
+            rec = self.send()
+            self.release_batches()
+            event = next(x for x in self.sim.due_events() if b"PAYOUTS-ITEM" in x["raw"])
+            eid = json.loads(event["raw"])["id"]
+            with patch.object(self.wallet, "_save", side_effect=OSError("synthetic disk failure")):
+                with self.assertRaises(OSError):
+                    self.gateway.webhooks.handle(event["raw"], event["headers"])
+            self.assertNotIn(eid, self.wallet.webhook_events)
+            restarted = Wallet(path=self.wallet.path)
+            self.assertNotIn(eid, restarted.webhook_events)
+            self.assertEqual(restarted.payment(rec["payment_id"])["state"], "PROCESSING")
+            self.gateway.webhooks.handle(event["raw"], event["headers"])
+            self.assertEqual(self.wallet.payment(rec["payment_id"])["state"], "SENT")
+            self.assertIn(eid, Wallet(path=self.wallet.path).webhook_events)
+
     def test_duplicate_id_has_no_effect_even_after_a_restart_of_the_dedup_table(self):
         rec = self.send()
         self.release_batches()

@@ -41,7 +41,9 @@ class WebhookHandler:
             return self._reject(503, "WEBHOOK_NOT_CONFIGURED", "PAYPAL_WEBHOOK_ID is not set. Star keeps working by asking PayPal directly.")
         try:
             event = json.loads(raw)
-            if not isinstance(event, dict) or not event.get("id") or not event.get("event_type"):
+            if (not isinstance(event, dict) or not isinstance(event.get("id"), str) or not event["id"]
+                    or not isinstance(event.get("event_type"), str) or not event["event_type"]
+                    or not isinstance(event.get("resource", {}), dict)):
                 raise ValueError
         except (ValueError, UnicodeDecodeError):
             return self._reject(400, "BAD_BODY", "Not a webhook event")
@@ -52,9 +54,10 @@ class WebhookHandler:
             return self._reject(503, "CANNOT_VERIFY", type(e).__name__)
         if verdict.get("verification_status") != "SUCCESS":
             return self._reject(400, "BAD_SIGNATURE", "PayPal did not verify this signature", event)
-        if not self.wallet.note_webhook_event(event["id"], event["event_type"]):
-            return WebhookResult(200, "DUPLICATE")      # already handled: no effect, and no error to PayPal
-        return self._route(event)
+        result = self.wallet.process_webhook(event["id"], event["event_type"], lambda: self._route(event))
+        if self.audit:
+            self.wallet.flush_audit(self.audit)
+        return result if result is not None else WebhookResult(200, "DUPLICATE")
 
     def _reject(self, status: int, code: str, detail: str, event: dict | None = None) -> WebhookResult:
         if self.audit:
@@ -79,8 +82,6 @@ class WebhookHandler:
             except payments.BadTransition:
                 self.wallet.update_payment(rec["payment_id"], event_id=eid)   # terminal state: don't reopen, just note it
         self._log(event, rec, rec["state"] if rec["state"] != before else f"{before} (no change)")
-        if self.audit:
-            self.wallet.flush_audit(self.audit)
         return WebhookResult(200, "OK", state=rec["state"], payment_id=rec["payment_id"])
 
     def _apply(self, rec, etype, res, vb, eid) -> None:
@@ -89,7 +90,11 @@ class WebhookHandler:
                       "HELD": "ONHOLD", "CANCELED": "RETURNED", "REFUNDED": "REFUNDED", "DENIED": "FAILED"}.get(etype.rsplit(".", 1)[1])
             if rec["rail"] == "payout_cancel":
                 if status == "RETURNED":
-                    self.wallet.update_payment(rec["payment_id"], "REFUNDED", verified_by=vb, source="webhook", event_type=etype, event_id=eid)
+                    from app.paypal.reconcile import _amount_matches
+                    if _amount_matches((res.get("payout_item") or {}).get("amount"), rec, "currency"):
+                        self.wallet.update_payment(rec["payment_id"], "REFUNDED", verified_by=vb, source="webhook", event_type=etype, event_id=eid)
+                    else:
+                        self.rec._anomaly(rec, "The returned payout amount or currency doesn't match what you signed.", eid, etype)
                 return
             self.rec.apply_item(rec, {**res, "transaction_status": status or res.get("transaction_status")}, vb, event_id=eid, event_type=etype)
         elif etype == "PAYMENT.PAYOUTSBATCH.DENIED":

@@ -342,6 +342,15 @@ class Wallet(LedgerStorage):
                 self.webhook_events.pop(next(iter(self.webhook_events)))
             return True
 
+    @atomic_write
+    def process_webhook(self, event_id: str, event_type: str, apply):
+        """Persist dedup and all effects in one snapshot. An exception leaves the event available for redelivery."""
+        if event_id in self.webhook_events:
+            return None
+        result = apply()
+        self.note_webhook_event(event_id, event_type)
+        return result
+
     # ---------- Protective and signed account changes (called by the kernel only) ----------
     @atomic_write
     def add_payee(self, user_id: str, name: str, email: str, relation: str) -> dict:

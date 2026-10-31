@@ -1,111 +1,98 @@
-# Star：可执行的交易安全契约
+# Star: an executable transaction contract
 
-核心贡献：AI 可以提出交易，但意图、计划依赖、授权内容和执行条件必须通过代码检查，并留下可复核证据。
-这是一套模拟银行中的确定性风控框架，不是新训练的信用评分模型，也不宣称银行级绝对安全。
+AI can propose a payment. Whether it goes ahead depends on intent, plan dependencies, what was authorised and the conditions at execution, all checked by code, each leaving evidence that can be reviewed.
+This is a deterministic control framework on a simulator or the PayPal sandbox. It isn't a trained risk model, and it doesn't claim absolute security.
 
 ```mermaid
 flowchart TD
-    U[用户语音或文字] --> A[Agent 查询与规划：只生成草稿]
-    U --> V[只读验证器：提取原始意图]
-    A --> K[确定性内核：意图、依赖、交易策略]
+    U[Voice or text] --> A[Agent lookups and planning: drafts only]
+    U --> V[Read-only verifier: extracts the original intent]
+    A --> K[Deterministic kernel: intent, dependencies, payment policy]
     V --> K
-    K -->|缺证据或不一致| H[澄清 / 等待 / 冻结 / 拒绝]
-    K -->|大额需额外证据| R[独立凭证保护的模拟审核员]
+    K -->|evidence missing or inconsistent| H[Clarify, wait, freeze or refuse]
+    K -->|risky: needs the family| R[Family guardian's own device signature]
     R --> K
-    K -->|前置条件满足| C[客户核对确认卡并签名]
-    C --> G[执行前重检 → 网关独立验签及审核检查]
-    G --> L[账本锁内限频、原子提交与回执]
-    K -.决策记录.-> E[可展开证据面板与审计]
-    L -.成功证据.-> E
+    K -->|preconditions met| C[Customer checks the card and signs]
+    C --> G[Re-check before execution, then the gateway verifies independently]
+    G --> L[Velocity under the write lock, write-ahead record, PayPal call]
+    K -.decision record.-> E[Evidence panel and audit]
+    L -.verified outcome.-> E
 ```
 
-## 四条原则及可验证证据
+## Four principles, and the evidence for each
 
-| 原则 | 执行检查 | 展示与测试 |
-|---|---|---|
-| 忠实于用户意图 | 独立提取金额、对象、资产和来源；不一致冻结 | 用户原话、AI 草稿、验证结果并排展示 |
-| 计划依赖成立 | 前序草稿 ID 绑定进签名卡；内核和网关检查该客户的成功账本回执 | 未完成前序交易时无法签名；不能用其他客户的回执 |
-| 批准内容一致 | 客户设备签名绑定卡片摘要；网关独立验签与防重放 | 改金额、对象或依赖 ID 后旧签名失效 |
-| 执行时仍安全 | 执行前重检；账本锁内限频；大额交易需要独立模拟审核 | 签名后余额变化、频率窗口满或审核过期均不能继续 |
+| Principle | Check | Shown and tested by |
+| --- | --- | --- |
+| Faithful to what the customer said | Amount and payee are extracted independently. A mismatch freezes the draft | Her words, the AI draft and the verifier's result side by side |
+| The plan's dependencies hold | Earlier draft ids are bound into the signed card. The kernel and gateway check this customer's verified records | A step can't be signed until the earlier one has finished; another customer's record doesn't count |
+| What was approved is what runs | The device signature is bound to the card digest. The gateway verifies it independently and refuses replays | Changing the amount, payee or a dependency id invalidates the signature |
+| Still safe at execution | Checks run again before execution, velocity is enforced under the lock, and a guardian approval is needed where the rules require it | An allowance change after signing, a full velocity window or a missing approval all stop it |
 
-`app/kernel/contract.py` 产生统一决策记录，含 policy_version、stage、action、checks、reason_codes、
-required_evidence、验证器模式及审核证据。内核的新增依赖和审核门禁直接使用该记录；既有语义、
-风控及签名门禁继续由原模块执行。HTTP 拒绝也记录原因。成功记录与交易回执一起原子持久化。
+`app/kernel/contract.py` produces one decision record: policy version, stage, action, checks, reason codes, required evidence, verifier mode and guardian evidence. HTTP refusals also record a reason.
 
-交易依赖 ID 属于客户签名卡；风险决策解释属于服务端观察，不属于客户签署的风险评估。
-回执的普通 SHA-256 不是独立第三方对审核员身份或决策真实性的认证。服务端仍在信任边界内。
+The dependency ids belong to the customer's signed card. The risk explanation is a server observation, not something the customer signed. The receipt's plain SHA-256 isn't independent proof of a third party's decision: the server is still inside the trust boundary.
 
-## 风险与处置
+## Risks and what happens
 
-- 意图不一致：冻结，不给当前草稿签名。
-- 验证缺失：等待验证，不能授权。
-- 依赖未执行：拒绝；重新确认用户请求。
-- 达到默认 10 分钟 3 笔的窗口：拒绝新交易，窗口释放后重新发起。支付和投资在账本写锁内再次检查，
-  包括内部转账；历史计数持久化。幂等重试不会消耗新名额。定期指令仅登记计划，不代表已执行未来扣款。
-- 需要家庭监护人批准：向**从未付过款的人**付款且超过 `GUARDIAN_THRESHOLD`；商家或账单检查标记需要家人确认；或本次对话出现过诈骗迹象但未被直接阻止。退款和请对方还款不需要。冒充亲友的诈骗几乎都用新收款人，所以这是审批的重点。
-  不需要审核：自己账户之间转账、缴账单、给以前转过账的家人／收款人（冷静期、核实问题和签名照常适用）。原有硬上限仍有效。
-- 冷静期、额外问题、模拟审核、设备签名是不同条件，不能互相替代。
-- 签名无效、重放或执行前风险升级：拒绝。
+- **Intent mismatch:** frozen, and the draft can't be signed.
+- **Verification missing:** waits, and can't be authorised.
+- **Dependency not executed:** refused, and the request is confirmed again.
+- **Velocity window full,** by default 5 in 10 minutes (`RULE_VELOCITY_MAX`, `RULE_VELOCITY_WINDOW_MIN`): new payments are refused until the window frees up. It is checked again under the write lock, and the count persists. Idempotent retries don't use up the count, and neither do refunds or money requests.
+- **Family guardian required:** a payment to **someone never paid before** above `GUARDIAN_THRESHOLD`, a merchant or bill check that asks for the family, or scam signs earlier in the conversation that weren't stopped outright. Refunds and money requests don't need it. Impersonation scams nearly always use a new payee, so this is where approval matters most.
+  Not needed: bills and family or payees paid before, though cooling-off, verify questions and signatures still apply. Hard limits always apply.
+- **Cooling-off, the extra question, the guardian and the device signature** are separate conditions and can't stand in for each other.
+- **Invalid signature, a replay, or risk raised before execution:** refused.
 
-## 启动和角色分离
+## Trying it
 
-```powershell
+```bash
 pip install -r tests/requirements.txt
 python -m app.serve
 ```
 
-客户在 localhost:8000 使用原来的聊天和确认卡。安全证据默认折叠，保持客户主流程简洁。
-进入 Security lab，点击 **Run risk demonstration**，即可运行完整的隔离演示；无需配置审核口令或在线模型。
+The customer uses the chat and card at localhost:8000. Safety evidence is collapsed by default, to keep her path simple. **Security lab > Run risk demonstration** runs the whole isolated demonstration, with no online model.
 
-要演示家庭监护人审批：
+To show the family guardian:
 
-1. 在 Family 页面点击 Invite Anna 并签名，得到一次性链接；监护人用**另一个浏览器配置文件或无痕窗口**打开并配对设备。
-2. 先新增一个从未付过款的人（例如 `Add a new person Tom Reed, email tom.reed@family.example` 并签名），再输入 `Pay Tom Reed 400 dollars`。确认卡会等待家人。
-3. 监护人在自己的页面核对原话、金额、对象和卡片摘要，再用自己设备的密钥批准或拒绝。
-4. 批准后客户的卡片自动更新；待其他检查通过后仍须亲自签名，才会执行。
+1. On the Family page, press Invite Anna and sign. You get a one-time link; open it in **another browser profile or a private window** and pair.
+2. Add someone never paid before (`Add a new person Tom Reed, email tom.reed@family.example`, and sign), then say `Pay Tom Reed 400 dollars`. The card waits for the family.
+3. On her page, Anna checks the words, amount, payee and card digest, and approves or denies with her own device's key.
+4. After approval the customer's card updates by itself. She still has to sign it herself before anything runs.
 
-批准是对这张卡片摘要的签名，卡片一变即失效；网关在执行时会自己重新验证该签名。监护人不能发起付款，也不能解除规则已阻止的付款。
-审批绑定客户、会话、草稿、摘要和策略版本；取消时撤销、成功后移除。重启丢失待审核状态，必须重新发起。
-审核接口限速。票据包含会话凭证，只交给可信审核员，不要公开展示完整票据或口令。
+The approval is a signature over this card's digest, so it lapses if the card changes, and the gateway verifies it again at execution. The guardian can't start a payment or unlock one the rules blocked.
+An approval is bound to the customer, session, draft, digest and policy version. It is revoked on cancel and removed on success. A restart loses pending approvals, and the payment has to be started again.
 
-这只是用不同操作者凭证模拟带外角色，不是实际硬件令牌、独立银行通道或客户经理回拨。
-部署仍应使用 HTTPS。KYC、原始音频归档和真实银行接入不在本次实现范围。
+This models a second person with their own device key. It isn't a hardware token, an independent channel or a call-back. Deployments should use HTTPS. KYC and real onboarding are out of scope.
 
-## 五分钟答辩演示
+## A five-minute walkthrough
 
-1. 说明四条安全契约：AI 只提议，确定性代码决定能否继续。
-2. 正常转 $50：客户签名；展示跟踪卡如何从等待变为已验证，并下载回执。
-3. Security lab → Run risk demonstration：逐一打开错误金额、错误收款人、未完成前序任务。
-   指向实际失败检查，以及资金类 PayPal 调用次数为 0。
-4. 展示签名后改金额和余额变化：先前授权不会让错误条件继续执行。
-5. 展示大额缺审批和频率窗口满，再解释对照表与测量边界。
+1. Explain the four principles: AI only proposes, deterministic code decides whether it continues.
+2. Send $50 normally. The customer signs; show the tracker going from waiting to verified, and download the receipt.
+3. Security lab > Run risk demonstration. Open the wrong amount, wrong payee and unfinished-step cases, and point to the check that failed and to 0 money-moving PayPal calls.
+4. Show the amount altered after signing, and the allowance changed: earlier authorisation doesn't carry a wrong condition through.
+5. Show a missing guardian approval and a full velocity window, then explain the comparison table and what it doesn't measure.
 
-八个案例在新的模拟银行中实际运行内核、设备签名和网关。为隔离缺审批这个条件，
-该案例仅在沙箱夹具里令冷静期已过；客户服务没有跳过冷静期的接口。
-余额变化案例由夹具外部修改余额，报告区分外部变化和本次交易的实际扣款。
+The eight scenarios really run the kernel, device signatures and gateway, in a fresh simulator. To isolate the missing-approval condition, that one case's fixture clock has passed the cooling-off period; the customer service has no way to skip cooling-off.
+The allowance case changes the allowance from outside the fixture, and the report separates that from what the payment itself used.
 
-## 对照评测的准确表述
+## Saying the comparison accurately
 
-界面的 A/B/C 表是**五个固定候选交易的检查结果重放**：
+The A/B/C table in the UI is a **replay of gate results for five fixed candidate payments**:
 
-- A：只考虑签名准备，不检查交易策略、语义或依赖；
-- B：增加交易策略硬限制；确认问题假定用户回答 Yes，不能算作拦截；
-- C：再增加语义和依赖门禁。
+- A: signature prerequisites only, with no payment policy, intent or dependency checks.
+- B: adds payment policy hard limits. Confirmation questions are assumed answered yes, so they don't count as stops.
+- C: adds the intent and dependency gates.
 
-记录每一候选是否会进入授权。这里没有运行一个放宽安全控制的线上银行，也没有要求真实用户批准错误交易。
-测试集有四个故障和一个正常控制；结果不是真实模型准确率、群体风险率或用户误伤率。
-八个实际内核场景与五个候选重放是两种不同证据，不能相加为独立安全用例数。
-离线验证器共享解析器，界面明确标注；真实模型对照、正常用户摩擦、口音识别和延迟基准需要另做研究。
+It records whether each candidate would reach authorisation. No weakened system ran, and no real user was asked to approve a wrong payment.
+The set has four faults and one normal control, so the results aren't model accuracy, population risk or a false-alarm rate. The eight scenarios and the five replays are different kinds of evidence and don't add up to a count of safety cases.
+The offline verifier shares its parser with the offline agent, and the UI says so. Comparing real models, friction for normal users, accents and latency all need separate study.
 
-## 复跑
+## Rerun it
 
-```powershell
+```bash
 python -m unittest discover tests
 python eval/run_eval.py
 python eval/run_contract_eval.py
 ```
 
-最后一条生成 `eval/contract-report.json` 并在场景不符合预期时返回非零退出码。
-浏览器测试：安装 Node 的 playwright 包并安装 Microsoft Edge 后运行 `node qa/run_contract_browser.cjs`。
-可用 NODE_PATH 指向已有 Playwright，PYTHON 指向带项目依赖的 Python。它启动独立服务、临时账本和独立客户／审核员会话，
-输出 `qa/results/contract-browser.json` 与桌面、手机截图，不调用在线模型或 ASR。
+The last one writes `eval/contract-report.json`, and exits nonzero if a scenario isn't as expected. The browser test is `python qa/e2e_demo.py`, which runs its own server and temporary data and calls no model.
