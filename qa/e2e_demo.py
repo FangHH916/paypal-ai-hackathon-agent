@@ -76,7 +76,9 @@ def overflow(page: Page) -> int:
 
 
 def nav(page: Page, label: str) -> None:
-    page.locator(".nav-btn", has_text=label).click()
+    control = page.locator(".nav-btn", has_text=label)
+    control.scroll_into_view_if_needed()
+    control.click()
 
 
 def say(page: Page, text: str) -> None:
@@ -158,7 +160,7 @@ def run(browser, base: str, args) -> None:
 
     def landing():
         page.goto(base + "/")
-        expect(page.locator("#welcome-title")).to_contain_text("really pay")
+        expect(page.locator("#welcome-title")).to_contain_text("A second check before money moves")
         check("landing says it isn't affiliated", "not affiliated" in page.locator(".welcome-foot").inner_text())
         shot(page, "01-landing")
         page.locator("#welcome-enter").click()
@@ -454,7 +456,14 @@ def run(browser, base: str, args) -> None:
             time.sleep(1.2 if label == "Activity" else 0.25)
             check(f"phone: {label} has no sideways scroll", overflow(pp) <= 0, overflow(pp))
             shot(pp, f"41-phone-{re.sub(r'[^a-z]+', '-', label.lower())}")
-        pp.locator(".nav-btn", has_text="Talk to Star").click()
+        # Wider font metrics exposed an intrinsic-width flex bug on Linux. Simulate them without hiding overflow or
+        # changing the site's CSP: a rule in the existing same-origin stylesheet, removed immediately afterwards.
+        rule = pp.evaluate("""() => {const sheet = [...document.styleSheets].find(s => s.href?.endsWith('/styles.css'));
+          const index = sheet.cssRules.length; sheet.insertRule('.speech-controls{font-family:monospace}', index); return index;}""")
+        check("phone: reading controls fit with wider font metrics", overflow(pp) <= 0, overflow(pp))
+        shot(pp, "41-phone-settings-wide-font")
+        pp.evaluate("index => [...document.styleSheets].find(s => s.href?.endsWith('/styles.css')).deleteRule(index)", rule)
+        nav(pp, "Talk to Star")
         say(pp, "Send 30 to my grandson")
         expect(pp.locator(".choice").first).to_be_visible()      # two grandsons: Star asks, it doesn't guess
         shot(pp, "42-phone-which-grandson")

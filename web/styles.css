@@ -487,8 +487,8 @@ blockquote{margin:.4em 0;padding:.3em .7em;border-left:3px solid var(--line);col
 .lvl-tag{font-style:normal;font-size:.76em;padding:.05em .45em;border-radius:6px;background:var(--brand);color:var(--brand-ink)}
 .lvl-tag.wait{background:var(--warn);color:var(--surface)}
 .pending{display:flex;flex-wrap:wrap;gap:.6em;align-items:center;padding:.5em .7em;background:var(--warn-bg);border-radius:9px}
-.speech-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:none}
-.speech-controls select{min-height:36px;padding:.2em .4em;border:1.5px solid var(--line);border-radius:8px;background:var(--surface)}
+.speech-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:0 1 auto;min-width:0;max-width:100%}
+.speech-controls select{min-height:36px;min-width:0;max-width:100%;padding:.2em .4em;border:1.5px solid var(--line);border-radius:8px;background:var(--surface)}
 
 /* Guardian */
 .g-top{display:flex;justify-content:space-between;align-items:center;padding:12px clamp(16px,4vw,40px);background:var(--surface);border-bottom:1px solid var(--line)}

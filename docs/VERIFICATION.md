@@ -12,4 +12,6 @@ Python 3.14.7 on Windows, offline model and PayPal simulator. No real payment cr
 
 Fresh local clone of `a71418a`, with no ignored data or output files: 489/489 tests passed with no skips, and the full Edge browser run passed. No tracked file exceeds 5 MB. Hosted CI is a separate environment; local passing results do not establish a CI pass.
 
+The first hosted browser run exposed a stale landing-copy assertion and Settings controls overflowing by 23 px with wider Linux font metrics. The assertion now matches the reviewed copy; the speech controls shrink and wrap within their parent. A bundled-Chromium probe reproduced the old overflow and blocked navigation with monospace, then passed with zero overflow in system-ui, Arial and monospace after the CSS fix. The browser suite includes that font-metric regression.
+
 Unverified: actual PayPal sandbox API acceptance, online-model behaviour, hosted deployment, real microphone and mobile passkeys, and older-adult usability. No real-world fraud prevention or user-adoption claim is made. Silent local footage is draft material, not a final narrated competition video.
