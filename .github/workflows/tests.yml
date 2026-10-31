@@ -7,7 +7,8 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     env:
-      LLM_PROVIDER: offline           # CI never calls a real model or ASR
+      LLM_PROVIDER: offline           # CI never calls a real model, speech service or PayPal
+      PAYPAL_MODE: simulator
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

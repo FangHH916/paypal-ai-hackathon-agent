@@ -1,4 +1,4 @@
-# speech vendor Cloud Lighthouse (or any Linux server with Docker): app + Caddy for automatic HTTPS.
+# Any Linux server with Docker: app + Caddy for automatic HTTPS.
 #   PUBLIC_HOST=<your domain, or 43-xxx-xxx-xxx.sslip.io for the server's IP> docker compose -f deploy/compose.yaml up -d --build
 # Secrets come from ../.env on the server (never committed).
 services:

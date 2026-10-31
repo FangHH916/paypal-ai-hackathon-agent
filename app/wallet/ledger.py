@@ -248,16 +248,18 @@ class Wallet(LedgerStorage):
             user, cents = rec["user_id"], rec["amount_cents"]
             if type(cents) is not int or cents <= 0:
                 raise ValueError("Amount must be a positive integer number of cents")
-            if self.user(user)["frozen"]["on"]:
+            if self.user(user)["frozen"]["on"] and rec["kind"] != "refund":     # money coming back is never frozen
                 raise ValueError("R14_WALLET_FROZEN: payments are frozen")
-            self._check_velocity(user, rec["card"])
+            if reserve:                     # only spending counts: getting money back is never rate limited
+                self._check_velocity(user, rec["card"])
             if reserve:
                 acct = self.accounts(user)[0]
                 if acct["balance_cents"] < cents:
                     raise ValueError("Over the Star allowance")
                 acct["balance_cents"] -= cents
             self.payments[rec["payment_id"]] = rec
-            self.recent_exec_times.setdefault(user, []).append(time.time())
+            if reserve:
+                self.recent_exec_times.setdefault(user, []).append(time.time())
             for event in ("gateway.posted", "commit.executed"):
                 self.outbox.append({"event": event, "session_id": rec["session_id"], "data": {
                     "draft_id": rec["draft_id"], "txn_id": rec["payment_id"], "digest": rec["digest"], "kind": rec["kind"],

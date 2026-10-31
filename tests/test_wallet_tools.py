@@ -51,10 +51,10 @@ class TestAllowance(ApiBase):
         self.assertEqual(d.risk.level, RiskLevel.BLOCK)
         self.assertIn("limit you and your family set", " ".join(d.risk.reasons))
 
-    def test_spending_reserves_and_a_definite_failure_gives_it_back(self):
+    def test_spending_reserves_the_allowance(self):
         self.turn("Send 50 to my daughter")
         self.pay()
-        self.assertEqual(self.bal(), 145000 + 0 if False else 150000 - 5000)
+        self.assertEqual(self.bal(), 150000 - 5000)
 
 
 class TestBills(ApiBase):
@@ -65,9 +65,10 @@ class TestBills(ApiBase):
         self.assertEqual(d.invoice_number, "RP-2026-1001")
 
     def test_the_model_cannot_change_a_bills_amount(self):
+        self.s.messages.append({"role": "user", "content": "Pay the power bill"})
         res = self.gw.call(self.s, "draft_bill_payment", {"invoice_id": "inv_power_oct", "amount": 1})
-        self.assertTrue(res["ok"] or "error" in res)
-        self.assertNotIn("amount_cents", self.gw.tools["draft_bill_payment"].args.model_json_schema()["properties"])
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(self.s.current_draft.amount_cents, 8640)      # the stray argument is ignored
 
     def test_unknown_invoice_rejected(self):
         res = self.gw.call(self.s, "draft_bill_payment", {"invoice_id": "nope"})
@@ -201,8 +202,6 @@ class TestVagueAmounts(ApiBase):
         d = self.model_drafts("Send 300 to my son and half of it to my daughter", "draft_transfer",
                               {"payee_id": "p_daughter", "amount": 300})
         self.assertEqual(d.grounding["amount_source"], "user")      # 300 was said: the plan handles which step it is
-        self.s.settle()
-        self.s.current_draft_id = None
         self.s = type(self.s)(session_id="h5")
         d = self.model_drafts("Send half of it to my daughter, it was 200", "draft_transfer", {"payee_id": "p_daughter", "amount": 150})
         self.assertEqual(d.grounding["amount_source"], "derived mismatch")

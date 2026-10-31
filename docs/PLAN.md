@@ -874,3 +874,45 @@ need Product 8.
   only the property lists at the top level.
 - Confirm `amount.breakdown`, `items[].category`, and the link `rel` names in the Orders spec examples.
 - Decide whether the fake invoice is visible immediately or arrives during the demo through a "New invoice arrives" control. Recommended: the control, for pacing.
+
+---
+
+## 18. Backend stage: what was built, and how it differs from the above
+
+Done: sections 3 to 10 and 12 server side, items 1 to 16 of the Backend list. Differences from the plan, all deliberate:
+
+- **Invoices keep a stable local id** (`inv_power_oct`) next to `paypal_id`. The agent and the card use the local id; PayPal's id is only
+  needed at the gateway. Found by `POST search-invoices` with `reference` = a per-visitor tag (simulator) or `star-demo` (sandbox).
+- **Webhook dedup is in the wallet snapshot, not its own table**, so the dedup entry and the state change are saved the same way. It survives
+  a restart, which is what the plan wanted.
+- **Simulator events are delivered when the app polls**, by `Reconciler.pump`, not by a timer. Deterministic in tests, no background thread.
+- **Thresholds:** cooling-off above $500 (`RULE_HIGH_THRESHOLD`), $1,200 on Standard; daily limit $1,000; `RULE_VELOCITY_MAX` default 5, since a demo
+  of the whole story used to hit 3. Refunds and money requests don't count towards velocity, and refunds work during a freeze.
+- **`stops`** is a new per-customer list (blocked, frozen, denied, scam-stopped): Activity grid rows. `GET /api/activity` returns them with payments.
+- **New routes** beyond section 10: `POST /api/demo/invoice-arrives` (the pacing control from section 17), `GET /simulator/api/info`,
+  `POST /api/freeze/lift/challenge` and `/lift`, `POST /api/guardian/lift/challenge`, `/lift`, `/remove/challenge`, `/remove`.
+- **Test files:** `test_payouts/orders/refunds/invoices` are one file, `tests/test_payment_flows.py`. `tests/test_000_isolated_env.py` keeps the suite off `data/`.
+- **`scripts/smoke_keyless.py`** drives a running server through the whole story over HTTP, for anyone to rerun.
+
+### Handoff to the Product stage
+
+`web/app.js` and `web/index.html` still describe the old product and are expected to be rewritten. They currently break on:
+
+- Removed: `POST /api/review/secondary` (`app.js` line ~363), `GET /api/world`, `/bank-logo.svg`.
+- `/api/state` no longer has `bills` (now `invoices`), `holdings`, `cards`, `standing_instructions`, `giro`, `risk_profile`. New: `allowance`, `paypal`, `engine`,
+  `guardian`, `alerts`, `frozen`, `hotline`, `currency`.
+- Cards: `secondary_required` is now `guardian_required` (with `guardian_approved`, `guardian_denied`). `schedule` and `asset_class` are gone. New: `items`, `invoice`,
+  `merchant`, `trust`, `offers_checked`, `next_step_words`, `paypal_mode`.
+- `/api/confirm` returns `{receipt, payment, next_step, reply, ...}`. `next_step` is `{"type":"redirect","url"}` or `{"type":"track"}` or null. Show success only when
+  `payment.verified`. On return from approval (`?pp_return=1&payment=...`) POST `/api/paypal/orders/return`; on `?pp_cancel=1` POST `/api/paypal/orders/cancelled`. Poll
+  `/api/payments/{session_id}/{payment_id}`.
+- Pages to add, already routed: `web/simulator.html` + `simulator.js` (reads `/simulator/api/info`, posts `/simulator/api/decide`, then goes to `redirect`), `web/guardian.html` +
+  `guardian.js`, `web/activity.js`, `web/logo.svg`, `web/vendor/ag-grid/ag-grid-community.min.js`. Static allowlist is `STATIC` in `app/server.py`.
+- CSP: `/` and `/guardian` get `grid_csp(nonce)`. A literal `__STYLE_NONCE__` in the HTML is replaced with the nonce, for `<meta name="style-nonce">`. Put the AG Grid hashes
+  from section 10 in `GRID_STYLE_HASHES` in `app/security.py`.
+- Every PayPal status needs its tag: `mode_label` on payments and panels, `paypal.label` on state.
+
+### Handoff to the Materials stage
+
+`docs/SECURITY.md`, `docs/RISK_CONTRACT.md`, `README.md` and `CONTRIBUTING.md` still describe the old product: `tests/test_identity.py` lists them in `PENDING`, and each stage
+should shrink that list. `docs/PAYPAL_NOTES.md` has the first version of what is real and what isn't.

@@ -1,0 +1,4 @@
+openapi_subset.json is derived from PayPal's REST API specifications,
+https://github.com/paypal/paypal-rest-api-specifications, licensed under the Apache License 2.0.
+It keeps a subset of the operations and schemas and removes descriptions.
+Built by scripts/build_paypal_subset.py. Not affiliated with PayPal.

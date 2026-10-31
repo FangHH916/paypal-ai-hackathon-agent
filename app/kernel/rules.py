@@ -137,7 +137,7 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
         raise_to(RiskLevel.MEDIUM, "R20_NIGHT", "It's late at night, so let's double-check.")
     # Earlier steps of the same request (one sentence, each step signed on its own) don't count against the limit
     recent = wallet.recent_exec_count(user, settings.velocity_window_min * 60, plan_id=draft.plan_id)
-    if recent >= settings.velocity_max:
+    if spends and recent >= settings.velocity_max:
         raise_to(RiskLevel.BLOCK, "R21_VELOCITY", "Too many payments in a short time. Please wait a little, then ask again.")
 
     # ---- Fields from untrusted sources (MEDIUM) ----

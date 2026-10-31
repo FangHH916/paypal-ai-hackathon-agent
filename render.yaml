@@ -1,24 +1,40 @@
 # One-click deploy on Render (https://render.com): New + > Blueprint > pick this repository.
+# Out of the box this runs keyless: the PayPal simulator and the offline rule engine, all labelled in the UI.
+# To use the real PayPal sandbox: set PAYPAL_MODE=sandbox and the PAYPAL_* secrets in the dashboard.
+# To use an AI model: set LLM_PROVIDER=openai_compat and the LLM_* values in the dashboard.
 # Secrets marked "sync: false" are typed into the Render dashboard, never committed.
 services:
   - type: web
-    name: star-voice-agent
+    name: star-family-payments
     runtime: python
-    region: singapore
-    plan: free                      # free instances sleep after ~15 min idle; pick "starter" for judging week
+    region: oregon
+    plan: free                      # free instances sleep after ~15 min idle and wipe the disk; pick "starter" for judging week
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.server:app --host 0.0.0.0 --port $PORT --no-proxy-headers
+    healthCheckPath: /api/health
     autoDeploy: true                # every push to main redeploys
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.4
+      - key: PAYPAL_MODE
+        value: simulator
       - key: PUBLIC_DEMO            # every browser gets its own demo customer; per-device rate limits
         value: "1"
       - key: SIGNING_SECRET
         generateValue: true
-      - key: SECONDARY_REVIEW_KEY  # separate simulated bank reviewer; never give to customers
+      - key: WALLET_CURRENCY
+        value: USD
+      - key: SCAM_HOTLINE_COUNTRY
+        value: US
+      - key: PAYPAL_CLIENT_ID
         sync: false
-      - key: LLM_PROVIDER           # openai_compat, or leave empty for the offline rule model
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: PAYPAL_SANDBOX_RECEIVERS
+        sync: false
+      - key: LLM_PROVIDER           # openai_compat, or leave empty for the offline rule engine
         sync: false
       - key: LLM_BASE_URL
         sync: false
@@ -26,11 +42,11 @@ services:
         sync: false
       - key: LLM_MODEL
         sync: false
-      - key: LLM_THINKING
-        value: "off"
-      - key: SPEECH_VENDOR_SECRET_ID
+      - key: ASR_PROVIDER           # browser (default) or openai_compat
         sync: false
-      - key: SPEECH_VENDOR_SECRET_KEY
+      - key: ASR_BASE_URL
         sync: false
-      - key: ASR_ENGINE
-        value: 16k_en
+      - key: ASR_API_KEY
+        sync: false
+      - key: ASR_MODEL
+        sync: false

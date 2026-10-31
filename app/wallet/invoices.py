@@ -53,6 +53,8 @@ class InvoiceDesk:
         return self.wallet.invoices(user_id, only_open=False)
 
     def _merge(self, user: dict, found: list[dict]) -> None:
+        if not self.simulator:              # in the sandbox the list is what PayPal has, nothing from the demo seeds
+            user["invoices"][:] = [r for r in user["invoices"] if r["paypal_id"]]
         rows = {r["number"]: r for r in user["invoices"]}
         for inv in found:
             number = (inv.get("detail") or {}).get("invoice_number", "")

@@ -26,13 +26,12 @@ from app.agent.llm import engine_label
 from app.config import ROOT, settings
 from app.kernel import contract
 from app.kernel import protection as prot
-from app.kernel.executor import KernelError, stop_name
+from app.kernel.executor import KernelError
 from app.kernel.hotline import hotline, hotline_words
-from app.kernel.signing import Site, canonical
+from app.kernel.signing import Site
 from app.kernel.state import UnknownSession, valid_visitor
 from app.models import fmt_money
 from app.paypal import calls as paypal_calls
-from app.paypal.config import SIMULATOR_BASE
 from app.paypal.errors import PayPalConfigError, PayPalError, PayPalUnknown
 from app.security import SecurityMiddleware, grid_csp
 from app.voice import asr
@@ -122,7 +121,8 @@ async def index(request: Request):
     host = request.headers.get("host", "")
     name, _, port = host.rpartition(":") if not host.endswith("]") else (host, "", "")
     if (name or host) in ("127.0.0.1", "[::1]") and "localhost" in settings.allowed_hosts:
-        return RedirectResponse(f"http://localhost{':' + port if port else ''}{'?' + request.url.query if request.url.query else ''}/", status_code=307)
+        query = "?" + request.url.query if request.url.query else ""     # the PayPal return link's query must survive this
+        return RedirectResponse(f"http://localhost{':' + port if port else ''}/{query}", status_code=307)
     return _page("index.html")
 
 
@@ -339,7 +339,7 @@ async def transaction_status(request: Request):
     rec = runtime.wallet.payment_by_draft(s.user_id, request.path_params["draft_id"])
     if not rec:
         return JSONResponse({"status": "NOT_POSTED", "phase": s.phase.value})
-    await run_in_threadpool(runtime.execution_gateway.reconciler.refresh, rec)
+    await run_in_threadpool(_refresh_one, rec)
     d = s.drafts.get(rec["draft_id"])
     text = presenter.receipt_text(d, runtime.execution_gateway.receipt(rec)) if d else f"{rec['counterparty_name']}: {rec['state']}"
     return JSONResponse({"status": payments.status_of(rec), "payment": _payment_view(rec), "reply": text, "speak": text, "trace": []})
@@ -581,6 +581,17 @@ async def reset(request: Request):
 
 
 # ---- PayPal: verified state, and the buyer's way back
+def _refresh_all(user_id: str) -> None:
+    with _user_lock(user_id):
+        runtime.execution_gateway.reconciler.refresh_user(user_id)
+
+
+def _refresh_one(rec: dict) -> None:
+    with _user_lock(rec["user_id"]):
+        runtime.execution_gateway.reconciler.pump()
+        runtime.execution_gateway.reconciler.refresh(rec)
+
+
 def _own_payment(s, payment_id: str) -> dict:
     rec = runtime.wallet.payment(payment_id or "")
     if not rec or rec["user_id"] != s.user_id:
@@ -590,15 +601,14 @@ def _own_payment(s, payment_id: str) -> dict:
 
 async def list_payments(request: Request):
     s = runtime.sessions.get(request.query_params.get("session_id"))
-    await run_in_threadpool(runtime.execution_gateway.reconciler.refresh_user, s.user_id)
+    await run_in_threadpool(_refresh_all, s.user_id)
     return JSONResponse({"payments": [_payment_view(r) for r in runtime.wallet.payments_for(s.user_id)], "mode_label": _pp_status()["label"]})
 
 
 async def one_payment(request: Request):
     s = runtime.sessions.get(request.path_params["session_id"])
     rec = _own_payment(s, request.path_params["payment_id"])
-    await run_in_threadpool(runtime.execution_gateway.reconciler.pump)
-    await run_in_threadpool(runtime.execution_gateway.reconciler.refresh, rec)
+    await run_in_threadpool(_refresh_one, rec)
     return JSONResponse({"payment": _payment_view(rec)})
 
 
@@ -678,8 +688,8 @@ async def disputes_view(request: Request):
                          "note": "Read only. In this demo these are cases on the household's own account."})
 
 
-def activity_rows(user_id: str, *, masked: bool = False) -> list[dict]:
-    """Rows of the Activity & audit grid: every payment and every stop, with a link into the audit chain."""
+def activity_rows(user_id: str) -> list[dict]:
+    """Rows of the Activity & audit grid: every payment and every stop, with a link into the audit chain. Emails masked."""
     hashes: dict[str, str] = {}
     records = runtime.wallet.payments_for(user_id)
     stops = runtime.wallet.stops(user_id)
@@ -702,7 +712,7 @@ def activity_rows(user_id: str, *, masked: bool = False) -> list[dict]:
 
 async def activity(request: Request):
     s = runtime.sessions.get(request.query_params.get("session_id"))
-    await run_in_threadpool(runtime.execution_gateway.reconciler.refresh_user, s.user_id)
+    await run_in_threadpool(_refresh_all, s.user_id)
     return JSONResponse({"rows": activity_rows(s.user_id), "mode_label": _pp_status()["label"], "chain": runtime.audit.verify()})
 
 
@@ -770,9 +780,9 @@ async def guardian_pair(request: Request):
 async def guardian_feed(request: Request):
     body = await _json(request)
     uid = _guardian_user(body)
-    await run_in_threadpool(runtime.execution_gateway.reconciler.refresh_user, uid)
+    await run_in_threadpool(_refresh_all, uid)
     feed = _desk().feed(uid)
-    feed["activity"] = activity_rows(uid, masked=True)
+    feed["activity"] = activity_rows(uid)
     feed["mode_label"] = _pp_status()["label"]
     return JSONResponse(feed)
 
@@ -966,4 +976,3 @@ routes = [
 
 app = Starlette(routes=routes, middleware=[Middleware(SecurityMiddleware)],
                 exception_handlers={BadInput: _bad_input, UnknownSession: _unknown_session, GuardianError: _guardian_error})
-_ = (canonical, stop_name, SIMULATOR_BASE)   # keep the public names importable for the lab and tests

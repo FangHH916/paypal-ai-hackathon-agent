@@ -69,7 +69,7 @@ class Settings:
     protection_delay = int(_f("PROTECTION_LOWER_DELAY", "120"))   # demo: 2 min; a real wallet: 86400 (24 h)
     cooldown_seconds = int(_f("RULE_COOLDOWN_SECONDS", "20"))      # 20 s for the demo, e.g. 600 in production
     velocity_window_min = int(_f("RULE_VELOCITY_WINDOW_MIN", "10"))
-    velocity_max = int(_f("RULE_VELOCITY_MAX", "3"))
+    velocity_max = int(_f("RULE_VELOCITY_MAX", "5"))
     night_start, night_end = 23, 6
     # pin the "current hour" during evaluation so running it late at night doesn't change risk levels
     fixed_hour = int(os.environ["RULE_FIXED_HOUR"]) if os.getenv("RULE_FIXED_HOUR") else None

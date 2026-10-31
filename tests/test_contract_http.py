@@ -6,7 +6,6 @@ from starlette.testclient import TestClient
 
 from app import runtime, security
 from app.kernel import p256
-from app.kernel.signing import build_settings_challenge
 from app.server import app
 
 
@@ -19,8 +18,7 @@ class GuardianHttpTest(unittest.TestCase):
         self.key, self.jwk = p256.generate_keypair()
         runtime.kernel.register_key(self.s, self.jwk)
         self.token = self._pair()
-        p = runtime.wallet.add_payee(self.s.user_id, "Tom Reed", "tom.reed@mail.example", "friend")
-        self.payee = p["payee_id"]
+        runtime.wallet.add_payee(self.s.user_id, "Tom Reed", "tom.reed@mail.example", "friend")
         runtime.agent.run_turn(self.s, "Send 400 to Tom Reed")
         self.d = self.s.current_draft
 
@@ -94,4 +92,3 @@ class GuardianHttpTest(unittest.TestCase):
         for _ in range(60):
             self.client.post("/api/guardian/challenge", json={"token": "x", "draft_id": "y", "decision": "approve"})
         self.assertEqual(self.client.post("/api/guardian/challenge", json={"token": "x", "draft_id": "y", "decision": "approve"}).status_code, 429)
-        _ = build_settings_challenge

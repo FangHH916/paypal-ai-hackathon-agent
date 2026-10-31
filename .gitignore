@@ -7,6 +7,7 @@ data/*.jsonl
 data/*.json
 eval/eval_audit.jsonl
 eval/report.json
+eval/contract-report.json
 .venv/
 eval/report.md
 eval/report.html

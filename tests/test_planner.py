@@ -7,6 +7,8 @@ work, the amounts come from signed, verified steps, and a bad plan can't move mo
 import json
 import os
 
+from unittest.mock import patch
+
 os.environ.setdefault("RULE_FIXED_HOUR", "14")
 
 from tests.test_wallet_tools import ApiBase  # noqa: E402
@@ -14,6 +16,7 @@ from app.agent import planner  # noqa: E402
 from app.agent.llm import OfflineLLM  # noqa: E402
 from app.agent.loop import Agent  # noqa: E402
 from app.agent.verifier import Verifier  # noqa: E402
+from app.config import settings  # noqa: E402
 from app.models import RiskLevel  # noqa: E402
 
 
@@ -88,6 +91,12 @@ class TestPhrasingsNoRuleKnows(PlannerBase):
 class TestOneSentenceManySteps(PlannerBase):
     """Steps the customer said in one sentence are one request: the frequency limit doesn't stop step 4."""
 
+    def setUp(self):
+        super().setUp()
+        limit = patch.object(settings, "velocity_max", 3)
+        limit.start()
+        self.addCleanup(limit.stop)
+
     def test_four_steps_in_one_sentence(self):
         self.use_plan(FOUR_STEPS)
         self.turn(SAID_FOUR)
@@ -132,7 +141,7 @@ class TestThePlanCannotMoveMoney(PlannerBase):
         self.turn(SAID)
         r = self.next_step()                                            # step 1 was never signed
         self.assertIn("Which exact amount", r.reply)
-        self.assertNotEqual((self.s.current_draft or self.s).__dict__.get("payee_id"), "p_daughter")
+        self.assertFalse([d for d in self.s.drafts.values() if d.payee_id == "p_daughter"])
 
     def test_a_reference_to_an_unverified_step_asks(self):
         self.use_plan(HALF_THAT_MONEY)

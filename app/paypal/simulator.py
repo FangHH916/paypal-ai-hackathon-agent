@@ -202,10 +202,10 @@ class Simulator:
         msg = f"{tid}|{when}|{WEBHOOK_ID}|{hashlib.sha256(_canon(event).encode()).hexdigest()}"
         return base64.b64encode(hmac.new(self.secret, msg.encode(), hashlib.sha256).digest()).decode()
 
-    def due_events(self, now: float | None = None) -> list[dict]:
-        now = now or time.time()
+    def due_events(self) -> list[dict]:
         with self._lock:
-            self._settle(now)
+            self._settle(time.time())
+            now = time.time()               # after settling: what it just emitted counts as due
             ready = [e for e in self.events if e["due"] <= now]
             self.events = [e for e in self.events if e["due"] > now]
             return ready
@@ -375,7 +375,9 @@ class Simulator:
         if not full:
             hdr = b["batch_header"]
             return {"batch_header": {k: hdr[k] for k in ("payout_batch_id", "batch_status", "sender_batch_header")}, "links": links}
-        return {"batch_header": copy.deepcopy(b["batch_header"]), "items": [self._item_view(self.st["items"][i]) for i in b["_items"]],
+        # The spec's batch items have no sender_batch_id; only GET payouts-item has it
+        items = [{k: v for k, v in self._item_view(self.st["items"][i]).items() if k != "sender_batch_id"} for i in b["_items"]]
+        return {"batch_header": copy.deepcopy(b["batch_header"]), "items": items,
                 "total_items": len(b["_items"]), "total_pages": 1, "links": links}
 
     def _payout_get(self, request, m, h, body, query):
@@ -451,7 +453,7 @@ class Simulator:
             cap["status_details"] = {"reason": "PENDING_REVIEW"}
         self.st["captures"][cid] = cap
         o["status"] = "COMPLETED"
-        unit["payments"] = {"captures": [self._public(cap)]}
+        unit["payments"] = {"captures": [self._in_order(cap)]}
         if key:
             self.st["capture_by_key"][key] = cid
         self._emit("PAYMENT.CAPTURE.PENDING" if pending else "PAYMENT.CAPTURE.COMPLETED", "capture", self._public(cap),
@@ -460,10 +462,14 @@ class Simulator:
             self._txn("T0006", 1, amount["value"], amount["currency_code"], cid)
         return self._json(request, 201, self._public(o))
 
+    def _in_order(self, cap: dict) -> dict:
+        """A capture as the order shows it. related_ids appear on the webhook resource, not inside an order (spec)."""
+        return {k: v for k, v in self._public(cap).items() if k != "supplementary_data"}
+
     def _sync_capture(self, cap: dict) -> None:
         o = self.st["orders"].get(cap.get("_order", ""))
         if o:
-            o["purchase_units"][0]["payments"]["captures"] = [self._public(cap)]
+            o["purchase_units"][0]["payments"]["captures"] = [self._in_order(cap)]
 
     def _capture_get(self, request, m, h, body, query):
         c = self.st["captures"].get(m["id"])
@@ -558,7 +564,9 @@ class Simulator:
 
     def _dispute_get(self, request, m, h, body, query):
         d = next((x for x in self._DISPUTES if x["dispute_id"] == m["id"]), None)
-        return self._json(request, 200, copy.deepcopy(d)) if d else self._missing(request)
+        if not d:
+            return self._missing(request)
+        return self._json(request, 200, {k: v for k, v in d.items() if k != "dispute_state"})    # list-only field (spec)
 
     def _transactions(self, request, m, h, body, query):
         if not query.get("start_date") or not query.get("end_date"):
