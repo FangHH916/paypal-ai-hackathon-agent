@@ -200,7 +200,8 @@ class Simulator:
 
     def _hmac(self, tid: str, when: str, event: dict) -> str:
         msg = f"{tid}|{when}|{WEBHOOK_ID}|{hashlib.sha256(_canon(event).encode()).hexdigest()}"
-        return base64.b64encode(hmac.new(self.secret, msg.encode(), hashlib.sha256).digest()).decode()
+        # The prefix keeps it inside the documented pattern, which needs a word character first; base64 can start with + or /.
+        return "SIM" + base64.b64encode(hmac.new(self.secret, msg.encode(), hashlib.sha256).digest()).decode()
 
     def due_events(self) -> list[dict]:
         with self._lock:

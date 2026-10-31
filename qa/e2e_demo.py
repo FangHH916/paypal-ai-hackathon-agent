@@ -101,9 +101,9 @@ def start_server(port: int, data: str, extra: dict | None = None):
     proc = subprocess.Popen([PY, "-m", "uvicorn", "app.server:app", "--port", str(port), "--log-level", "warning"], cwd=ROOT, env=env)
     for _ in range(80):
         try:
-            if requests.get(f"http://localhost:{port}/api/health", timeout=1).ok:
+            if "paypal" in requests.get(f"http://localhost:{port}/api/health", timeout=1).json():   # this server, not another on that port
                 return proc
-        except requests.RequestException:
+        except (requests.RequestException, ValueError):
             time.sleep(0.25)
     proc.kill()
     raise SystemExit("The server didn't start.")

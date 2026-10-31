@@ -465,7 +465,7 @@ function push(m){
 // ---------------------------------------------------------------- Tracker: what PayPal really says about one payment
 const FLOW = {
   transfer: [['Sent to PayPal', ['PROCESSING', 'HELD', 'UNCLAIMED', 'SENT']], ['Delivered', ['SENT']]],
-  purchase: [['Sent to PayPal', ['AWAITING_APPROVAL', 'APPROVED', 'CAPTURING', 'CAPTURE_PENDING', 'PAID', 'REFUNDED', 'REVERSED']],
+  purchase: [['Sent to PayPal', ['AWAITING_APPROVAL', 'APPROVED', 'CAPTURING', 'CAPTURE_PENDING', 'PAID', 'REFUNDED', 'REVERSED', 'BUYER_CANCELLED', 'DECLINED', 'EXPIRED']],
              ['Approved by you', ['APPROVED', 'CAPTURING', 'CAPTURE_PENDING', 'PAID', 'REFUNDED', 'REVERSED']], ['Payment taken', ['PAID', 'REFUNDED']]],
   bill: [['Sent to PayPal', ['AWAITING_PAYMENT', 'PAID', 'REFUNDED']], ['Paid by you', ['PAID', 'REFUNDED']]],
   refund: [['Asked PayPal', ['REFUND_PENDING', 'REFUNDED']], ['Money on its way back', ['REFUNDED']]],
@@ -493,7 +493,7 @@ function trackerHtml(m, i){
   const canRefund = p.state === 'PAID' && p.verified && p.kind === 'purchase';
   return `<div class="tracker tone-${statusInfo(s, p.verified).tone}">
     <header><h3>${esc(p.what)}</h3><span class="tracker-amt">${esc(p.amount)}</span></header>
-    <p class="tracker-status">${ppBadge(s, p.mode_label, p.verified)}<span class="muted small">${esc(p.to)}${p.handle ? ` · ${esc(p.handle)}` : ''}</span></p>
+    <p class="tracker-status">${ppBadge(s, p.mode_label, p.verified)}<span class="muted small">${p.what === p.to ? '' : esc(p.to)}${p.handle ? ` ${p.what === p.to ? '' : '· '}${esc(p.handle)}` : ''}</span></p>
     <ol class="steps">${items}${verified}${end ? `<li class="stopped"><span aria-hidden="true">✕</span>${esc(statusInfo(s).word)}</li>` : ''}</ol>
     ${s === 'UNKNOWN' ? '<p class="warn-text">Please don\'t pay again. Star is asking PayPal about this same payment, with the same key, so it can\'t go out twice.</p>' : ''}
     <div class="acts">
@@ -1070,7 +1070,7 @@ function familyPage(m){
            <button class="btn danger big" id="f-on" type="button">${icon('freeze')}Freeze all payments now</button>`}
       </section>
     </div>
-    <section class="card pad page-gap" aria-labelledby="al-h"><h2 id="al-h">Alerts</h2>${d.alerts.length ? `<ul class="alert-list">${d.alerts.slice(0, 8).map(a => `<li class="alert-item level-${esc(a.level)}"><span class="when">${esc(clock(a.at))}</span><span>${esc(a.text)}</span></li>`).join('')}</ul>` : '<p class="muted">No alerts yet.</p>'}</section>
+    <section class="card pad page-gap" aria-labelledby="al-h"><h2 id="al-h">Alerts</h2>${d.alerts.length ? `<ul class="alert-list">${d.alerts.slice(0, 8).map(a => `<li class="alert-item level-${esc(a.level)}"><span class="when">${esc(clock(a.at))}</span><span>${a.kind === 'approval' ? `Asked ${esc(guardianName())}: ` : ''}${esc(a.text)}</span></li>`).join('')}</ul>` : '<p class="muted">No alerts yet.</p>'}</section>
     <h2 class="sub-head">People</h2><div class="contacts">${people.map(card).join('')}</div>
     <p class="muted small add-person"><button class="text-btn" type="button" id="add-person">Add a new person with Star</button></p>
     <h2 class="sub-head">Who sends you bills</h2><div class="contacts">${billers.map(card).join('')}</div>`;
