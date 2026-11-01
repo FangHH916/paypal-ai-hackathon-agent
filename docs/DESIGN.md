@@ -73,7 +73,7 @@ An unknown outcome older than `PAYPAL_UNKNOWN_ALERT_MIN` alerts the guardian. St
 | R91 | A price far above the usual price | BLOCK |
 | R92 | A flagged merchant | BLOCK |
 | R93 | An offer, seller or price that isn't exactly the catalogue's | BLOCK |
-| R94 | Gift cards | BLOCK if she was told to buy them, otherwise HIGH, and the family checks |
+| R94 | Gift cards | BLOCK if she was told to buy them by a caller, an official, tech support, a boss or a stranger, or to read out the numbers or pay a fine or bail with them. A present for family, even one a relative or friend suggested, is HIGH with a warning, and the family checks; the conversation stays usable |
 | R95 | A refund of something that isn't hers, can't be reversed, or is over what's left | BLOCK |
 | R96 | "We refunded you too much, send the difference" | BLOCK |
 

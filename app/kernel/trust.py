@@ -74,7 +74,8 @@ def _purchase_checks(draft, wallet, user_id: str, scam_level: str) -> list[dict]
         if scam_level in ("HIGH", "BLOCK"):
             hits.append(_hit("R94_GIFT_CARD", "BLOCK", "Being told to buy gift cards is a classic sign of a scam."))
         else:
-            hits.append(_hit("R94_GIFT_CARD", "HIGH", "Gift cards are how scammers like to be paid, so your family checks this one.",
+            hits.append(_hit("R94_GIFT_CARD", "HIGH", "Gift cards are how scammers like to be paid, so your family checks this one. If anyone is telling you to buy it, "
+                             "or asks for the numbers on it, stop: that's a scam.",
                              guardian=True))
     return hits
 

@@ -431,11 +431,12 @@ class OfflineLLM:
             why = d["reasons"][0] if d["reasons"] else ""
             return OfflineLLM._say(f"I can't pay this one. {why}")
         verb = {"refund": "back from", "money_request": "asked from", "purchase": "to"}.get(d.get("kind"), "to")
+        warn = f"{d['warning']} " if d.get("warning") else ""
         if d.get("family") == "unpaired":
-            return OfflineLLM._say(f"This one needs your family's OK: {d['amount']} {verb} {d['payee']}. Your family guardian isn't set up yet, "
+            return OfflineLLM._say(f"{warn}This one needs your family's OK: {d['amount']} {verb} {d['payee']}. Your family guardian isn't set up yet, "
                                    "so it can't be sent. You can invite them on the Family page, or cancel this.")
         if d.get("family") == "waiting":
-            return OfflineLLM._say(f"This one needs your family's OK: {d['amount']} {verb} {d['payee']}. {d['guardian']} sees this exact card on her own "
+            return OfflineLLM._say(f"{warn}This one needs your family's OK: {d['amount']} {verb} {d['payee']}. {d['guardian']} sees this exact card on her own "
                                    "device. Once she approves, you can sign it.")
         return OfflineLLM._say(f"Please check the card: {d['amount']} {verb} {d['payee']}. If it's right, confirm with your fingerprint.")
 

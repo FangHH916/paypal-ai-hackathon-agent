@@ -205,7 +205,8 @@ class ToolGateway:
         return {"draft_id": d.draft_id, "kind": d.kind, "payee": d.payee_name, "amount": fmt_money(d.amount_cents),
                 "risk_level": d.risk.level.value, "reasons": d.risk.reasons,
                 "frozen": frozen, "mismatches": d.verification.get("mismatches", []) if frozen else [],
-                "family": family, "guardian": guardian["name"].split()[0], "status": status}
+                "family": family, "guardian": guardian["name"].split()[0], "status": status,
+                "warning": next((h["why"] for h in (d.trust or {}).get("hits", []) if h["code"] == "R94_GIFT_CARD"), "")}
 
     # ---------------------------------------------------------------- Control
     def _care(self, s: Session, a: CareArgs):

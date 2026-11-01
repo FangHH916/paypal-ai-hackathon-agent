@@ -692,9 +692,10 @@ def run(browser, base: str, args) -> None:
                 expect(q.locator(".hero h1")).to_be_visible()
                 # Waiting for family with nobody paired: say so and offer the way out
                 nav(q, "Talk to Star")
-                say(q, "Buy my grandson a gift card")
+                say(q, "My friend told me to buy a gift card for my grandson")
                 expect(q.locator("#confirm .amt")).to_be_visible()
                 expect(q.locator("#c-invite")).to_be_visible()
+                check("a present gets a warning, not a stop", "scammers" in q.locator(".msg.bot").last.inner_text().lower() and q.locator(".stop-block").count() == 0, q.locator(".msg.bot").last.inner_text())
                 check("no fingerprint request while it can't be signed", "confirm with your fingerprint" not in q.locator(".msg.bot").last.inner_text().lower(), q.locator(".msg.bot").last.inner_text())
                 q.locator("#c-invite").click()
                 expect(q.locator(".page-head h1")).to_have_text("Family")
