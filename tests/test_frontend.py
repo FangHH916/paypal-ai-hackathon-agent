@@ -104,6 +104,12 @@ class TestPublishedClaims(unittest.TestCase):
             self.assertNotIn("kept safe", text.lower(), path.name)
         self.assertNotIn("Fixed rules stop scams", (WEB / "index.html").read_text(encoding="utf-8"))
 
+    def test_only_a_live_second_model_is_called_independent_on_screen(self):
+        words = (ROOT / "app" / "kernel" / "crosscheck.py").read_text(encoding="utf-8") + (ROOT / "app" / "kernel" / "executor.py").read_text(encoding="utf-8")
+        self.assertNotIn("The independent check", words)
+        app = (WEB / "app.js").read_text(encoding="utf-8")
+        self.assertEqual([line for line in app.splitlines() if "independent check" in line.lower() and "live()" not in line], [])
+
 
 class TestEvalGate(unittest.TestCase):
     def load(self):

@@ -401,7 +401,7 @@ class Kernel:
             raise KernelError("The confirmation card doesn't match the transaction. Rejected.", "DIGEST_MISMATCH")
         self._recheck_risk(s, draft)
         if self.require_verification and draft.verification.get("status") != "match":
-            raise KernelError("The independent check hasn't confirmed this payment, so it can't be signed.",
+            raise KernelError("The second reading hasn't confirmed this payment, so it can't be signed.",
                               "NOT_VERIFIED")
         if draft.risk and draft.risk.verify_question and verify_answer is not True:
             raise KernelError("Please answer the verification question first.", "VERIFY_REQUIRED")

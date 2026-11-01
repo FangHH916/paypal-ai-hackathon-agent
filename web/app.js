@@ -373,7 +373,7 @@ function decisionPanel(record){
     <p class="muted small">Policy ${esc(record.policy_version)} · ${esc(record.stage)}<br>${esc(record.evidence_scope)}</p>
     <blockquote>${esc(record.raw_text || 'No transcript recorded')}</blockquote>
     <div class="evidence-compare"><div><b>AI draft</b><p>${esc(record.draft?.payee)}<br>${esc(cents(record.draft?.amount_cents))}</p></div>
-    <div><b>Independent reading</b><p>${esc(ex.payee || 'Not stated')}<br>${esc(ex.amount == null ? 'Not stated' : cash(Math.round(ex.amount * 100)))}</p></div></div>
+    <div><b>Second reading</b><p>${esc(ex.payee || 'Not stated')}<br>${esc(ex.amount == null ? 'Not stated' : cash(Math.round(ex.amount * 100)))}</p></div></div>
     <p class="muted small">${esc(record.verifier?.engine)}${record.verifier?.mode === 'offline_shared_parser' ? ' · Shared offline parser; not two independent models.' : ''}</p>
     <ol class="contract-checks">${Object.entries(record.checks || {}).map(([key, c]) => `<li class="${esc(c.status)}"><b>${esc(CHECK_LABELS[key] || key)}</b><span>${esc(marks[c.status] || c.status)}</span><small>${esc(c.detail)}</small></li>`).join('')}</ol>
     <p class="muted small">Rules: ${esc((record.reason_codes || []).join(', ') || 'No risk flags')}<br>Still needed: ${esc((record.required_evidence || []).join(', ') || 'None')}</p>
@@ -448,7 +448,7 @@ function stageHtml(m, i){
   if(m.type === 'plan') return `<div class="plan" role="note"><b>I'll do this in ${m.items.length} steps. You check and confirm each one.</b>
     <ol>${m.items.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
   if(m.type === 'frozen') return `<div class="stop-block frozen"><h3>${icon('freeze')}Frozen: this didn't match what you said</h3>
-    <ul class="why-list">${m.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="muted small">A second, independent check re-read your own words. Nothing went to PayPal.</p>
+    <ul class="why-list">${m.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="muted small">A second reading of your own words caught it. Nothing went to PayPal.</p>
     ${stopCount(m)}<div class="acts"><button class="btn secondary again" type="button">Say it again</button></div></div>`;
   if(m.type === 'blocked') return `<div class="stop-block"><h3>${icon('shield')}${m.scam === false ? "I can't do this one" : "I've stopped this for you"}</h3>
     <p>${esc(m.text)}</p>${state.care || m.reasons?.length ? `<details class="why" ${state.care ? 'open' : ''}><summary>Why I stopped this</summary>${whyHtml(m.reasons?.length ? m.reasons : [m.text])}</details>` : ''}
@@ -572,11 +572,11 @@ function showCaught(r){
   const c = r.ui.card, d = r.demo, frozen = r.ui.type === 'frozen';
   const heard = d.heard_amount != null ? cash(Math.round(Number(d.heard_amount) * 100)) : 'no amount';
   push({type:'caught', said: d.said, drafted: c.amount, payee: c.payee_name, heard, frozen, calls: state.calls.money_moving_this_task});
-  speak(`Safety test passed. The faulty model wrote ${c.amount}, but the independent check heard ${heard}. ` +
+  speak(`Safety test passed. The faulty model wrote ${c.amount}, but the second reading heard ${heard}. ` +
         `It was stopped before you were asked to confirm. Nothing was sent.`);
   state.check = {title: 'Safety test passed', rows: [
     ['fail', 'Faulty AI draft', `${c.amount} to ${c.payee_name}: the planted 10× bug`],
-    ['pass', 'Independent check', `Re-read your words, heard ${heard}: mismatch found`],
+    ['pass', 'Second reading', `Re-read your words, heard ${heard}: mismatch found`],
     ['pass', frozen ? 'Frozen' : 'Stopped', 'No confirmation card, nothing to sign'],
     ['pass', 'PayPal', 'No money-moving call was made']]};
   renderSafety(); refresh(); loadCalls();
@@ -589,14 +589,14 @@ function caughtHTML(m){
     <div class="caught-grid">
       <div class="cg said"><small>1. You said</small><strong class="quote">“${esc(m.said)}”</strong><span>to ${esc(m.payee)}</span></div>
       <div class="cg bad"><small>2. The faulty model drafted</small><strong>${esc(m.drafted)}</strong><span>10&times; too much (the planted bug)</span></div>
-      <div class="cg good"><small>3. The independent check heard</small><strong>${esc(m.heard)}</strong><span>it re-read your own words only</span></div>
+      <div class="cg good"><small>3. The second reading heard</small><strong>${esc(m.heard)}</strong><span>it re-read your own words only</span></div>
     </div>
     <ol class="caught-path">
       ${stage('AI draft', 'x', 'wrong amount')}${stage('Second check', 'ok', 'mismatch found')}
       ${stage('Card', 'skip', 'never shown')}${stage('Signature', 'skip', 'never asked')}${stage('PayPal', 'ok', '0 calls')}
     </ol>
-    <small class="muted">An AI can mishear or make things up. Here it can only write a draft, and a second,
-      independent check compares that draft with what you actually said before anything is shown or signed.</small>
+    <small class="muted">An AI can mishear or make things up. Here it can only write a draft, and a
+      second reading compares that draft with what you actually said before anything is shown or signed.</small>
   </div>`;
 }
 // After a payment is confirmed, the next step of the user's own plan is prepared right away (it still needs its own

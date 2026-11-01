@@ -70,7 +70,7 @@ def compare(draft: Draft, extracted: dict, wallet) -> dict:
     # ---- Is there a request at all, and of the same type?
     if not intent or (not said_payee and said_amount in (None, "") and intent != "refund"):
         fields["request"] = "mismatch"
-        why.append("The independent check found no payment request in what you said.")
+        why.append("The second reading found no payment request in what you said.")
     elif intent != draft.kind:
         fields["type"] = "mismatch"
         why.append(f"Type: you asked about {_INTENT_WORD[intent]}, but this is {_INTENT_WORD[draft.kind]}.")
@@ -80,7 +80,7 @@ def compare(draft: Draft, extracted: dict, wallet) -> dict:
     # ---- Who / what
     if said_payee is not None and not isinstance(said_payee, str):
         fields["payee"] = "mismatch"
-        why.append("The independent check returned an invalid recipient.")
+        why.append("The second reading returned an invalid recipient.")
     elif said_payee:
         targets = resolve_targets(str(said_payee), draft, wallet)
         ok = draft.payee_id in targets
@@ -96,7 +96,7 @@ def compare(draft: Draft, extracted: dict, wallet) -> dict:
         fields["payee"] = "not stated"        # "I want my money back": which one is on the card she signs
     else:
         fields["payee"] = "mismatch"
-        why.append("The independent check could not confirm the recipient or item.")
+        why.append("The second reading could not confirm the recipient or item.")
 
     # ---- How much
     cents = None
@@ -113,7 +113,7 @@ def compare(draft: Draft, extracted: dict, wallet) -> dict:
             invalid = True
     if invalid:
         fields["amount"] = "mismatch"
-        why.append("The independent check returned an invalid amount; please say the amount again.")
+        why.append("The second reading returned an invalid amount; please say the amount again.")
     elif cents is not None:
         ok = cents == draft.amount_cents
         fields["amount"] = "match" if ok else "mismatch"
@@ -121,7 +121,7 @@ def compare(draft: Draft, extracted: dict, wallet) -> dict:
             why.append(f"Amount: you said {fmt_money(cents)}, but this is for {fmt_money(draft.amount_cents)}.")
     elif draft.grounding.get("amount_source") == "user":
         fields["amount"] = "mismatch"
-        why.append("The independent check could not confirm the amount you stated.")
+        why.append("The second reading could not confirm the amount you stated.")
     else:
         fields["amount"] = "not stated"
 
