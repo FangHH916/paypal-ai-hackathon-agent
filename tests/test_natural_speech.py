@@ -77,6 +77,7 @@ class TestGiftCardScripts(World):
                "Someone called and told me to buy gift cards",
                "The caller says I have to get gift cards for him",
                "I was told to buy gift cards and read out the numbers",
+               "I was told to buy gift cards",
                "a lady on the phone wants me to buy 3 gift cards",
                "The caller wants 500 in gift cards",
                "A lady from Microsoft asked me to get gift cards"]

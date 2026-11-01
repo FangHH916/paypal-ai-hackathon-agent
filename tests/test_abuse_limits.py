@@ -96,8 +96,9 @@ class TestVisitorCap(unittest.TestCase):
             for uid in ids:
                 w.user(uid)
                 time.sleep(0.002)
-            w.set_frozen(ids[0], True, "the customer")       # the oldest visitor froze their payments
-            w.user(ids[1])                                   # ...the second is active again
+            w.set_frozen(ids[0], True, "the customer")       # this visitor froze their payments and then went idle...
+            w.user(ids[2])                                   # ...while both of the others are active after that,
+            w.user(ids[1])                                   # so only the freeze can save the idlest world
             w.user(Wallet.visitor_user_id("new"))
         self.assertIn(ids[0], w.users())
         self.assertTrue(w.users()[ids[0]]["frozen"]["on"])
