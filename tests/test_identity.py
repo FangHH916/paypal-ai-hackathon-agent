@@ -13,6 +13,11 @@ SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".pdf", ".wav", ".webm"}
 
 
 class TestIdentity(unittest.TestCase):
+    def test_python_source_has_no_control_characters(self):
+        files = subprocess.check_output(["git", "ls-files", "*.py"], cwd=ROOT, text=True).split("\n")
+        bad = [name for name in files if name and re.search(r"[\x00-\x08\x0e-\x1f]", (ROOT / name).read_text(encoding="utf-8"))]
+        self.assertEqual(bad, [])
+
     def test_no_old_identity_terms(self):
         files = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard"], cwd=ROOT, text=True).split("\n")
         hits = []
