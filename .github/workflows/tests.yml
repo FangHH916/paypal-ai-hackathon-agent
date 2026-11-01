@@ -1,4 +1,4 @@
-name: tests
+﻿name: tests
 on:
   push:
     branches: [main]
@@ -17,8 +17,8 @@ jobs:
           cache: pip
       - run: pip install -r tests/requirements.txt
       - run: python -m unittest discover tests -v
-      - name: Hard safety checks (no unsigned execution, every attack blocked)
-        run: python eval/run_eval.py
+      - name: Safety checks (no unsigned execution, every attack blocked, every scripted case passes)
+        run: python eval/run_eval.py --require-all
       - name: Transaction contract fault injection
         run: python eval/run_contract_eval.py
   browser:

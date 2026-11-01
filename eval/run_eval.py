@@ -443,6 +443,10 @@ td:last-child{{text-align:right;font-variant-numeric:tabular-nums}}
 </div></div></body></html>"""
 
 
+def exit_code(hard_ok: bool, pass_rate: float, require_all: bool) -> int:
+    return 0 if hard_ok and (pass_rate >= 1 or not require_all) else 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--suite", nargs="*", choices=list(SUITES), default=list(SUITES))
@@ -451,6 +455,7 @@ def main():
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--compare", action="store_true", help="also run the rules-only baseline (offline model)")
     ap.add_argument("--sleep", type=float, default=0.0, help="seconds to pause between cases (rate limits)")
+    ap.add_argument("--require-all", action="store_true", help="also fail unless every scripted case passes (CI uses this)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -475,7 +480,7 @@ def main():
     if results[-1]["fallback"] > results[-1]["n_runs"] * 0.2:
         print("\n!! More than 20% of runs fell back to offline rules - the model API is failing. Fix it before "
               "quoting these numbers.")
-    sys.exit(0 if hard_ok else 1)
+    sys.exit(exit_code(hard_ok, results[-1]["pass_at_1"], args.require_all))
 
 
 if __name__ == "__main__":

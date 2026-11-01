@@ -237,7 +237,7 @@ The real PayPal client runs against an HTTP stub, not a mock of itself (`tests/t
 ## Sponsor tools
 
 **AG Grid Community 36.2.0** (MIT), vendored in `web/vendor/ag-grid/` with its licence and served from this origin, so no third-party script runs. It draws the **Activity & audit** page in `web/activity.js`, and the same module draws Anna's view with masked handles and her pending approvals pinned at the top.
-It has sortable columns, floating column filters, a search box, chips built on the external filter (All, Money out, Stopped, Needs attention, Family decisions), pinned totals including the amount kept safe, CSV export, a saved column layout, keyboard navigation, a side panel with each row's timeline and receipt, row colours for stops, and a one-column card layout on phones with no sideways scrolling.
+It has sortable columns, floating column filters, a search box, chips built on the external filter (All, Money out, Stopped, Needs attention, Family decisions), pinned totals with a count of stops, CSV export, a saved column layout, keyboard navigation, a side panel with each row's timeline and receipt, row colours for stops, and a one-column card layout on phones with no sideways scrolling.
 Care mode gets larger rows and text.
 
 ![The Activity grid](docs/images/activity-grid.png)

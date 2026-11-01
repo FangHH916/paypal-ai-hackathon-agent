@@ -80,6 +80,13 @@ class HttpTest(unittest.TestCase):
         self.assertNotEqual(sid, "f" * 32)
         self.assertEqual(self.post("/api/chat", {"session_id": sid, "text": "Send 50 to my daughter"}).status_code, 200)
 
+    def test_a_wrong_page_leads_back_and_a_wrong_api_stays_json(self):
+        r = requests.get(self.base + "/nope")
+        self.assertEqual(r.status_code, 404)
+        self.assertIn("Back to Star", r.text)
+        self.assertIn('name="viewport"', r.text)
+        self.assertEqual(requests.get(self.base + "/api/nope").json()["code"], "NOT_FOUND")
+
     # ---- static files ----
     def test_page_and_assets(self):
         r = requests.get(self.base + "/", headers={"Host": f"localhost:{self.port}"})

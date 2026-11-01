@@ -170,6 +170,7 @@ def run(browser, base: str, args) -> None:
         expect(page.locator(".band-sim")).to_contain_text("SIMULATED")
         expect(page.locator("#last-pay")).to_contain_text("No payments yet")
         check("no horizontal overflow on Home", overflow(page) <= 0, overflow(page))
+        check("a wide screen shows every page and no More button", not page.locator("#nav-more").is_visible() and page.locator(".nav-btn", has_text="Security lab").is_visible())
         shot(page, "02-home")
         for label, heading in (("Shop", "Shop"), ("Bills", "Bills"), ("Family", "Family"), ("Security lab", "Security lab"), ("Settings", "Settings")):
             nav(page, label)
@@ -745,6 +746,31 @@ def run(browser, base: str, args) -> None:
                 server.terminate()
                 server.wait(10)
 
+    def public_demo():
+        if args.base:
+            return
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data, {"PUBLIC_DEMO": "1", "SIGNING_SECRET": "e2e-only-not-a-real-secret"})
+            c = browser.new_context(viewport={"width": 1280, "height": 860})
+            q = c.new_page()
+            watch(q, "public-demo")
+            try:
+                url = f"http://localhost:{port}"
+                check("a shared server has no anonymous customer", requests.get(url + "/api/state", timeout=5).status_code == 404)
+                q.goto(url + "/")
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".hero h1")).to_contain_text("Mrs. Lee")
+                sid = q.evaluate("JSON.parse(localStorage.getItem('sid'))")
+                user = requests.get(url + "/api/state", params={"session_id": sid}, timeout=5).status_code
+                check("a visitor gets a session of their own", user == 200, user)
+            finally:
+                c.close()
+                server.terminate()
+                server.wait(10)
+
     def no_stale_screens():
         check("/api/world is gone", requests.get(base + "/api/world", timeout=5).status_code == 404)
 
@@ -755,7 +781,7 @@ def run(browser, base: str, args) -> None:
                      ("The reply gets lost", lost_reply), ("Sandbox without keys", misconfigured),
                      ("Phone widths and Care mode", phone_and_care), ("Dark theme and focus", dark_and_focus),
                      ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens),
-                     ("Review fixes on a phone", review_fixes)]:
+                     ("Review fixes on a phone", review_fixes), ("Public demo", public_demo)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()

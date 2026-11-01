@@ -91,6 +91,39 @@ class TestContrast(unittest.TestCase):
                 self.assertGreaterEqual(contrast(palette[fg], palette[bg]), 4.5, f"{fg} on {bg}")
 
 
+class TestPublishedClaims(unittest.TestCase):
+    def test_the_security_page_counts_the_attacks_the_lab_really_runs(self):
+        from app.lab import run_lab
+        n = len(run_lab())
+        self.assertIn(f"runs {n} fixed attacks", (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8"))
+
+    def test_nothing_says_built_on_the_sandbox_or_adds_up_money_kept_safe(self):
+        for path in [*WEB.glob("*.html"), *[WEB / n for n in PAGES], ROOT / "README.md"]:
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn("Built on the PayPal sandbox", text, path.name)
+            self.assertNotIn("kept safe", text.lower(), path.name)
+        self.assertNotIn("Fixed rules stop scams", (WEB / "index.html").read_text(encoding="utf-8"))
+
+
+class TestEvalGate(unittest.TestCase):
+    def load(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("run_eval_gate", ROOT / "eval" / "run_eval.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_require_all_turns_a_scripted_failure_into_a_failed_run(self):
+        code = self.load().exit_code
+        self.assertEqual(code(True, 1.0, True), 0)
+        self.assertEqual(code(True, 0.98, True), 1)
+        self.assertEqual(code(True, 0.98, False), 0)
+        self.assertEqual(code(False, 1.0, False), 1)
+
+    def test_ci_uses_it(self):
+        self.assertIn("run_eval.py --require-all", (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8"))
+
+
 class TestSavedReceipt(unittest.TestCase):
     def test_a_receipt_saved_by_a_browser_still_hashes_the_same(self):
         """JavaScript writes 50.0 as 50. Found by the browser run: a saved receipt failed scripts/verify_receipt.py."""

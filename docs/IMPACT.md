@@ -32,7 +32,7 @@ Caveats to keep with these numbers: they are complaints reported to the FBI, mos
 
 - **Star doesn't prevent these losses.** It works at the moment of payment, in a sandbox prototype.
 - **We have no measured results.** Nobody outside the team has used it, and no older adult has tried it. There are no user numbers, savings figures or testimonials, because none exist.
-- "Total kept safe" in the Activity grid adds up the amounts stopped in that demo session. It says nothing about the real world.
+- "Stops in this demo" in the Activity grid counts the stop records of that demo session, including any you trigger on purpose. It says nothing about the real world, and it deliberately isn't a sum of money: the same bill stopped three times isn't three bills.
 - The fixed checks in the security lab show those behaviours. They aren't a penetration test or a model benchmark.
 
 ## Other sources

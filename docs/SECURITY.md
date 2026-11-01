@@ -24,14 +24,17 @@ non-repudiation or resistance to every attack. This table is meant to be read by
 | Scammer coaches the victim to switch protection off | Protection level is an account setting, separate from the screen mode; lowering it needs a device signature and only takes effect after `PROTECTION_LOWER_DELAY` (2 min in the demo so judges can watch it; 24 h for a real bank), cancellable any time; raising is instant | A patient scammer could wait out the delay; real banks add notifications to family / a call-back |
 | Content changed after the user saw it | Signature covers the exact challenge bytes (card digest, payee, amount, account, "you said", nonce, expiry); digest recomputed at sign and at execution | A compromised server is inside the trust boundary |
 | Replay | Challenge is single use, replaced on reissue, expires in 120 s; HMAC execution token single use; idempotent execution | Ledger receipts and idempotency are persisted in SQLite; this snapshot implementation still requires a single process |
-| State changes between approval and execution | Rules re-run before signing and execution; newly raised risks invalidate the previous authorization; bill status and amount are checked atomically during posting | Real bank settlement failures need integration |
+| State changes between approval and execution | Rules re-run before signing and execution; newly raised risks invalidate the previous authorization; bill status, bill amount and "no other payment already open on this bill" are checked under the ledger lock with the reservation (R62) | Real bank settlement failures need integration |
 | Scam coaching (police, "safe account", OTP…) | Phrase pre-check blocks before the model; separate judge call can only escalate; flagged sessions lose draft tools | Novel scripts can evade both layers; cooling-off and family alerts are the backstop |
 | ASR mishears the amount | Read-back in words and digits; amount grounding; verify question on unusual amounts | Both layers see the same transcript; ASR confidence is not used yet |
 | Audit tampering | Append-only hash chain, verify button | No external anchoring; a full rewrite by the server admin is not detected |
 | Model outage | Automatic fallback to offline rules, flagged in trace and excluded from eval scores | — |
 | Another website drives the local API (CSRF, DNS rebinding) | `app/security.py`: host allowlist, foreign `Origin` refused, JSON-only POSTs, body size limits | Local single-process server; production needs real sessions, TLS and an API gateway |
 | Injected script in the page (XSS) | Strict CSP (`script-src 'self'`, no inline code, no third-party scripts); all rendered text escaped; framing denied | A compromised server can still serve bad code |
-| Source or secrets fetched over HTTP | Static allowlist of five files; `.env`, source and audit log return 404 | — |
+| Source or secrets fetched over HTTP | Fixed allowlist of static files (`STATIC` in `app/server.py`); `.env`, source and audit log return 404 | — |
+| Cancelling or denying while a payment is going out | The customer's calls run one at a time under her lock, and the session is in `EXECUTING` from before the gateway is called, so cancel and deny are refused with `ALREADY_SENT` and nobody is told "nothing was sent" after it went | Single process only: the lock is in memory |
+| Swapping the family guardian | While one is paired, invite and pair are refused, the attempt is audited, and an alert appears on both sides. Replacing means removal, which is signed and only takes effect after the delay | In-app alerts only; a real product needs an out-of-band notice |
+| "A small payment first" | Someone she added herself stays new for 30 days: above `GUARDIAN_THRESHOLD` in total, or above the most she has sent them, needs the guardian and a cooling-off (R15). In-flight payments count | The household people the demo starts with are trusted by design; a slow enough scammer can outlast the window |
 
 ## Explicitly simulated
 
@@ -45,8 +48,8 @@ non-repudiation or resistance to every attack. This table is meant to be read by
 
 ## What the security lab proves
 
-`python -m app.lab` (or the **Security lab** button) runs 22 fixed attacks against the real kernel in a fresh
-sandbox each time. A 22/22 result shows these 22 behaviours. It is not a penetration test and not a model benchmark.
+`python -m app.lab` (or the **Security lab** button) runs 31 fixed attacks against the real kernel in a fresh
+sandbox each time. A 31/31 result shows these 31 behaviours. It is not a penetration test and not a model benchmark.
 
 ## Data handling
 
@@ -68,6 +71,21 @@ Client-provided visitor labels cannot recreate another customer's identity. Pend
 restart they must be recreated and signed again. Committed transactions and their signed receipts survive restart.
 The local non-public demo still uses a shared synthetic customer; this is not customer login or account onboarding.
 
-Run `python -m app.serve` locally. Deployment examples use `--no-proxy-headers`; do not trust arbitrary
-`X-Forwarded-For` headers. Behind a proxy, rate limiting is conservatively shared by the visible proxy IP until a
-trusted-proxy configuration is explicitly implemented. Persist the `data` directory across deployments.
+Run `python -m app.serve` locally. Deployment examples use `--no-proxy-headers`, so forwarded headers never reach the
+ASGI layer. Rate limits use the TCP peer unless `TRUSTED_PROXY_HOPS=N` says how many of our own proxies append to
+`X-Forwarded-For`; then only the Nth entry from the right counts and everything to its left is ignored as forgeable.
+`deploy/compose.yaml` sets 1 for its Caddy (from the config; not started here). `render.yaml` leaves 0 because Render's
+chain hasn't been checked: until it is, all visitors there may share one bucket. A guardian's feed is also limited per
+device. Persist the `data` directory across deployments.
+
+On a shared server (`PUBLIC_DEMO=1`) there is no anonymous customer: a request with no session gets 404, and each browser
+gets its own world. At most 300 worlds are kept; at the cap the idlest goes, and one that is frozen or has a guardian paired
+is given up last. `/api/reset` is rate limited. Every ledger write still snapshots the whole world, so the cap is also what
+bounds write cost; per-customer storage is the real fix and isn't done.
+
+"Reset demo" (`/api/reset` with `world`) is a demo control: in simulator mode it wipes that customer's world, including a
+freeze and a guardian, with no signature, and writes `demo.world_reset` to the audit log. So "lifting a freeze takes two
+people" holds for the product's own paths, not against the demo's reset button. Outside the simulator it is refused while
+payments are frozen or a guardian is paired.
+
+The server refuses to start with a placeholder `SIGNING_SECRET` when `PUBLIC_DEMO=1` or outside the simulator.

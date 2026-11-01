@@ -97,7 +97,7 @@ body.welcome-active{overflow-x:hidden}
 .sidebar{position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;padding:18px 12px;background:var(--surface);border-right:1px solid var(--line);overflow-y:auto}
 .side-brand{padding:0 8px 16px}
 .nav{display:flex;flex-direction:column;gap:3px}
-.nav-more{display:none}
+.nav-btn.nav-more{display:none}
 .nav-extra{display:flex;flex-direction:column;gap:3px}
 .nav-label{margin:.8em .7em .1em;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .vcheck.plain{background:var(--surface-2);color:var(--ink)}
@@ -544,7 +544,7 @@ body.guardian-page .page-foot{max-width:1200px;margin:0 auto}
   .nav-btn .ico{width:22px;height:22px}
   .nav-btn[aria-current="page"]{background:var(--brand);color:var(--brand-ink)}
   body.care .nav-btn{font-size:.875rem}
-  .nav-more{display:flex}
+  .nav-btn.nav-more{display:flex}
   /* The rest of the pages open above the bar. */
   .nav-extra{display:none;position:fixed;right:8px;bottom:calc(68px + env(safe-area-inset-bottom));min-width:230px;padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.22);z-index:40}
   .nav-extra.open{display:flex}

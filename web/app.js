@@ -518,14 +518,14 @@ function trackerHtml(m, i){
   const p = m.pay;
   if(!p) return `<div class="tracker"><h3>Checking with PayPal…</h3><p class="muted small">Coming back from an approval page proves nothing, so Star is asking PayPal itself.</p></div>`;
   const flow = FLOW[p.kind] || FLOW.transfer, end = BAD_END.has(p.state), s = p.state;
-  const steps = [['Signed by you', true], ...flow.map(([label, states]) => [label, states.includes(s)])];
+  const steps = [['Signed by you', true], ...flow.map(([label, states]) => [isSim() ? label.replace('PayPal', 'the simulator') : label, states.includes(s)])];
   let currentSet = false;
   const items = steps.map(([label, done]) => {
     let cls = done ? 'done' : 'todo';
     if(!done && !currentSet && !end){ cls = 'now'; currentSet = true; }
     return `<li class="${cls}"><span aria-hidden="true">${done ? '✓' : ''}</span>${esc(label)}<span class="sr">${done ? ' done' : cls === 'now' ? ' in progress' : ' not yet'}</span></li>`;
   }).join('');
-  const verified = p.verified ? `<li class="done verified"><span aria-hidden="true">✓</span>Verified by ${esc(verifiedWords(p.verified_by))}</li>` : (end ? '' : '<li class="todo"><span aria-hidden="true"></span>Verified<span class="sr"> not yet</span></li>');
+  const verified = p.verified ? `<li class="done verified"><span aria-hidden="true">✓</span>Verified by ${esc(isSim() ? verifiedWords(p.verified_by).replace('PayPal', 'simulator') : verifiedWords(p.verified_by))}</li>` : (end ? '' : '<li class="todo"><span aria-hidden="true"></span>Verified<span class="sr"> not yet</span></li>');
   const redirect = p.next_step?.type === 'redirect';
   const canRefund = p.state === 'PAID' && p.verified && p.kind === 'purchase';
   return `<div class="tracker tone-${statusInfo(s, p.verified).tone}">
