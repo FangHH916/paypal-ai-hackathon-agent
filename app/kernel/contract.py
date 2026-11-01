@@ -104,7 +104,7 @@ def decision(draft, session, wallet, approvals, *, stage="before_authorization",
     checks = {}
     checks["intent"] = check("pass" if v.get("status") == "match" else
         "fail" if v.get("status") == "mismatch" else "pending",
-        "; ".join(v.get("mismatches", [])) or "Verifier: " + v.get("engine", "not available"))
+        " ".join(v.get("mismatches", [])) or "Verifier: " + v.get("engine", "not available"))
     missing = [ref for ref in draft.dependency_ids if not
         ((wallet.transaction(draft.user_id, ref) or {}).get("status") == "SUCCESS")]
     checks["plan"] = check("fail" if missing else "pass" if draft.dependency_ids else "not_applicable",

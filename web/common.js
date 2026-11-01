@@ -121,7 +121,7 @@ export function mockFingerprint(host, what, whoChecks = 'Star and its payment ga
     const el = document.createElement('div');
     el.className = 'mockfp'; el.setAttribute('role', 'group'); el.setAttribute('aria-label', 'Simulated fingerprint sensor');
     el.innerHTML = `<div class="mf-badge">Demo: simulated fingerprint sensor</div>
-      <button type="button" class="mf-pad" aria-label="Touch to confirm">${icon('fingerprint')}</button>
+      <button type="button" class="mf-pad" aria-label="Touch, or press Space, to confirm">${icon('fingerprint')}</button>
       <b class="mf-title">Touch the sensor to confirm</b>
       <div class="mf-what">${esc(what)}</div>
       <small>On a real phone this is Face ID or a fingerprint. Here, your tap unlocks this browser's private key, which signs exactly this. ${esc(whoChecks)}</small>
@@ -129,6 +129,7 @@ export function mockFingerprint(host, what, whoChecks = 'Star and its payment ga
     host.appendChild(el);
     const pad = el.querySelector('.mf-pad'); pad.focus();
     let done = false;
+    pad.onkeydown = e => { if(e.key === 'Enter') e.preventDefault(); };     // a deliberate press only: Enter may still be held from the card
     pad.onclick = () => {
       if(done) return; done = true;
       el.classList.add('scanning'); el.querySelector('.mf-title').textContent = 'Reading fingerprint…';

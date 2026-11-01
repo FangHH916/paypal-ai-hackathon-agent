@@ -26,6 +26,7 @@ html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:400 17px/1.5 var(--body)}
 body.large{font-size:19px}
 body.care{font-size:21px}
+body{font-variant-numeric:lining-nums}
 h1,h2,h3{margin:0;line-height:1.2}
 h1{font:600 2rem/1.15 var(--head)}
 h2{font:600 1.22rem/1.25 var(--head)}
@@ -96,6 +97,14 @@ body.welcome-active{overflow-x:hidden}
 .sidebar{position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;padding:18px 12px;background:var(--surface);border-right:1px solid var(--line);overflow-y:auto}
 .side-brand{padding:0 8px 16px}
 .nav{display:flex;flex-direction:column;gap:3px}
+.nav-more{display:none}
+.nav-extra{display:flex;flex-direction:column;gap:3px}
+.nav-label{margin:.8em .7em .1em;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.vcheck.plain{background:var(--surface-2);color:var(--ink)}
+.care-freeze{margin:14px 0 0;text-align:center}
+#c-title:focus{outline:none}
+.lab-more>summary{cursor:pointer;margin:.5em 0;font-weight:600}
+.audit-all>summary{cursor:pointer;margin:.7em 0;font-weight:600}
 .nav-btn{display:flex;align-items:center;gap:.65em;min-height:44px;padding:.45em .7em;background:none;border:0;border-radius:10px;text-align:left;font-weight:550;color:var(--ink)}
 .nav-btn:hover{background:var(--surface-2)}
 .nav-btn[aria-current="page"]{background:var(--brand);color:var(--brand-ink)}
@@ -528,13 +537,31 @@ body.guardian-page .page-foot{max-width:1200px;margin:0 auto}
 @media (max-width:900px){
   .layout{display:block;padding-bottom:calc(84px + env(safe-area-inset-bottom))}
   .band-more{display:none}
-  .sidebar{position:fixed;left:0;right:0;bottom:0;top:auto;height:auto;padding:0 max(4px,env(safe-area-inset-left)) env(safe-area-inset-bottom);flex-direction:row;border-right:0;border-top:1px solid var(--line);z-index:30;overflow-x:auto}
+  .sidebar{position:fixed;left:0;right:0;bottom:0;top:auto;height:auto;padding:0 max(4px,env(safe-area-inset-left)) env(safe-area-inset-bottom);flex-direction:row;border-right:0;border-top:1px solid var(--line);z-index:30}
   .side-brand,.side-bottom{display:none}
-  .nav{flex-direction:row;gap:0;flex:1}
-  .nav-btn{flex:1 0 66px;flex-direction:column;gap:2px;min-height:60px;padding:6px 4px;font-size:.68rem;text-align:center;border-radius:8px;justify-content:center}
+  .nav{flex-direction:row;gap:0;flex:1;min-width:0}
+  .nav-btn{flex:1 1 0;min-width:0;flex-direction:column;gap:2px;min-height:60px;padding:6px 2px;font-size:.8125rem;line-height:1.1;text-align:center;border-radius:8px;justify-content:center}
   .nav-btn .ico{width:22px;height:22px}
   .nav-btn[aria-current="page"]{background:var(--brand);color:var(--brand-ink)}
-  body.care .nav-btn{font-size:.72rem;flex-basis:72px}
+  body.care .nav-btn{font-size:.875rem}
+  .nav-more{display:flex}
+  /* The rest of the pages open above the bar. */
+  .nav-extra{display:none;position:fixed;right:8px;bottom:calc(68px + env(safe-area-inset-bottom));min-width:230px;padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.22);z-index:40}
+  .nav-extra.open{display:flex}
+  .nav-extra .nav-btn{flex:none;flex-direction:row;gap:.65em;min-height:48px;padding:.45em .7em;font-size:1rem;text-align:left;justify-content:flex-start}
+  /* Speaking and typing stay within reach however long the conversation gets. */
+  .assistant{overflow:visible}
+  .composer-wrap{position:sticky;bottom:calc(66px + env(safe-area-inset-bottom));background:var(--surface);z-index:5;padding:8px 10px}
+  .composer{flex-wrap:nowrap;align-items:stretch}
+  .composer textarea{flex:1 1 auto;order:0;width:auto;resize:none}
+  .composer .mic span,.composer .send .label{display:none}
+  .mic,.send{flex:none;min-width:48px;justify-content:center}
+  .composer-foot{display:none}
+  /* Care mode: the big voice button is always on screen, above the navigation. */
+  body.care .layout{padding-bottom:calc(158px + env(safe-area-inset-bottom))}
+  body.care .composer-wrap{position:static}
+  body.care .composer .mic{position:fixed;left:12px;right:12px;bottom:calc(72px + env(safe-area-inset-bottom));min-height:64px;z-index:25;box-shadow:0 6px 18px rgba(0,0,0,.25);border-radius:14px;font-size:1.1rem}
+  body.care .composer .mic span{display:inline}
   .mobile-brand{display:inline-flex}
   .topbar{align-items:center}
   .top-actions{gap:6px}
@@ -552,9 +579,8 @@ body.guardian-page .page-foot{max-width:1200px;margin:0 auto}
   .assistant{min-height:0}
   h1{font-size:1.65rem}
   .care-hello h1{font-size:1.8rem}
-  .composer{flex-wrap:wrap}
-  .composer textarea{flex:1 1 100%;order:-1}
-  .mic,.send{flex:1;justify-content:center}
+  .arch{flex-direction:column;align-items:stretch}
+  .arch i{align-self:center;transform:rotate(90deg)}
   .setting{flex-wrap:wrap}
   .setting code{max-width:100%;text-align:left}
   .grid-host{height:64dvh}
@@ -562,6 +588,7 @@ body.guardian-page .page-foot{max-width:1200px;margin:0 auto}
   .inv{grid-template-columns:minmax(0,1fr) auto}
   .inv-acts{grid-column:1/-1;justify-content:flex-start}
   #toast{bottom:calc(76px + env(safe-area-inset-bottom))}
+  body.care #toast{bottom:calc(144px + env(safe-area-inset-bottom))}
 }
 @media (max-width:420px){
   .crow{grid-template-columns:minmax(0,1fr)}

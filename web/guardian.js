@@ -115,6 +115,9 @@ async function poll(force = false){
   if(pend !== lastPending || force){ lastPending = pend; renderPending(feed.pending); }
   renderFreezeOnce(feed.frozen);
   $('#g-alerts').innerHTML = feed.alerts.length ? feed.alerts.slice(0, 12).map(a => `<li class="alert-item level-${esc(a.level)}"><span class="when">${esc(clock(a.at))}</span><span>${esc(a.text)}</span></li>`).join('') : '<li class="muted">No alerts yet.</li>';
+  drawGrid();
+}
+function drawGrid(){
   grid?.update(feed.activity);
   grid?.pinPending(feed.pending.map(p => ({row_id:`pending_${p.draft_id}`, time:p.requested_at, type:'Needs you', kind:p.kind, to:p.payee_name, handle:p.payee_handle,
     amount_cents:-p.amount_cents, currency:p.currency, status:'PENDING_APPROVAL', verified:false, why:p.reasons.join(' '), family:'Waiting', outcome:'open', digest:p.digest})));
@@ -127,7 +130,7 @@ async function start(){
   await poll(true);
   if(!token) return;
   grid = await mountGrid($('#g-grid'), {role:'guardian', getMode:() => mode, onRow:showDetail, care:false}).catch(e => { $('#g-grid').textContent = e.message; return null; });
-  if(feed) { grid?.update(feed.activity); }
+  if(feed) drawGrid();
   clearInterval(timer); timer = setInterval(() => poll(), 3000);
 }
 async function init(){

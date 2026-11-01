@@ -1,4 +1,4 @@
-"""Run the whole keyless demo in a real browser and check what a person would see.
+﻿"""Run the whole keyless demo in a real browser and check what a person would see.
 
     python qa/e2e_demo.py                     starts its own keyless server on a free port, with a temporary data folder
     python qa/e2e_demo.py --base http://localhost:8000     uses a server you started
@@ -77,7 +77,8 @@ def overflow(page: Page) -> int:
 
 def nav(page: Page, label: str) -> None:
     control = page.locator(".nav-btn", has_text=label)
-    control.scroll_into_view_if_needed()
+    if not control.is_visible():                 # on a phone, the rest of the pages live under More
+        page.locator("#nav-more").click()
     control.click()
 
 
@@ -97,7 +98,7 @@ def last_tracker(page: Page):
 
 
 def start_server(port: int, data: str, extra: dict | None = None):
-    env = {**os.environ, "PAYPAL_MODE": "simulator", "LLM_PROVIDER": "offline", "ASR_PROVIDER": "browser", "PAYPAL_CLIENT_ID": "", "PAYPAL_CLIENT_SECRET": "", "PUBLIC_DEMO": "",
+    env = {**os.environ, "PAYPAL_MODE": "simulator", "LLM_PROVIDER": "offline", "ASR_PROVIDER": "browser", "PAYPAL_CLIENT_ID": "", "PAYPAL_CLIENT_SECRET": "", "PUBLIC_DEMO": "", "RULE_FIXED_HOUR": "14",   # no late-night rule depending on when this runs
            "LEDGER_PATH": os.path.join(data, "ledger.sqlite3"), "AUDIT_PATH": os.path.join(data, "audit.jsonl"),
            "PASSKEY_PATH": os.path.join(data, "passkeys.json"), "VOICE_DIR": os.path.join(data, "voice"), **(extra or {})}
     proc = subprocess.Popen([PY, "-m", "uvicorn", "app.server:app", "--port", str(port), "--log-level", "warning"], cwd=ROOT, env=env)
@@ -118,6 +119,7 @@ def main() -> int:
     ap.add_argument("--shots", default=str(ROOT / "qa" / "shots"))
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--video")
+    ap.add_argument("--only", help="run only the stories whose name contains this")
     args = ap.parse_args()
     SHOTS = Path(args.shots)
     SHOTS.mkdir(parents=True, exist_ok=True)
@@ -204,7 +206,7 @@ def run(browser, base: str, args) -> None:
         expect(last_tracker(page)).to_contain_text("Verified by")
         expect(page.locator(".counter b").first).to_have_text("1")
         expect(page.locator(".ticker").first).to_contain_text("POST /v1/payments/payouts")
-        expect(page.locator(".msg.bot").last).to_contain_text("PayPal confirms")
+        expect(page.locator(".msg.bot").last).to_contain_text("The simulator confirms")
         shot(page, "10-tracker-verified")
 
     def double_payment():
@@ -232,7 +234,7 @@ def run(browser, base: str, args) -> None:
         page.locator("#sim-yes").click()
         expect(last_tracker(page)).to_contain_text("Paid, verified", timeout=30000)
         check("query string is cleaned after the return", "pp_return" not in page.url, page.url)
-        expect(page.locator(".msg.bot", has_text="PayPal confirms").last).to_be_visible()
+        expect(page.locator(".msg.bot", has_text="simulator confirms").last).to_be_visible()
         expect(page.locator(".ticker").first).to_contain_text("/capture")
         shot(page, "15-paid-verified")
         page.locator(".tr-refund").click()
@@ -390,6 +392,7 @@ def run(browser, base: str, args) -> None:
         check("status always has its tag", "SIMULATED" in grid.inner_text())
         check("stops are in the grid", grid.locator(".row-stopped").count() >= 1, grid.locator(".row-stopped").count())
         check("totals are pinned at the bottom", grid.locator(".row-total", has_text="Total sent").count() == 1)
+        check("stops are counted in a pinned row", grid.locator(".row-total", has_text="Stops in this demo").count() == 1)
         before = page.locator(".grid-count").inner_text()
         page.locator(".chip", has_text="Stopped").click()
         expect(page.locator(".chip", has_text="Stopped")).to_have_attribute("aria-pressed", "true")
@@ -450,9 +453,7 @@ def run(browser, base: str, args) -> None:
         pp.locator("#welcome-enter").click()
         expect(pp.locator(".hero h1")).to_be_visible()
         for label in ("Home", "Talk to Star", "Shop", "Bills", "Family", "Activity", "Security lab", "Settings"):
-            btn = pp.locator(".nav-btn", has_text=label)
-            btn.scroll_into_view_if_needed()
-            btn.click()
+            nav(pp, label)
             time.sleep(1.2 if label == "Activity" else 0.25)
             check(f"phone: {label} has no sideways scroll", overflow(pp) <= 0, overflow(pp))
             shot(pp, f"41-phone-{re.sub(r'[^a-z]+', '-', label.lower())}")
@@ -485,7 +486,7 @@ def run(browser, base: str, args) -> None:
         expect(pp.locator(".stop-block .why")).to_have_attribute("open", "")
         shot(pp, "45-phone-care-stop")
         check("phone Care stop fits", overflow(pp) <= 0, overflow(pp))
-        pp.locator(".nav-btn", has_text="Activity").click()
+        nav(pp, "Activity")
         expect(pp.locator(".grid-host .ag-row").first).to_be_visible(timeout=20000)
         expect(pp.locator(".grid-card .pp-badge").first).to_be_visible()
         shot(pp, "46-phone-care-grid")
@@ -560,7 +561,7 @@ def run(browser, base: str, args) -> None:
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
-            server = start_server(port, data, {"PAYPAL_MODE": "sandbox"})
+            server = start_server(port, data, {"PAYPAL_MODE": "sandbox", "SIGNING_SECRET": "e2e-only-not-a-real-secret"})
             c = browser.new_context(viewport={"width": 1280, "height": 860})
             q = c.new_page()
             watch(q, "sandbox-without-keys")
@@ -581,6 +582,169 @@ def run(browser, base: str, args) -> None:
                 server.terminate()
                 server.wait(10)
 
+    def review_fixes():
+        """What a person found with a phone in her hand and the scripted stories above didn't: layout under the navigation,
+        the back button, a Freeze button that didn't freeze, a card signed with two Enter presses. Its own server: own state."""
+        if args.base:
+            return
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data)
+            url = f"http://localhost:{port}"
+            c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+            q = c.new_page()
+            watch(q, "review-phone")
+            try:
+                q.goto(url + "/")
+                check("the landing page doesn't overclaim", "Built on the PayPal sandbox" not in q.locator("body").inner_text()
+                      and "stop scams and mistakes" not in q.locator("body").inner_text())
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".hero h1")).to_be_visible()
+
+                def rect(selector):
+                    return q.locator(selector).first.bounding_box()
+                # Five visible destinations, all on screen, in readable type
+                visible = q.locator(".nav-btn:visible")
+                boxes = [visible.nth(i).bounding_box() for i in range(visible.count())]
+                check("phone navigation has five items", len(boxes) == 5, len(boxes))
+                check("every navigation item is on screen", all(b["x"] >= 0 and b["x"] + b["width"] <= 390 for b in boxes), boxes)
+                size = q.evaluate("parseFloat(getComputedStyle(document.querySelector('.nav-btn .nav-text')).fontSize)")
+                check("navigation text is at least 13px", size >= 13, size)
+                q.locator("#nav-more").click()
+                check("More shows the rest", all(q.locator(".nav-btn", has_text=t).is_visible() for t in ("Shop", "Activity", "Settings", "Security lab")))
+                check("the lab is marked as being for judges", "for judges" in q.locator("#nav-extra").inner_text().lower())
+                q.locator(".nav-btn", has_text="Settings").click()
+                expect(q.locator(".page-head h1")).to_have_text("Settings")
+                check("More shows you are inside it", q.locator("#nav-more").get_attribute("aria-current") == "page")
+                check("More closes after choosing", not q.locator(".nav-btn", has_text="Shop").is_visible())
+                # The back button stays inside the app, and a reload stays on the page
+                nav(q, "Home")
+                nav(q, "Bills")
+                nav(q, "Family")
+                expect(q.locator(".page-head h1")).to_have_text("Family")
+                q.go_back()
+                expect(q.locator(".page-head h1")).to_have_text("Bills")
+                check("back stayed in the app", q.url.startswith(url), q.url)
+                q.reload()
+                expect(q.locator(".page-head h1")).to_have_text("Bills")
+                q.go_back()
+                expect(q.locator(".hero h1")).to_be_visible()
+                # Dates and copy
+                nav(q, "Bills")
+                expect(q.locator(".inv").first).to_be_visible()
+                check("bill dates are in words", not re.search(r"\d{4}-\d{2}-\d{2}", q.locator("#inv-list").inner_text()), q.locator("#inv-list").inner_text()[:120])
+                # A two-Enter payment: the card must make her look first
+                nav(q, "Talk to Star")
+                expect(q.locator(".choice", has_text="No, standard")).to_be_visible()
+                q.locator(".choice", has_text="No, standard").click()
+                expect(q.locator(".msg.bot").last).to_contain_text("standard view")
+                placeholder = q.locator("#text").evaluate("t => t.scrollHeight <= t.clientHeight + 1")
+                check("the input's hint fits", placeholder, q.locator("#text").get_attribute("placeholder"))
+                say(q, "Send 15 to my son")
+                expect(q.locator("#confirm .amt")).to_have_text("$15.00")
+                time.sleep(0.2)
+                check("the card doesn't open with focus on Confirm", q.evaluate("document.activeElement?.id") != "c-go", q.evaluate("document.activeElement?.id"))
+                q.keyboard.press("Enter")
+                q.keyboard.press("Enter")
+                time.sleep(1.3)
+                check("two Enter presses don't start signing", q.locator(".mockfp").count() == 0)
+                q.locator("#c-go").focus()
+                q.keyboard.press("Enter")
+                expect(q.locator(".mf-pad")).to_be_visible()
+                time.sleep(0.2)
+                q.keyboard.press("Enter")
+                time.sleep(1.2)
+                check("Enter on the simulated sensor doesn't sign", q.locator(".mockfp").count() == 1 and q.locator(".tracker").count() == 0)
+                q.locator(".mf-pad").click()
+                expect(last_tracker(q)).to_contain_text("Sent, verified", timeout=30000)
+                check("simulator mode doesn't say PayPal confirmed", "PayPal confirms" not in q.locator(".msg.bot").last.inner_text(), q.locator(".msg.bot").last.inner_text())
+                time.sleep(0.5)
+                nav_top = rect(".sidebar")["y"]
+                composer = rect("#composer")
+                check("the input is visible above the navigation after paying", composer["y"] + composer["height"] <= nav_top + 1 and composer["y"] >= 0, (composer, nav_top))
+                # Natural speech
+                say(q, "Send two hundred to my son for 3 months")
+                expect(q.locator("#confirm .amt")).to_have_text("$200.00")
+                check("the offline check says what it is", "second opinion" in q.locator("#confirm .vcheck").inner_text(), q.locator("#confirm .vcheck").inner_text())
+                q.locator("#c-cancel").click()
+                expect(q.locator("#confirm")).to_be_hidden()
+                say(q, "A man on the phone says I must buy gift cards")
+                expect(q.locator(".stop-block").last).to_be_visible()
+                check("no card for being told to buy gift cards", not q.locator("#confirm").evaluate("d => d.open"))
+                # A fresh session for what follows: that stop keeps this conversation on alert
+                requests.post(url + "/api/reset", json={"world": True}, timeout=5)
+                c.clear_cookies()
+                q.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
+                q.goto(url + "/")
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".hero h1")).to_be_visible()
+                # Waiting for family with nobody paired: say so and offer the way out
+                nav(q, "Talk to Star")
+                say(q, "Buy my grandson a gift card")
+                expect(q.locator("#confirm .amt")).to_be_visible()
+                expect(q.locator("#c-invite")).to_be_visible()
+                check("no fingerprint request while it can't be signed", "confirm with your fingerprint" not in q.locator(".msg.bot").last.inner_text().lower(), q.locator(".msg.bot").last.inner_text())
+                q.locator("#c-invite").click()
+                expect(q.locator(".page-head h1")).to_have_text("Family")
+                q.locator("#g-invite").click()
+                q.locator(".mf-pad").click()
+                expect(q.locator("#g-link")).to_be_visible()
+                link = q.locator("#g-link").input_value()
+                # Guardian's phone: a pending row is counted, and it isn't shown as money already gone
+                gc = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+                g = gc.new_page()
+                watch(g, "review-guardian")
+                try:
+                    g.goto(link)
+                    g.locator("#g-pair").click()
+                    expect(g.locator("#g-pending")).to_contain_text("gift card", ignore_case=True, timeout=15000)
+                    expect(g.locator(".grid-host .ag-row").first).to_be_visible(timeout=15000)
+                    expect(g.locator(".grid-count")).to_contain_text("1 row", timeout=8000)
+                    count = g.locator(".grid-count").inner_text()
+                    check("a waiting row is counted", not count.startswith("0 rows"), count)
+                    check("no 'nothing here' over a waiting row", "Nothing here yet" not in g.locator(".grid-host").inner_text())
+                    grid_text = g.locator(".grid-host").inner_text()
+                    check("a waiting payment isn't shown as money gone", "waiting" in grid_text.lower() and "−$" not in grid_text, grid_text[:200])
+                finally:
+                    gc.close()
+                # Activity: no summed "kept safe" number
+                nav(q, "Activity")
+                expect(q.locator(".grid-host .row-total").first).to_be_visible(timeout=15000)
+                grid_text = q.locator(".grid-host").inner_text()
+                check("no 'kept safe' total", "kept safe" not in grid_text.lower(), grid_text[-200:])
+                check("stops are counted, not added up", "Stops" in grid_text, grid_text[-200:])
+                # Freeze means freeze, one tap, from Home
+                nav(q, "Home")
+                q.locator("#home-freeze").click()
+                expect(q.locator(".stat-bad")).to_contain_text("Frozen")
+                check("Freeze now stays on Home", q.locator(".hero h1").is_visible())
+                check("Freeze really froze", requests.get(url + "/api/state", params={"session_id": q.evaluate("JSON.parse(localStorage.getItem('sid'))")}, timeout=5).json()["frozen"]["on"])
+                # Care mode: the voice button is on screen, above the navigation, and the offer is gone
+                requests.post(url + "/api/reset", json={"world": True}, timeout=5)
+                q.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
+                q.goto(url + "/")
+                q.locator("#welcome-enter").click()
+                nav(q, "Talk to Star")
+                expect(q.locator(".choice").first).to_be_visible()
+                q.locator("#care-toggle").click()
+                expect(q.locator(".care-hello h1")).to_be_visible()
+                time.sleep(0.5)
+                mic, bar = rect("#mic"), rect(".sidebar")
+                check("Care: the voice button is on screen and above the navigation", mic["y"] >= 0 and mic["y"] + mic["height"] <= bar["y"] + 1 and q.locator("#mic").is_visible(), (mic, bar))
+                check("Care: Star no longer offers the easier version", "easier version" not in q.locator("#stage").inner_text())
+                check("Care: nothing overflows", overflow(q) <= 0, overflow(q))
+                shot(q, "54-care-voice-button")
+                # A wrong link
+                q.goto(url + "/nope")
+                check("a wrong link leads back to Star", q.locator("a", has_text="Back to Star").is_visible())
+                check("the not-found page is sized for a phone", q.evaluate("document.documentElement.scrollWidth") <= 390)
+            finally:
+                c.close()
+                server.terminate()
+                server.wait(10)
+
     def no_stale_screens():
         check("/api/world is gone", requests.get(base + "/api/world", timeout=5).status_code == 404)
 
@@ -590,8 +754,10 @@ def run(browser, base: str, args) -> None:
                      ("Family guardian, two devices", guardian), ("Security lab and model mistake", lab), ("Activity grid", activity),
                      ("The reply gets lost", lost_reply), ("Sandbox without keys", misconfigured),
                      ("Phone widths and Care mode", phone_and_care), ("Dark theme and focus", dark_and_focus),
-                     ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens)]:
-        step(name, page, fn)
+                     ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens),
+                     ("Review fixes on a phone", review_fixes)]:
+        if not args.only or args.only.lower() in name.lower():
+            step(name, page, fn)
     ctx.close()
     guardian_ctx.close()
 

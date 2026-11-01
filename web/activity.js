@@ -61,6 +61,7 @@ export async function mountGrid(host, opts){
     const m = money(Math.abs(p.value), p.data.currency || currency);
     if(p.data.pinnedTotal) return m;
     if(p.data.outcome === 'stopped') return p.value ? `${m} not sent` : '$0 moved';
+    if(p.data.status === 'PENDING_APPROVAL') return `${m} waiting`;
     return (p.value < 0 ? '−' : '+') + m;
   };
   const cardCell = p => {
@@ -109,16 +110,16 @@ export async function mountGrid(host, opts){
     api.resetRowHeights();
   };
   const totals = () => {
-    let sent = 0, back = 0, kept = 0;
+    let sent = 0, back = 0, stops = 0;
     api.forEachNodeAfterFilter(n => {
       const r = n.data;
-      if(r.outcome === 'stopped') kept += Math.abs(r.amount_cents);
+      if(r.outcome === 'stopped') stops += 1;     // counted, not added up: the same bill stopped three times isn't three bills
       else if(r.outcome === 'moved' && r.kind === 'refund') back += Math.abs(r.amount_cents);
       else if(r.outcome === 'moved' && r.amount_cents < 0) sent += Math.abs(r.amount_cents);
     });
     const line = (id, to, cents) => ({row_id:`total_${id}`, pinnedTotal:true, to, type:'This demo', amount_cents:cents, currency});
-    api.setGridOption('pinnedBottomRowData', [line('sent', 'Total sent', sent), line('back', 'Total refunded', back), line('kept', 'Total kept safe', kept)]);
-    const count = api.getDisplayedRowCount();
+    api.setGridOption('pinnedBottomRowData', [line('sent', 'Total sent', sent), line('back', 'Total refunded', back), line('stops', `Stops in this demo: ${stops}`, null)]);
+    const count = api.getDisplayedRowCount() + (api.getPinnedTopRowCount?.() || 0);
     $('.grid-count', host).textContent = `${count} row${count === 1 ? '' : 's'} shown. Totals are this demo's numbers, from the rows shown.`;
   };
   api = agGrid.createGrid($('.grid-host', host), {
@@ -171,7 +172,12 @@ export async function mountGrid(host, opts){
       if(add.length || update.length || remove.length) api.applyTransaction({add, update, remove});
       else totals();
     },
-    pinPending(list){ api.setGridOption('pinnedTopRowData', list); },
+    pinPending(list){
+      api.setGridOption('pinnedTopRowData', list);
+      api.setGridOption('suppressNoRowsOverlay', list.length > 0);
+      if(list.length) api.hideOverlay?.();
+      totals();
+    },
     destroy(){ api.destroy(); },
     api,
   };

@@ -22,8 +22,9 @@ const state = {
   calls: {calls: [], money_moving_this_task: 0, money_moving_total: 0}, payments: [], grid: null, gridTimer: null, invite: null,
 };
 
-const NAV = [['home', 'Home', 'home'], ['star', 'Talk to Star', 'spark'], ['shop', 'Shop', 'cart'], ['bills', 'Bills', 'bolt'], ['family', 'Family', 'family'],
-  ['activity', 'Activity & audit', 'audit'], ['lab', 'Security lab', 'lab'], ['settings', 'Settings', 'settings']];
+const NAV = [['home', 'Home', 'home'], ['star', 'Talk to Star', 'spark'], ['bills', 'Bills', 'bolt'], ['family', 'Family', 'family'], ['shop', 'Shop', 'cart'],
+  ['activity', 'Activity & audit', 'audit'], ['settings', 'Settings', 'settings'], ['lab', 'Security lab', 'lab']];
+const NAV_FIRST = new Set(['home', 'star', 'bills', 'family']);     // a phone shows these and More
 const CARE_HIDES = new Set(['star', 'lab']);
 const KIND = {user:'You', thought:'Thought', action:'Action', observation:'Observe', rule:'Rule', guard:'Guard', judge:'Judge',
   state:'State', sign:'Sign', exec:'Execute', plan:'Plan', asr:'Speech', fallback:'Fallback', handoff:'Handoff', evidence:'Evidence', ui:'UI',
@@ -35,6 +36,7 @@ const isSim = () => (state.data?.paypal?.mode || state.health.paypal?.mode || 's
 const misconfigured = () => { const p = state.data?.paypal || state.health.paypal; return p && p.configured === false ? (p.error || 'PayPal is not configured.') : ''; };
 const cash = cents => money(cents, state.data?.currency || 'USD');
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3200); }
+const dueDate = iso => { const d = new Date(`${iso}T12:00:00`); return isNaN(d) ? String(iso) : d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}); };
 const today = () => new Date().toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
 const who = () => state.data?.user || 'Mrs. Lee';
@@ -161,8 +163,12 @@ function render(){
   document.body.classList.toggle('care', state.care);
   document.body.classList.toggle('large', state.large && !state.care);
   const items = NAV.filter(([id]) => !(state.care && CARE_HIDES.has(id)));
-  const navHtml = items.map(([id, label, ic]) =>
-    `<button class="nav-btn" type="button" data-page="${id}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}<span class="nav-text">${label}</span></button>`).join('');
+  const navBtn = ([id, label, ic]) => `<button class="nav-btn" type="button" data-page="${id}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}<span class="nav-text">${label}</span></button>`;
+  const extra = items.filter(([id]) => !NAV_FIRST.has(id));
+  const navHtml = `${items.filter(([id]) => NAV_FIRST.has(id)).map(navBtn).join('')}
+    <button class="nav-btn nav-more" id="nav-more" type="button" aria-expanded="false" aria-controls="nav-extra" ${extra.some(([id]) => id === state.page) ? 'aria-current="page"' : ''}>${icon('settings')}<span class="nav-text">More</span></button>
+    <div class="nav-extra" id="nav-extra">${extra.filter(([id]) => id !== 'lab').map(navBtn).join('')}
+      ${extra.some(([id]) => id === 'lab') ? `<p class="nav-label">For judges</p>${extra.filter(([id]) => id === 'lab').map(navBtn).join('')}` : ''}</div>`;
   const current = NAV.find(n => n[0] === state.page)?.[1] || 'Home';
   $('#app').innerHTML = `
   <div class="layout">
@@ -186,24 +192,40 @@ function render(){
         </div>
       </header>
       <main id="main" tabindex="-1"></main>
-      <footer class="page-foot">Star is a hackathon project with a fictional family. Built on the PayPal sandbox; not affiliated with PayPal.</footer>
+      <footer class="page-foot">Star is a hackathon project with a fictional family. Designed for the PayPal sandbox${isSim() ? ', running here on a built-in simulator' : ''}; not affiliated with PayPal.</footer>
     </div>
   </div>`;
-  $('#app').querySelectorAll('.nav-btn').forEach(b => b.onclick = () => go(b.dataset.page));
+  $('#app').querySelectorAll('.nav-btn[data-page]').forEach(b => b.onclick = () => go(b.dataset.page));
+  $('#nav-more').onclick = e => { e.stopPropagation(); setMore(!$('#nav-extra').classList.contains('open')); };
   $('#care-toggle').onclick = () => setCare(!state.care);
   $('#trace-toggle').onclick = () => toggleTrace();
   $('#prot-pill').onclick = () => go('settings');
   renderPage(); protCountdown();
 }
-function go(page){
+function setMore(open){
+  $('#nav-extra')?.classList.toggle('open', open);
+  $('#nav-more')?.setAttribute('aria-expanded', String(open));
+}
+document.addEventListener('click', e => { if(!e.target.closest?.('#nav-extra')) setMore(false); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape') setMore(false); });
+// Each page is a history entry, so a phone's back button walks back through the app instead of leaving it.
+const pageFromHash = () => { const p = location.hash.replace(/^#\/?/, ''); return NAV.some(n => n[0] === p) ? p : null; };
+function go(page, push = true){
   if(state.care && CARE_HIDES.has(page)) page = 'home';
   state.page = page; try{ sessionStorage.setItem('page', page); }catch{}
+  if(push && pageFromHash() !== page) history.pushState({page}, '', `#/${page}`);
   render(); $('#main')?.focus({preventScroll:true}); window.scrollTo(0, 0);
 }
+window.addEventListener('popstate', () => {
+  if($('#app').hidden || location.hash === '#main') return;
+  if($('#detail').open) $('#detail').close();
+  go(pageFromHash() || 'home', false);
+});
 function setCare(on, quiet = false){
   state.care = on; store.set('care', on);
   if(on && CARE_HIDES.has(state.page)) state.page = 'home';
   state.messages.forEach(m => { if(m.type === 'choices' && m.care) m.done = true; });   // the switch answers the offer
+  if(on) state.messages = state.messages.filter(m => !m.careOffer && !(m.type === 'choices' && m.care));
   if(state.sid) api('/api/care', {session_id: state.sid, on}).catch(() => {});   // Star talks to match the screen
   render(); if(!quiet) toast(on ? 'Care mode is on.' : 'Standard view');
 }
@@ -212,7 +234,7 @@ async function offerCare(){
   if(state.care || state.messages.length) return;
   try{
     const r = await api('/api/care/offer', {session_id: state.sid});
-    if(r.offer){ state.messages.push({role:'bot', text: r.offer}, {type:'choices', options: r.options, care: true}); renderStage(); saveChat(); }
+    if(r.offer){ state.messages.push({role:'bot', text: r.offer, careOffer: true}, {type:'choices', options: r.options, care: true}); renderStage(); saveChat(); }
   }catch{}
 }
 function toggleTrace(force){
@@ -242,7 +264,7 @@ function attentionItems(){
     ? {tone:'warn', ic:'transfer', text:`${p.amount} to ${p.to} is waiting for you on the approval page.`, act:'Continue', href:p.next_step.url, track:p.payment_id}
     : {tone:'warn', ic:'alert', text:`${p.amount} to ${p.to}: ${statusInfo(p.state, p.verified).word}.`, act:'Open Activity', page:'activity'}));
   d.invoices.filter(i => openInvoice(i) && !i.known_biller).forEach(i => out.push({tone:'bad', ic:'alert', text:`${i.amount} invoice from ${i.from}, someone you've never paid. Check it with Star before doing anything.`, act:"What's this?", say:`What's this bill?`}));
-  d.invoices.filter(i => openInvoice(i) && i.known_biller).forEach(i => out.push({tone:'info', ic:'bolt', text:`${i.title}: ${i.amount}, due ${i.due}.`, act:'Pay with Star', say:`Pay the ${i.from} bill`}));
+  d.invoices.filter(i => openInvoice(i) && i.known_biller).forEach(i => out.push({tone:'info', ic:'bolt', text:`${i.title}: ${i.amount}, due ${dueDate(i.due)}.`, act:'Pay with Star', say:`Pay the ${i.from} bill`}));
   return out;
 }
 function attentionHtml(){
@@ -272,7 +294,20 @@ function familyStat(){
 function freezeStat(){
   const f = state.data?.frozen || {};
   return `<div class="stat ${f.on ? 'stat-bad' : ''}"><span class="stat-label">Freeze</span><span class="stat-value small-value">${f.on ? 'Frozen' : 'Payments on'}</span>
-    <button class="btn ${f.on ? 'secondary' : 'danger'} small" type="button" data-go="family">${f.on ? 'Manage' : `${icon('freeze')}Freeze now`}</button></div>`;
+    ${f.on ? '<button class="btn secondary small" type="button" data-go="family">Manage</button>'
+      : `<button class="btn danger small" type="button" id="home-freeze">${icon('freeze')}Freeze now</button>`}</div>`;
+}
+// One tap, right here: it's the button for the moment something feels wrong. Lifting it is what takes signatures.
+function bindFreeze(root){
+  const b = root.querySelector('#home-freeze'); if(!b) return;
+  b.onclick = async () => {
+    b.disabled = true;
+    try{
+      await api('/api/freeze', {session_id: state.sid});
+      toast('All payments are frozen. Nothing can be sent.'); speak('All payments are frozen. Nothing can be sent.');
+      await refresh(); renderPage();
+    }catch(e){ b.disabled = false; toast(e.message); }
+  };
 }
 const paymentRow = p => `<li class="pay-row"><span class="pay-main"><b>${esc(p.what)}</b><small>${esc(p.to)} · ${esc(clock(p.created_at))}</small></span>
   <span class="pay-amt">${esc(p.amount)}</span>${ppBadge(p.state, p.mode_label, p.verified)}</li>`;
@@ -288,7 +323,7 @@ function homePage(m){
         <button class="text-btn" type="button" data-go="activity">See all activity and stops</button></section>
     </div>`;
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
-  bindAttention(m);
+  bindAttention(m); bindFreeze(m);
   loadPayments().then(rows => {
     const el = $('#last-pay'); if(!el) return;
     el.innerHTML = rows.length ? `<ul class="pay-list">${rows.slice(0, 5).map(paymentRow).join('')}</ul>` : '<p class="muted">No payments yet in this demo.</p>';
@@ -301,8 +336,9 @@ function careHome(m){
     <section class="care-hello"><div><h1>Hello, ${esc(who())}</h1><p>One thing at a time. You're in control.</p></div>
       <div class="care-left"><span>You can spend</span><b>${esc(a.left || '…')}</b></div></section>
     <div id="care-attn"></div>
-    ${assistantHtml()}`;
-  bindAssistant();
+    ${assistantHtml()}
+    ${state.data?.frozen?.on ? '' : `<p class="care-freeze"><button class="btn danger" type="button" id="home-freeze">${icon('freeze')}Something feels wrong? Freeze payments</button></p>`}`;
+  bindAssistant(); bindFreeze(m);
   loadPayments().then(() => {
     const el = $('#care-attn'), items = attentionItems().filter(x => x.tone !== 'info');
     if(el && items.length){ el.innerHTML = `<section class="card pad" aria-label="Needs your attention">${attentionHtml()}</section>`; bindAttention(el); }
@@ -321,7 +357,7 @@ function starPage(m){
 function tickerHtml(compact = false){
   const c = state.calls || {}, calls = (c.calls || []).slice(compact ? -3 : -7);
   return `<div class="counter ${c.money_moving_this_task ? '' : 'zero'}"><b>${esc(c.money_moving_this_task ?? 0)}</b>
-      <span>Money-moving PayPal calls for this request ${modeTag(c.mode_label || mode())}</span></div>
+      <span>Payment calls to PayPal for this request ${modeTag(c.mode_label || mode())}</span></div>
     ${calls.length ? `<p class="muted small ticker-label">Recent calls, newest last</p><ol class="ticker">${calls.map(x => `<li class="${x.write ? 'write' : ''}"><code>${esc(x.method)} ${esc(x.path)}</code><span class="code ${x.status == null || x.status >= 400 ? 'err' : ''}">${x.status ?? 'no answer'}</span></li>`).join('')}</ol>`
       : compact ? '' : '<p class="muted small">Nothing has been sent to PayPal yet. This list comes from the server\'s log.</p>'}`;
 }
@@ -333,7 +369,7 @@ function decisionPanel(record){
   const marks = {pass:'PASS', fail:'FAILED', pending:'PENDING', not_applicable:'NOT REQUIRED'};
   const ex = record.verifier?.extracted || {};
   const cents = v => Number.isInteger(v) ? cash(v) : 'Not stated';
-  return `<details class="decision-panel"><summary>Safety evidence: ${esc(record.action.replaceAll('_', ' '))}</summary>
+  return `<details class="decision-panel"><summary>How Star checked this</summary>
     <p class="muted small">Policy ${esc(record.policy_version)} · ${esc(record.stage)}<br>${esc(record.evidence_scope)}</p>
     <blockquote>${esc(record.raw_text || 'No transcript recorded')}</blockquote>
     <div class="evidence-compare"><div><b>AI draft</b><p>${esc(record.draft?.payee)}<br>${esc(cents(record.draft?.amount_cents))}</p></div>
@@ -350,7 +386,8 @@ function renderSafety(){
   const rows = c ? c.rows.map(r => row(...r)).join('') : [
     row('idle', 'Star prepares, never pays', 'The assistant can only draft. It has no tool that moves money.'),
     row('idle', 'Checked against what you said', 'The person and the amount must come from your own words.'),
-    row('idle', 'A second, independent check', 'A separate reader re-reads only your words. If anything differs, the payment is frozen.'),
+    live() ? row('idle', 'A second, independent check', 'A separate model re-reads only your words. If anything differs, the payment is frozen.')
+      : row('idle', 'A second reading', 'Your words are read again on their own. Offline this uses the same rules that prepared the card, so read the card yourself. If anything differs, the payment is frozen.'),
     row('idle', 'Safety rules', 'Limits, new people and sellers, odd prices, scam signs.'),
     row('idle', 'Your device signs', 'Your device signs the exact payment. Only then can anything reach PayPal.'),
   ].join('');
@@ -376,7 +413,7 @@ function assistantHtml(){
       <form class="composer" id="composer">
         <button type="button" class="mic" id="mic" aria-label="Tap to speak, tap again to stop">${icon('mic')}<span>${state.care ? 'Tap to speak' : 'Speak'}</span></button>
         <label class="sr" for="text">Type your request</label>
-        <textarea id="text" rows="1" placeholder="${state.care ? 'Or type here' : 'For example: Send 50 to my daughter'}"></textarea>
+        <textarea id="text" rows="1" placeholder="${state.care ? 'Or type here' : 'Send 50 to Anna'}"></textarea>
         <button class="send" type="submit" aria-label="Send">${icon('send')}<span class="label">Send</span></button>
       </form>
       <div class="hint" id="hint" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -666,7 +703,7 @@ function renderChange(){
   const c = state.change; if(!c) return;
   $('#confirm').innerHTML = `
     <div class="cbody">
-      <h2 id="c-title">${esc(c.title)}</h2>
+      <h2 id="c-title" tabindex="-1">${esc(c.title)}</h2>
       <p class="review-intro">Take a moment to check the details. Nothing changes until you confirm. You can cancel below.</p>
       ${c.you_said ? `<div class="said"><span class="k">Based on what you said</span><q>${esc(c.you_said)}</q></div>` : ''}
       ${c.rows.map(([k, v]) => `<div class="crow"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join('')}
@@ -706,15 +743,19 @@ async function confirmChange(){
 function openConfirm(c){
   state.change = null;
   state.card = c; state.verify = null; clearInterval(state.coolTimer); clearInterval(state.guardTimer);
-  renderConfirm(); const dlg = $('#confirm'); if(!dlg.open) dlg.showModal();
-  setTimeout(() => ($('#c-go:not([disabled])') || $('#c-cancel'))?.focus(), 50);
+  renderConfirm(); const dlg = $('#confirm');
+  // She reads first: focus starts on the title, and Confirm only wakes after a moment, so Enter can't run through the card.
+  const go1 = $('#c-go:not([disabled])');
+  if(go1){ go1.disabled = true; setTimeout(() => { const b = $('#c-go'); if(state.card === c && b && b.disabled && canGoNow(c)) b.disabled = false; }, 1000); }
+  if(!dlg.open) dlg.showModal();
+  setTimeout(() => $('#c-title')?.focus(), 50);
   if(c.cooldown_left > 0){
     state.coolTimer = setInterval(async () => {
       state.card.cooldown_left = Math.max(0, state.card.cooldown_left - 1);
       if(state.card.cooldown_left === 0){
         clearInterval(state.coolTimer);
         try{ const r = await api('/api/card/' + state.sid); if(r.card) state.card = r.card; }catch{}
-        renderConfirm(); $('#c-go:not([disabled])')?.focus(); return;
+        renderConfirm(); return;
       }
       const left = $('#c-cool-left'); if(left) left.textContent = coolWords(state.card.cooldown_left);
     }, 1000);
@@ -741,26 +782,27 @@ function waitForGuardian(){
     }catch{}
   }, 2500);
 }
+const canGoNow = c => c.can_confirm && !(c.cooldown_left > 0) && (!c.verify_question || state.verify === true) && state.signMode !== 'none' && !state.confirming;
 const coolWords = n => `${n} more second${n === 1 ? '' : 's'}`;
 function renderConfirm(){
   const c = state.card; if(!c) return;
   const needVerify = !!c.verify_question, cooling = c.cooldown_left > 0;
   const canGo = c.can_confirm && !cooling && (!needVerify || state.verify === true) && state.signMode !== 'none';
   const rel = c.payee_relation && c.payee_relation !== 'payee' ? ` (${esc(c.payee_relation)})` : '';
-  const goLabel = state.signMode === 'none' ? "Can't sign in this browser" : c.guardian_required ? `Waiting for ${esc(guardianName())}` : cooling ? 'Please wait'
+  const goLabel = state.signMode === 'none' ? "Can't sign in this browser" : c.guardian_required ? (guardianPaired() ? `Waiting for ${esc(guardianName())}` : `Needs ${esc(guardianName())}'s OK`) : cooling ? 'Please wait'
     : needVerify && state.verify !== true ? 'Answer the question first' : 'Confirm with fingerprint';
   const off = c.offers_checked || [];
   const trust = c.trust?.reasons?.length ? c.trust.reasons : [];
   $('#confirm').innerHTML = `
     <div class="cbody">
       <p class="card-mode">${modeTag(c.paypal_mode || mode())}</p>
-      <h2 id="c-title">${esc(c.title)}</h2>
+      <h2 id="c-title" tabindex="-1">${esc(c.title)}</h2>
       <p class="review-intro">${state.care && c.readback ? esc(c.readback) : 'Check who it goes to and how much. Nothing is sent until you confirm. You can cancel below.'}</p>
       ${c.you_said ? `<div class="said"><span class="k">Based on what you said</span><q>${esc(c.you_said)}</q>${(c.you_said_audio || []).length ? `
         <span class="said-audio">${icon('mic')}From your voice recording ${esc(c.you_said_audio[0].slice(0, 8))}…, signed with this card
           <button type="button" class="text-btn" id="c-play">Play</button></span>` : ''}</div>` : ''}
       ${(c.items || []).length ? `<div class="crow"><span class="k">Buying</span><span class="v">${c.items.map(i => `${esc(i.quantity || 1)} × ${esc(i.name)}`).join('<br>')}<small>from ${esc(c.merchant)}</small></span></div>` : ''}
-      ${c.invoice ? `<div class="crow"><span class="k">Invoice</span><span class="v">${esc(c.invoice.title)}<small>${esc(c.invoice.number)}, due ${esc(c.invoice.due)}</small></span></div>` : ''}
+      ${c.invoice ? `<div class="crow"><span class="k">Invoice</span><span class="v">${esc(c.invoice.title)}<small>${esc(c.invoice.number)}, due ${esc(dueDate(c.invoice.due))}</small></span></div>` : ''}
       <div class="crow ${c.payee_from_user === false ? 'unsaid' : ''}"><span class="k">${c.kind === 'refund' ? 'From' : c.kind === 'money_request' ? 'Ask' : 'To'}</span><span class="v">${esc(c.payee_name)}${rel}<small>${esc(c.payee_account)}</small>
         ${c.payee_from_user === false ? `<span class="flag">You didn't mention this person</span>` : ''}</span></div>
       <div class="crow amount ${c.amount_from_user === false ? 'unsaid' : ''}"><span class="k">Amount</span>
@@ -773,15 +815,18 @@ function renderConfirm(){
       ${needVerify ? `<div class="verify"><div class="q">${esc(c.verify_question)}</div><div class="yesno">
         <button type="button" class="btn secondary" data-v="yes" aria-pressed="${state.verify === true}">${c.verify_kind === 'new_payee' ? 'Yes, my own idea' : 'Yes'}</button>
         <button type="button" class="btn secondary" data-v="no" aria-pressed="${state.verify === false}">${c.verify_kind === 'new_payee' ? 'No, someone asked me' : 'No, or not sure'}</button></div></div>` : ''}
-      ${c.guardian_required ? `<div class="family-wait" role="status"><b>${icon('family')} Waiting for ${esc(guardianName())}</b><p>This one needs your family's OK. ${esc(guardianName())} sees this exact card on her own device. ${guardianPaired() ? '' : `She isn't paired yet: invite her from the Family page.`}</p></div>` : ''}
+      ${c.guardian_required ? (guardianPaired()
+        ? `<div class="family-wait" role="status"><b>${icon('family')} Waiting for ${esc(guardianName())}</b><p>This one needs your family's OK. ${esc(guardianName())} sees this exact card on her own device.</p></div>`
+        : `<div class="family-wait" role="status"><b>${icon('family')} This needs your family's OK</b><p>${esc(guardianName())} isn't set up as your family guardian yet, so this can't be sent. You can invite her now, or cancel this.</p><button type="button" class="btn secondary" id="c-invite">${icon('family')}Invite ${esc(guardianName())}</button></div>`) : ''}
       ${c.guardian_approved ? `<div class="family-ok" role="status">${icon('family')}<span>${esc(guardianName())} approved this exact card, signed on her device.</span></div>` : ''}
       ${cooling ? `<div class="cool" role="timer">Please wait <span id="c-cool-left">${coolWords(c.cooldown_left)}</span><small>A good moment to call your family and check.</small></div>` : ''}
       ${state.uvFail ? `<div class="uvhelp">${icon('fingerprint')}<div><b>Your fingerprint wasn't checked</b><small>A password manager signed without asking for your fingerprint, face or PIN, so Star refused it. Set it up again and choose <b>Windows Hello / this device</b> when asked where to save it.</small>
         <button type="button" class="btn secondary" id="c-repk">Set up fingerprint again</button></div></div>` : ''}
       <div class="next-step">${icon('transfer')}<span>${esc(c.next_step_words)}</span></div>
-      ${c.verification?.status === 'match' ? `<div class="vcheck">${icon('shield')}<span>${/offline/i.test(c.verification.engine) ? 'An offline check (shared parser)' : 'A separate model check'} matched your words.</span></div>` : ''}
+      ${c.verification?.status === 'match' ? (c.verification.independent ? `<div class="vcheck">${icon('shield')}<span>A separate model re-read your words and agrees.</span></div>`
+        : `<div class="vcheck plain">${icon('alert')}<span>Star read your words again with the same offline rules that prepared this card. That's not a second opinion, so please check it yourself.</span></div>`) : ''}
       ${c.decision ? decisionPanel(c.decision) : ''}
-      <div class="ticker-host compact" data-compact="1"></div>
+      ${state.care ? '' : '<div class="ticker-host compact" data-compact="1"></div>'}
     </div>
     <div class="cfoot">
       <button type="button" class="btn secondary" id="c-cancel">Cancel</button>
@@ -800,6 +845,7 @@ function renderConfirm(){
   });
   $('#c-cancel').onclick = cancelCard;
   $('#c-go').onclick = () => { stopSpeaking(); confirmCard(); };
+  $('#c-invite') && ($('#c-invite').onclick = () => { closeConfirm(); go('family'); });
   $('#c-play') && ($('#c-play').onclick = () => playClip(c.you_said_audio[0]));
   $('#c-repk') && ($('#c-repk').onclick = async () => {
     try{
@@ -825,7 +871,10 @@ async function cancelCard(){
     const r = await api('/api/cancel', {session_id: state.sid, draft_id: c.draft_id}); closeConfirm(); push({role:'bot', text:r.reply}); speak(r.speak);
     if(r.next_task) offerNext(r.next_task);
     state.check = checksFromCard({...c, decision:r.decision}); renderSafety();
-  }catch(e){ push({role:'bot', text:'Cancellation could not be confirmed. The payment is still waiting. Please try again.'}); renderConfirm(); }
+  }catch(e){
+    if(e.data?.code === 'ALREADY_SENT'){ push({role:'bot', text:e.message}); speak(e.message); return recoverPayment(c); }
+    push({role:'bot', text:'Cancellation could not be confirmed. The payment is still waiting. Please try again.'}); renderConfirm();
+  }
 }
 async function confirmCard(){
   const c = state.card; const btn = $('#c-go');
@@ -1021,7 +1070,7 @@ async function billsPage(m){
     const {invoices, mode_label} = await api(`/api/invoices?session_id=${encodeURIComponent(state.sid)}`);
     const el = $('#inv-list'); if(!el) return;
     el.innerHTML = invoices.length ? `<ul class="inv-list">${invoices.map(i => `<li class="inv ${i.known_biller ? '' : 'inv-unknown'}">
-        <div class="inv-main"><b>${esc(i.title)}</b><small>${esc(i.from)} · ${esc(i.number)} · due ${esc(i.due)}</small>
+        <div class="inv-main"><b>${esc(i.title)}</b><small>${esc(i.from)} · ${esc(i.number)} · due ${esc(dueDate(i.due))}</small>
           ${i.known_biller ? '' : `<span class="flag">${icon('alert')}Someone you've never paid</span>`}</div>
         <div class="inv-amt">${esc(i.amount)}</div>${ppBadge(i.status === 'SENT' ? 'UNPAID' : i.status, mode_label, i.status === 'PAID')}
         ${openInvoice(i) ? `<div class="inv-acts"><button class="btn secondary small" type="button" data-say="What's this bill?">What's this?</button>
@@ -1037,7 +1086,7 @@ async function billsPage(m){
   api(`/api/disputes?session_id=${encodeURIComponent(state.sid)}`).then(r => {
     const el = $('#dis-list'); if(!el) return;
     el.innerHTML = !r.available ? '<p class="muted">PayPal did not answer this time, so disputes can\'t be shown. That doesn\'t mean there are none.</p>'
-      : r.disputes.length ? `<ul class="pay-list">${r.disputes.map(x => `<li class="pay-row"><span class="pay-main"><b>${esc(String(x.reason || 'Dispute').replaceAll('_', ' ').toLowerCase())}</b><small><code>${esc(x.dispute_id)}</code></small></span>${ppBadge(x.status, r.mode_label)}</li>`).join('')}</ul><p class="muted small">${esc(r.note || '')}</p>`
+      : r.disputes.length ? `<ul class="pay-list">${r.disputes.map(x => `<li class="pay-row"><span class="pay-main"><b>${esc((s => s[0].toUpperCase() + s.slice(1))(String(x.reason || 'Dispute').replaceAll('_', ' ').toLowerCase()))}</b><small><code>${esc(x.dispute_id)}</code></small></span>${ppBadge(x.status, r.mode_label)}</li>`).join('')}</ul><p class="muted small">${esc(r.note || '')}</p>`
       : `<p class="muted">No open disputes. ${modeTag(r.mode_label)}</p><p class="muted small">${esc(r.note || '')}</p>`;
   }).catch(() => {});
 }
@@ -1119,6 +1168,11 @@ function playClip(sha){
   clip = new Audio(`/api/voice/${encodeURIComponent(state.sid)}/${sha}`);
   clip.play().catch(() => toast('This recording is no longer on the demo server. It restarts on every update.'));
 }
+const AUDIT_WORDS = {'user.utterance':'You said something', 'voice.recorded':'A voice recording was kept', 'draft.created':'Star prepared a card', 'draft.frozen':'A card was frozen: it differed from your words',
+  'draft.cancelled':'A card was cancelled', 'contract.decision':'The safety checks ran', 'trust.check':'The seller or bill was checked', 'auth.challenge_issued':'The card was ready to sign', 'auth.granted':'Your signature was verified',
+  'auth.rejected':'A signature was refused', 'gateway.posted':'The gateway accepted the signed card', 'gateway.rejected':'The gateway refused it', 'commit.executed':'The payment was handed over', 'commit.rejected':'The payment was refused before it went out',
+  'payment.state':'The payment changed state', 'wallet.frozen':'Payments were frozen', 'wallet.unfrozen':'The freeze was lifted', 'guardian.invited':'A family guardian was invited', 'guardian.paired':'A family guardian was paired',
+  'guardian.approved':'Your family approved a card', 'guardian.denied':'Your family said no', 'guardian.alert':'Your family was alerted', 'guardian.replace_refused':'A guardian swap was refused', 'demo.world_reset':'The demo was reset', 'ui.care_mode':'Care mode changed'};
 async function activityPage(m){
   m.innerHTML = head('Trust and transparency', 'Activity &amp; audit', 'Every payment, and every payment that was stopped, with who stopped it and why. Open a row for its whole story.') + `
     <section class="card pad" aria-labelledby="ac-h"><h2 id="ac-h" class="sr">Activity table</h2><div id="grid-mount"><p class="muted">Loading the table…</p></div></section>
@@ -1136,9 +1190,12 @@ async function activityPage(m){
       <div class="voice-row"><audio controls preload="none" src="/api/voice/${encodeURIComponent(state.sid)}/${esc(e.data.audio_sha256)}"></audio>
         <span>“${esc(e.data.transcript)}”<small>${new Date(e.ts * 1000).toLocaleTimeString()} · ${esc(String(e.data.seconds))} s · SHA-256 ${esc(e.data.audio_sha256.slice(0, 12))}…</small></span></div>`).join('')}
       <p class="muted small">Each recording's SHA-256 is in the hash chain, and cards made from it carry the same hash, so your signature covers it. Demo recordings are deleted when the server restarts.</p></div>` : '';
-    $('#entries').innerHTML = a.entries.length ? a.entries.slice().reverse().slice(0, 40).map(e => `<div class="audit-entry"><b>${esc(e.event)}</b>
+    const entry = e => `<div class="audit-entry"><b>${esc(AUDIT_WORDS[e.event] || e.event)}</b>
       <div class="muted small">${new Date(e.ts * 1000).toLocaleTimeString()} · <code>${esc(e.hash.slice(0, 16))}…</code></div>
-      <details><summary>Details</summary><pre>${esc(JSON.stringify(e.data, null, 2))}</pre></details></div>`).join('') : '<p class="muted small">No activity in this session yet.</p>';
+      <details><summary>Details</summary><pre>${esc(JSON.stringify(e.data, null, 2))}</pre></details></div>`;
+    const newest = a.entries.slice().reverse(), main = newest.filter(e => !/^(llm|tool|agent)\./.test(e.event));
+    $('#entries').innerHTML = newest.length ? `${main.slice(0, 10).map(entry).join('')}
+      <details class="audit-all"><summary>Show the newest ${Math.min(newest.length, 40)} records, with every model and tool step</summary>${newest.slice(0, 40).map(entry).join('')}</details>` : '<p class="muted small">No activity in this session yet.</p>';
     $('#a-export').onclick = () => download(`audit-${state.sid}.json`, a);
   };
   $('#a-refresh').onclick = load; load().catch(e => toast(e.message));
@@ -1181,7 +1238,7 @@ async function showRowDetail(row){
 function labPage(m){
   m.innerHTML = head('Trust and transparency', 'Security lab', 'Real attacks against the real kernel, each in a fresh isolated copy. Your session is never touched.') + `
     <section class="card pad">
-      <div class="arch"><span>You speak</span><i>→</i><span>Agent drafts</span><i>‖</i><span class="edge">Verifier re-reads your words</span><i>→</i><span class="edge">Evidence + rules</span><i>→</i><span>You check the card</span><i>→</i><span class="edge">Your device signs</span><i>→</i><span class="edge">Kernel verifies</span><i>→</i><span class="edge">Gateway re-verifies</span><i>→</i><span>PayPal</span></div>
+      <div class="arch"><span>You speak</span><i>→</i><span>Agent drafts</span><i>→</i><span class="edge">Verifier re-reads your words</span><i>→</i><span class="edge">Evidence + rules</span><i>→</i><span>You check the card</span><i>→</i><span class="edge">Your device signs</span><i>→</i><span class="edge">Kernel verifies</span><i>→</i><span class="edge">Gateway re-verifies</span><i>→</i><span>PayPal</span></div>
       <p class="muted small">The model lives left of the marked boxes. It has no tool that can sign, authorize or pay, and the only code path to a PayPal money call requires your device's signature.</p>
       <div class="row-actions"><button class="btn primary" id="lab-run" type="button">${icon('lab')}Run all attacks</button>
         <button class="btn secondary" id="lab-mistake" type="button">${icon('alert')}Simulate a model mistake</button></div>
@@ -1209,8 +1266,8 @@ function labPage(m){
     try{
       const {results} = await api('/api/lab', {});
       const ok = results.filter(r => r.blocked).length;
-      $('#lab-out').innerHTML = `<div class="lab-score">${ok} of ${results.length} attacks blocked</div><div class="lab-list">${results.map(r =>
-        `<div class="lab-item ${r.blocked ? 'pass' : 'fail'}"><span class="s" aria-hidden="true">${r.blocked ? '✓' : '✕'}</span><div><b>${esc(r.name)}</b> <code>${esc(r.code)}</code><small>${esc(r.detail)}</small></div></div>`).join('')}</div>
+      $('#lab-out').innerHTML = `<div class="lab-score">${ok} of ${results.length} attacks blocked</div><details class="lab-more" ${ok === results.length ? '' : 'open'}><summary>Show each attack</summary><div class="lab-list">${results.map(r =>
+        `<div class="lab-item ${r.blocked ? 'pass' : 'fail'}"><span class="s" aria-hidden="true">${r.blocked ? '✓' : '✕'}</span><div><b>${esc(r.name)}</b> <code>${esc(r.code)}</code><small>${esc(r.detail)}</small></div></div>`).join('')}</div></details>
         <p class="muted small">A fixed set of checks, not a penetration test. See docs/SECURITY.md for what is simulated.</p>`;
       addTrace([{kind:'guard', label:`Security lab: ${ok} of ${results.length} attacks blocked`, detail: results}]);
     }catch(e){ $('#lab-out').innerHTML = `<p class="muted small">Could not run the lab: ${esc(e.message)}</p>`; }
@@ -1296,8 +1353,8 @@ function settingsPage(m){
     <section class="card settings page-gap" aria-label="What is running">
       <div class="setting"><div>PayPal<small>${esc(pp.mode === 'simulator' ? 'A keyless simulator following the documented request and response shapes. No real money.' : pp.mode === 'sandbox' ? 'Real calls to the PayPal sandbox with test money. Live is deliberately not supported.' : '')} Webhooks: ${esc(pp.webhooks || '')}.</small></div>${modeTag(pp.label)}</div>
       <div class="setting"><div>Language model<small>The model that reads your words and prepares drafts. It has no tool that moves money.</small></div><code>${esc(state.health.engine || state.health.model || '')}</code></div>
-      <div class="setting"><div>Speech recognition<small>${serverAsr() ? 'A server speech model, with each clip kept in the audit trail.' : "Your browser's own speech recognition."}</small></div><code>${esc(state.health.asr || '')}</code></div>
-      <div class="setting"><div>Independent verifier<small>The second reader that re-reads only your words and can freeze a payment.</small></div><code>${esc(state.health.verifier || '')}</code></div>
+      <div class="setting"><div>Speech recognition<small>${serverAsr() ? 'A server speech model, with each clip kept in the audit trail.' : "Your browser's own speech recognition."}</small></div><code>${serverAsr() ? esc(state.health.asr) : 'Browser'}</code></div>
+      <div class="setting"><div>Second reading<small>Re-reads only your words and can freeze a payment. ${live() ? 'A separate model.' : 'Offline it shares the rules that prepared the card, so it is not a second opinion.'}</small></div><code>${live() ? esc(state.health.verifier || '') : 'Offline rules'}</code></div>
       <div class="setting"><div>Browser signing key<small>Used with the simulated fingerprint, or on devices without a sensor.</small></div><code>${esc(state.keyId || 'not created')}</code></div>
       <div class="setting"><div>Reset demo<small>New session, invoices and allowance restored, guardian unpaired. Old audit records are kept.</small></div><button class="btn secondary small" id="s-reset" type="button">${icon('refresh')}Reset</button></div>
     </section>`;
@@ -1563,7 +1620,8 @@ async function init(){
   await refresh();
   if(!state.data) throw new Error('The demo service is not ready. Please try again in a moment.');
   loadChat();
-  try{ const p = sessionStorage.getItem('page'); if(NAV.some(n => n[0] === p)) state.page = (state.care && CARE_HIDES.has(p)) ? 'home' : p; }catch{}
+  try{ const p = pageFromHash() || sessionStorage.getItem('page'); if(NAV.some(n => n[0] === p)) state.page = (state.care && CARE_HIDES.has(p)) ? 'home' : p; }catch{}
+  history.replaceState({page: state.page}, '', `#/${state.page}`);
   state.signMode = await detectSignMode();      // after refresh: an enrolled passkey keeps being used
   render();
   loadCalls();

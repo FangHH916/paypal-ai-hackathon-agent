@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import uuid
 
 import requests
@@ -227,7 +228,8 @@ class OfflineLLM:
             month = txns[0]["date"][:7] if txns else ""
             outs = [t for t in txns if t["amount"].startswith("-") and t["date"].startswith(month)]
             total = sum(-t["amount_cents"] for t in outs)
-            return self._say(f"In {month} you've spent {fmt_money(total)} across {len(outs)} payments so far.")
+            named = time.strftime("%B %Y", time.strptime(month, "%Y-%m")) if month else "this month"
+            return self._say(f"In {named} you've spent {fmt_money(total)} across {len(outs)} payment{'' if len(outs) == 1 else 's'} so far.")
 
         if intent == "status":
             if "payment_status" not in results:
@@ -427,7 +429,7 @@ class OfflineLLM:
             return OfflineLLM._say("I've stopped this one: " + " ".join(d.get("mismatches", [])))
         if d["risk_level"] == "BLOCK":
             why = d["reasons"][0] if d["reasons"] else ""
-            return OfflineLLM._say(f"I can't process this one: {why}")
+            return OfflineLLM._say(f"I can't pay this one. {why}")
         verb = {"refund": "back from", "money_request": "asked from", "purchase": "to"}.get(d.get("kind"), "to")
         if d.get("family") == "unpaired":
             return OfflineLLM._say(f"This one needs your family's OK: {d['amount']} {verb} {d['payee']}. Your family guardian isn't set up yet, "

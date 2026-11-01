@@ -1009,5 +1009,17 @@ routes = [
     Route("/simulator/api/decide", simulator_decide, methods=["POST"]),
 ]
 
+_NOT_FOUND_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found - Star</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css"></head>
+<body class="not-found"><main class="welcome-main"><span class="brand"><img src="/logo.svg" alt="" width="36" height="36"><span>Star</span></span>
+<h1>We can't find that page</h1><p>Nothing has changed with your payments.</p><a class="btn primary big" href="/">Back to Star</a></main></body></html>"""
+
+
+async def _not_found(request: Request, _exc):
+    if request.url.path.startswith(("/api/", "/simulator/api/")):
+        return _err("Not found.", "NOT_FOUND", 404)
+    return Response(_NOT_FOUND_PAGE, status_code=404, media_type="text/html; charset=utf-8")
+
+
 app = Starlette(routes=routes, middleware=[Middleware(SecurityMiddleware)],
-                exception_handlers={BadInput: _bad_input, UnknownSession: _unknown_session, GuardianError: _guardian_error})
+                exception_handlers={BadInput: _bad_input, UnknownSession: _unknown_session, GuardianError: _guardian_error, 404: _not_found})

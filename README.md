@@ -2,7 +2,7 @@
 
 **A voice payment agent for seniors and their families, with fixed safety checks before money can move.**
 
-Star is a hackathon project with a fictional family. Built on the PayPal sandbox; not affiliated with PayPal.
+Star is a hackathon project with a fictional family. Designed for the PayPal sandbox; not affiliated with PayPal.
 
 ![The Star landing page](docs/images/landing.png)
 
