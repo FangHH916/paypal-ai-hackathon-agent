@@ -1,4 +1,4 @@
-﻿"""The PayPal routes over real HTTP: a redirect sets nothing, capture never happens on a GET, webhooks need a signature,
+"""The PayPal routes over real HTTP: a redirect sets nothing, capture never happens on a GET, webhooks need a signature,
 a concurrent double click makes one payment, simulator routes vanish outside simulator mode."""
 import base64
 import json

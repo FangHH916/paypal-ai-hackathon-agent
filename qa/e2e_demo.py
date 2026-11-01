@@ -1,4 +1,4 @@
-﻿"""Run the whole keyless demo in a real browser and check what a person would see.
+"""Run the whole keyless demo in a real browser and check what a person would see.
 
     python qa/e2e_demo.py                     starts its own keyless server on a free port, with a temporary data folder
     python qa/e2e_demo.py --base http://localhost:8000     uses a server you started
