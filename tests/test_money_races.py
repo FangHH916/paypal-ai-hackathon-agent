@@ -49,6 +49,22 @@ class TestCancelWhilePaying(HttpBase):
         self.assertIn("No money was sent", r.json()["reply"])
 
 
+class TestResetWhilePaying(HttpBase):
+    def test_a_world_reset_waits_for_a_confirm_already_running(self):
+        from app import server
+        user = runtime.sessions.get(self.sid).user_id
+        lock = server._user_lock(user)
+        with ThreadPoolExecutor(1) as pool:
+            lock.acquire()                                       # stands in for a confirm in flight
+            try:
+                pending = pool.submit(self.post, "/api/reset", {"session_id": self.sid, "world": True})
+                time.sleep(0.4)
+                self.assertFalse(pending.done(), "reset wiped the customer's records while her confirm held the lock")
+            finally:
+                lock.release()
+            self.assertEqual(pending.result(10).status_code, 200)
+
+
 class TestKernelPhaseWhilePaying(World):
     def test_the_kernel_itself_refuses_cancel_and_deny_while_the_gateway_runs(self):
         self.pair_guardian()

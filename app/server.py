@@ -586,29 +586,37 @@ async def reset(request: Request):
         sid = None                      # the server restarted and forgot it: reset just starts a new session
     visitor = valid_visitor(body.get("visitor"))
     target = runtime.sessions.get(sid).user_id if sid else (None if visitor or settings.public_demo else DEMO_USER)
-    if body.get("world") and target:
-        # A demo control. It also clears a freeze and a guardian, so it never exists outside the simulator, and it is logged.
-        was = runtime.wallet.user(target)
-        frozen, paired = was["frozen"]["on"], was["guardian"]["status"]
-        if (frozen or paired == "paired") and not runtime.execution_gateway.simulator:
-            return _err("This can't be reset while payments are frozen or a family guardian is paired.", "PROTECTED_WORLD", 403)
-        runtime.audit.append("demo.world_reset", sid or "", {"was_frozen": frozen, "guardian": paired})
-    if visitor:
-        # Online demo: this browser's own demo customer. "Reset demo" resets only their world, never anyone else's;
-        # their passkey stays enrolled.
-        s = runtime.sessions.reset(sid) if sid else runtime.sessions.new_for_visitor(visitor)
-        if body.get("world"):
-            runtime.wallet.reset_user(s.user_id)
-            runtime.paypal.log.clear_user(s.user_id)
-    else:
+
+    def work():
         if body.get("world") and target:
-            if settings.public_demo or target != DEMO_USER:
-                runtime.wallet.reset_user(target)        # a shared server never wipes every visitor at once
-            else:
-                runtime.wallet.reset()
-            runtime.paypal.log.clear_user(target)
-        s = runtime.sessions.reset(sid) if sid else runtime.sessions.get(None)
-    return JSONResponse({"session_id": s.session_id, "ts": time.time()})
+            # A demo control. It also clears a freeze and a guardian, so it never exists outside the simulator, and it is logged.
+            was = runtime.wallet.user(target)
+            frozen, paired = was["frozen"]["on"], was["guardian"]["status"]
+            if (frozen or paired == "paired") and not runtime.execution_gateway.simulator:
+                return _err("This can't be reset while payments are frozen or a family guardian is paired.", "PROTECTED_WORLD", 403)
+            runtime.audit.append("demo.world_reset", sid or "", {"was_frozen": frozen, "guardian": paired})
+        if visitor:
+            # Online demo: this browser's own demo customer. "Reset demo" resets only their world, never anyone else's;
+            # their passkey stays enrolled.
+            s = runtime.sessions.reset(sid) if sid else runtime.sessions.new_for_visitor(visitor)
+            if body.get("world"):
+                runtime.wallet.reset_user(s.user_id)
+                runtime.paypal.log.clear_user(s.user_id)
+        else:
+            if body.get("world") and target:
+                if settings.public_demo or target != DEMO_USER:
+                    runtime.wallet.reset_user(target)        # a shared server never wipes every visitor at once
+                else:
+                    runtime.wallet.reset()
+                runtime.paypal.log.clear_user(target)
+            s = runtime.sessions.reset(sid) if sid else runtime.sessions.get(None)
+        return JSONResponse({"session_id": s.session_id, "ts": time.time()})
+
+    # A world reset wipes her payment records, so it waits for a confirm already running
+    def locked():
+        with _user_lock(target):
+            return work()
+    return await run_in_threadpool(locked if target else work)
 
 
 # ---- PayPal: verified state, and the buyer's way back
