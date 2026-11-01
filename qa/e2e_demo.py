@@ -34,6 +34,9 @@ LAST: list[Page] = []
 expect.set_options(timeout=15000)
 
 
+SILENT_SPEECH = "{ const s = speechSynthesis.speak.bind(speechSynthesis); speechSynthesis.speak = (u) => { u.volume = 0; s(u); }; }"
+
+
 def check(name: str, ok: bool, got="") -> None:
     print(("PASS  " if ok else "FAIL  ") + name + (f"   [{got}]" if got != "" else ""), flush=True)
     if not ok:
@@ -137,6 +140,12 @@ def main() -> int:
         with sync_playwright() as p:
             channel = os.environ.get("E2E_CHANNEL", "msedge")
             browser = p.chromium.launch(headless=not args.headed, **({} if channel == "bundled" else {"channel": channel}))
+            new_context = browser.new_context
+            def silent_context(**kw):  # the run shouldn't read aloud on the machine running it
+                ctx = new_context(**kw)
+                ctx.add_init_script(SILENT_SPEECH)
+                return ctx
+            browser.new_context = silent_context
             run(browser, base, args)
             browser.close()
     finally:

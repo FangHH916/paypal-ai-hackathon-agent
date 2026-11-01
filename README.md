@@ -212,7 +212,7 @@ The `Dockerfile` and `deploy/compose.yaml` cover other hosts. Neither has been b
 
 ### Settings
 
-Everything is in [.env.example](.env.example), with comments. The ones you are likeliest to want: `WALLET_CURRENCY` (one setting, default USD), `WALLET_ALLOWANCE`, `SCAM_HOTLINE_COUNTRY` (`US`, or `SG`, which is marked as not re-verified), `CUSTOMER_TIMEZONE`, `GUARDIAN_THRESHOLD`.
+Everything is in [.env.example](.env.example), with comments. The ones you are likeliest to want: `WALLET_CURRENCY` (one setting, default USD), `WALLET_ALLOWANCE`, `SCAM_HOTLINE_COUNTRY`, `CUSTOMER_TIMEZONE`, `GUARDIAN_THRESHOLD`.
 
 ## Tests
 
@@ -248,7 +248,7 @@ Care mode gets larger rows and text.
 
 The submission period runs from Oct 1 to Nov 12, 2026, and all of Star's git history falls inside it. **Star began on Oct 11, 2026 as a voice banking prototype for a different hackathon**, with mock bank APIs. Its work up to Oct 15 gave this entry its starting point: the agent loop, the kernel and rules, device signing and passkeys, the independent verifier, Care mode, the hash-chained audit and the security lab. It had no PayPal code.
 
-From Oct 30 it was rebuilt for this entry. `git log 96ebd11..HEAD` shows all of this:
+From Oct 30 it was rebuilt for this entry. `git log --since=2026-10-30` shows all of this:
 
 - **New: the PayPal integration**, in `app/paypal/`: the REST client, read-only reader, simulator, write-ahead reconciliation, webhook verification and spec-checked contract tests.
 - **Rebuilt: the product**, from a bank account screen to a family payment agent: new payment kinds (purchase, refund, money request), a demo merchant catalogue with trust rules, invoices checked for scams, a spending allowance in place of a balance.

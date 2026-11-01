@@ -4,9 +4,9 @@ Deadline: **Nov 12, 2026, 12:00 PT** (Nov 13, 04:00 Singapore time). Nothing bel
 
 ## Rights and rules
 
-- [ ] **Licence and ownership.** `LICENSE` says MIT, "Star contributors". The contest requires the work to be the entrant's own. Get written agreement from every contributor in the history (ljjfh, TF916, JackieZhang2025, 傅涵), and from the author of the teammate's prototype the security lab was adapted from. Then confirm or change the copyright line, and who enters.
-- [ ] **Prior work.** Star began as an entry to a different hackathon, and the same base is being used for another of the team's entries. Read each contest's rules on reuse and on submitting more than once. The "significant updates" section of the README is true as written; keep it that way.
-- [ ] **Git history.** Earlier team code, assets and author metadata remain in history. History is preserved; confirm rights and reuse terms before making the repository public. Secret-scan evidence is in `docs/VERIFICATION.md`. A clean scan does not establish ownership or guarantee no secret exists.
+- [x] **Licence and ownership.** The three team members built Star together and agreed to adapt it for this entry (confirmed by the team on Nov 1, 2026). `LICENSE` says MIT, "Star contributors": confirm the copyright line and who enters.
+- [x] **Prior work.** The team confirmed the rules allow this reuse. Star began as an entry to a different hackathon, and the README's "significant updates" section says so: keep it true and keep it in the submission.
+- [x] **Git history.** Rewritten on Nov 1, 2026 to remove the earlier project's branding, assets and generated QA output. Commits, authors and dates are kept. A clean scan does not guarantee no secret exists.
 
 ## Make it real
 
@@ -23,7 +23,7 @@ Deadline: **Nov 12, 2026, 12:00 PT** (Nov 13, 04:00 Singapore time). Nothing bel
 ## Final checks
 
 - [ ] Fill in every **[TEAM: ...]** in `docs/SUBMISSION.md`, and confirm "Other AI tools used".
-- [ ] After rights are confirmed, make the repository public and add the intended collaborators. The PayPal description typo has been corrected. Check GitHub detects the licence.
-- [ ] Open the National Elder Fraud Hotline link in `docs/IMPACT.md` and confirm the number. If `SCAM_HOTLINE_COUNTRY=SG` is ever shown, verify that number first; it's marked as not re-verified.
+- [ ] Make the repository public and add the intended collaborators. The PayPal description typo has been corrected. Check GitHub detects the licence.
+- [ ] Open the National Elder Fraud Hotline link in `docs/IMPACT.md` and confirm the number.
 - [ ] As far as reasonably possible, check that the fictional merchants and people (`app/wallet/catalogue.py`, `app/wallet/ledger.py`) aren't real businesses or people.
 - [ ] Fill in and submit the form.

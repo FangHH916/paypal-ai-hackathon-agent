@@ -58,6 +58,9 @@ PUBLISHED = {
 }
 
 
+SILENT_SPEECH = "{ const s = speechSynthesis.speak.bind(speechSynthesis); speechSynthesis.speak = (u) => { u.volume = 0; s(u); }; }"
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -335,6 +338,12 @@ def main() -> int:
         with sync_playwright() as p:
             channel = os.environ.get("E2E_CHANNEL", "msedge")
             browser = p.chromium.launch(headless=not args.headed, **({} if channel == "bundled" else {"channel": channel}))
+            new_context = browser.new_context
+            def silent_context(**kw):  # the run shouldn't read aloud on the machine running it
+                ctx = new_context(**kw)
+                ctx.add_init_script(SILENT_SPEECH)
+                return ctx
+            browser.new_context = silent_context
             size = {"width": 1280, "height": 800}
             ctx = browser.new_context(viewport=size, record_video_dir=str(VIDEO / "c"), record_video_size=size, accept_downloads=True)
             gctx = browser.new_context(viewport=size, record_video_dir=str(VIDEO / "g"), record_video_size=size)

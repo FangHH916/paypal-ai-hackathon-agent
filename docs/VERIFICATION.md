@@ -1,6 +1,6 @@
 # Local verification — 2026-11-01
 
-Python 3.14.7 on Windows, offline model and PayPal simulator. No real payment credentials, model credentials or user data were used. Results below are from a fresh local clone of `7a1be5a`, with no ignored data or output files. The only commit after it changes this file.
+Python 3.14.7 on Windows, offline model and PayPal simulator. No real payment credentials, model credentials or user data were used. Results below are from a fresh local clone of the code at that time, with no ignored data or output files. The only commit after it changes this file.
 
 - `python -m unittest discover tests`: **559 passed**, zero failures or skips.
 - `python qa/e2e_demo.py`: **84 checks passed, 0 failed**, in real Edge with phone-sized emulation. Includes purchases, approval and capture, refunds, invoice stops, two-device guardian decisions, unknown-outcome recovery, AG Grid filter/export, offline receipt verification, phone widths, the back button, one-tap freeze and keyboard focus on the card. No CSP violations or JavaScript errors were reported. Phone results are emulation, not a real phone.
@@ -12,6 +12,6 @@ Reviewed screenshots in `docs/images` were retaken from the current UI by runnin
 
 Changed test expectations in this round are wording only: the simulator now says "The simulator confirms" instead of "PayPal confirms", and a stopped request says "I can't do this one." instead of "I can't process this:". No test was skipped or removed. A fork-time rewrite of `tests/test_recovery.py` (one bill posting once became "can't overdraw") is unchanged; the original behaviour is tested again in `tests/test_abuse_limits.py` with plenty of allowance, so only the invoice check can refuse.
 
-Earlier evidence, not repeated on these commits: Gitleaks 8.30.1 scanned the full local history at `a8eead1` or earlier and found no actionable credential. The first hosted browser run exposed a stale landing-copy assertion and an overflow with wider Linux font metrics; the browser suite includes that font-metric regression. Hosted CI has not been seen to pass on these commits, and local passing results do not establish a CI pass.
+Earlier evidence, not repeated on these commits: Gitleaks 8.30.1 scanned the full local history before the Nov 1 history rewrite and found no actionable credential. The first hosted browser run exposed a stale landing-copy assertion and an overflow with wider Linux font metrics; the browser suite includes that font-metric regression. Hosted CI has not been seen to pass on these commits, and local passing results do not establish a CI pass.
 
 Unverified: actual PayPal sandbox API acceptance, online-model behaviour, hosted deployment (including Render's `X-Forwarded-For` chain and the Caddy compose file), real microphone and mobile passkeys, dependency audit (`pip-audit` not run), and older-adult usability. No real-world fraud prevention or user-adoption claim is made.
