@@ -11,11 +11,11 @@ from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
 
 from app.config import settings
-from app.kernel import protection as prot, trust
+from app.kernel import contract, protection as prot, trust
 from app.models import Draft, RiskDecision, RiskLevel, fmt_money
 from app.wallet.ledger import Wallet
 
-RULESET_VERSION = "rules-2026.10.30-v6"
+RULESET_VERSION = "rules-2026.11.01-v7"
 DUPLICATE_WINDOW = 600
 OUTGOING = ("transfer", "bill", "purchase")
 
@@ -110,6 +110,10 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
         # ---- New payee (HIGH) ----
         if not history:
             raise_to(RiskLevel.HIGH, "R10_NEW_PAYEE", "This is your first payment to this person, so for safety we'll wait a little before confirming.")
+        elif contract.payee_ramp(wallet, user, draft.payee_id, draft.amount_cents, draft.draft_id):
+            raise_to(RiskLevel.HIGH, "R15_NEW_PAYEE_RAMP",
+                     f"You only started paying {payee['name']} recently, and this would be a lot more. "
+                     "Scammers often ask for a small payment first, so we'll wait and your family checks this one.")
         elif draft.amount_cents > max(history) * 2:
             raise_to(RiskLevel.MEDIUM, "R11_ABOVE_USUAL",
                      f"This is quite a bit more than you usually send to {payee['name']} ({fmt_money(max(history))}).")
@@ -173,7 +177,7 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
     elif level == RiskLevel.MEDIUM:
         question = "Do you know this person, and is this payment your own idea?"
     verify_kind = None
-    if enhanced and "R10_NEW_PAYEE" in hits and level != RiskLevel.BLOCK:
+    if enhanced and {"R10_NEW_PAYEE", "R15_NEW_PAYEE_RAMP"} & set(hits) and level != RiskLevel.BLOCK:
         # The first payment to someone new is how most scams end: ask outright whether someone else is behind it.
         # The card can't be signed without a "yes"; a "no" stops it and points to the scam hotline.
         question = (f"Do you know {payee['name']} yourself, and is sending this money your own idea? "

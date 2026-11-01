@@ -289,15 +289,20 @@ async def register_key(request: Request):
 async def challenge(request: Request):
     body = await _json(request, "draft_id", "digest")
     s = runtime.sessions.get(body.get("session_id"))
-    try:
-        payload = runtime.kernel.issue_challenge(s, body["draft_id"], body["digest"],
-                                                 verify_answer=body.get("verify_answer"))
-    except KernelError as e:
-        d = s.drafts.get(body["draft_id"])
-        if d:
-            runtime.kernel.record_decision(s, d, stage="authorization_rejected", rejection=e.code)
-        return JSONResponse({"error": str(e), "code": e.code, "decision": d.decision if d else None}, status_code=400)
-    return JSONResponse({"payload": payload, "passkey": runtime.kernel.passkey_status(s.user_id, _site(request))})
+    site = _site(request)
+
+    def work():
+        with _user_lock(s.user_id):
+            try:
+                payload = runtime.kernel.issue_challenge(s, body["draft_id"], body["digest"],
+                                                         verify_answer=body.get("verify_answer"))
+            except KernelError as e:
+                d = s.drafts.get(body["draft_id"])
+                if d:
+                    runtime.kernel.record_decision(s, d, stage="authorization_rejected", rejection=e.code)
+                return JSONResponse({"error": str(e), "code": e.code, "decision": d.decision if d else None}, status_code=400)
+            return JSONResponse({"payload": payload, "passkey": runtime.kernel.passkey_status(s.user_id, site)})
+    return await run_in_threadpool(work)
 
 
 async def passkey_options(request: Request):
@@ -411,7 +416,11 @@ async def demo_model_mistake(request: Request):
     s = runtime.sessions.get(body.get("session_id"))
     text = (body.get("text") or "Send 50 to my daughter").strip()[:200]
     s.task_started_at = time.time()
-    result = Agent(runtime.wallet, runtime.gateway, runtime.audit, lab.MistakenLLM()).run_turn(s, text)
+
+    def turn():
+        with _user_lock(s.user_id), paypal_calls.scope(s.user_id, s.session_id):
+            return Agent(runtime.wallet, runtime.gateway, runtime.audit, lab.MistakenLLM()).run_turn(s, text)
+    result = await run_in_threadpool(turn)
     # Tell the app this was the fault-injection demo, so it can show the comparison instead of a puzzling refusal
     d = s.current_draft
     heard = ((d.verification or {}).get("extracted") or {}) if d else {}
@@ -488,40 +497,51 @@ async def confirm(request: Request):
 
 
 async def cancel(request: Request):
+    """Under the customer's lock: it waits for a confirm already running, so it can never contradict what really happened."""
     body = await _json(request, "draft_id")
     s = runtime.sessions.get(body.get("session_id"))
-    try:
-        runtime.kernel.cancel(s, body["draft_id"], reason=body.get("reason", "user"))
-    except KernelError as e:
-        return _err(str(e), e.code)
-    s.settle()
-    msg = "OK, it's cancelled. No money was sent."
-    if body.get("reason") == "new_payee_not_own_idea":
-        d = s.drafts[body["draft_id"]]
-        msg = (f"I've stopped this payment to {d.payee_name}. If someone on the phone or in a message asked you to pay a new "
-               f"person, it is very likely a scam. Please don't send it. Call {hotline_words()}, or talk to your "
-               "family first.")
-        runtime.wallet.add_stop(s.user_id, kind=d.kind, to=d.payee_name, amount_cents=d.amount_cents, status="STOPPED",
-                                stopped_by="She said it wasn't her own idea", why=msg, codes=["NEW_PAYEE_NOT_OWN_IDEA"],
-                                draft_id=d.draft_id, digest=d.digest, session_id=s.session_id)
-        runtime.wallet.add_alert(s.user_id, "stop", "stopped", f"Mrs. Lee stopped a payment to {d.payee_name}: it wasn't her own idea.", d.draft_id)
-    _say(s, msg)
-    next_task = s.plan.pop(0) if s.plan else None      # offered as a button, never run automatically
-    return JSONResponse({"reply": msg, "speak": msg, "phase": s.phase.value, "next_task": next_task,
-                         "decision": s.drafts[body["draft_id"]].decision})
+
+    def work():
+        with _user_lock(s.user_id):
+            try:
+                if runtime.wallet.payment_by_draft(s.user_id, body["draft_id"]):
+                    raise KernelError("It's too late to cancel: this payment has already been handed to PayPal. Please check its status.", "ALREADY_SENT")
+                runtime.kernel.cancel(s, body["draft_id"], reason=body.get("reason", "user"))
+            except KernelError as e:
+                return _err(str(e), e.code, 409 if e.code == "ALREADY_SENT" else 400)
+            s.settle()
+            msg = "OK, it's cancelled. No money was sent."
+            if body.get("reason") == "new_payee_not_own_idea":
+                d = s.drafts[body["draft_id"]]
+                msg = (f"I've stopped this payment to {d.payee_name}. If someone on the phone or in a message asked you to pay a new "
+                       f"person, it is very likely a scam. Please don't send it. Call {hotline_words()}, or talk to your "
+                       "family first.")
+                runtime.wallet.add_stop(s.user_id, kind=d.kind, to=d.payee_name, amount_cents=d.amount_cents, status="STOPPED",
+                                        stopped_by="She said it wasn't her own idea", why=msg, codes=["NEW_PAYEE_NOT_OWN_IDEA"],
+                                        draft_id=d.draft_id, digest=d.digest, session_id=s.session_id)
+                runtime.wallet.add_alert(s.user_id, "stop", "stopped", f"Mrs. Lee stopped a payment to {d.payee_name}: it wasn't her own idea.", d.draft_id)
+            _say(s, msg)
+            next_task = s.plan.pop(0) if s.plan else None      # offered as a button, never run automatically
+            return JSONResponse({"reply": msg, "speak": msg, "phase": s.phase.value, "next_task": next_task,
+                                 "decision": s.drafts[body["draft_id"]].decision})
+    return await run_in_threadpool(work)
 
 
 async def current_card(request: Request):
     s = runtime.sessions.get(request.path_params["session_id"])
-    d = s.current_draft
-    if not d:
-        return JSONResponse({"card": None, "phase": s.phase.value})
-    # once the cooling-off period ends, move to awaiting authorization
-    runtime.kernel._refresh_cooling(s, d)  # noqa: SLF001
-    if s.phase.value in ("COOLING", "AWAITING_AUTH"):
-        d.decision = contract.decision(d, s, runtime.wallet, runtime.kernel.approvals)
-    card = presenter.build_card(d, runtime.wallet, s.phase, care=s.care_mode, offers=s.last_offers, mode_label=_pp_status()["label"])
-    return JSONResponse({"card": card, "phase": s.phase.value})
+
+    def work():
+        with _user_lock(s.user_id):
+            d = s.current_draft
+            if not d:
+                return JSONResponse({"card": None, "phase": s.phase.value})
+            # once the cooling-off period ends, move to awaiting authorization
+            runtime.kernel._refresh_cooling(s, d)  # noqa: SLF001
+            if s.phase.value in ("COOLING", "AWAITING_AUTH"):
+                d.decision = contract.decision(d, s, runtime.wallet, runtime.kernel.approvals)
+            card = presenter.build_card(d, runtime.wallet, s.phase, care=s.care_mode, offers=s.last_offers, mode_label=_pp_status()["label"])
+            return JSONResponse({"card": card, "phase": s.phase.value})
+    return await run_in_threadpool(work)
 
 
 async def trace(request: Request):
@@ -799,19 +819,23 @@ async def guardian_challenge(request: Request):
 async def guardian_decide(request: Request):
     body = await _json(request, "payload", "signature")
     uid = _guardian_user(body)
-    row = _desk().decide(uid, body["payload"], body["signature"])
-    s = runtime.sessions.get(row["session_id"])
-    signed = row["signed"]
-    try:
-        if row["decision"] == "approve":
-            runtime.kernel.approve_guardian(s, row["draft_id"], row["digest"], signed)
-            return JSONResponse({"decision": "approve", "reply": "Approved. She can now sign this exact card. Nothing has moved yet."})
-        runtime.kernel.deny_guardian(s, row["draft_id"], row["digest"], signed)
-        _say(s, "Your family said no to this payment, so nothing was sent.")
-        s.settle()
-        return JSONResponse({"decision": "deny", "reply": "Denied. The payment is dead and nothing was sent."})
-    except KernelError as e:
-        return _err(str(e), e.code)
+
+    def work():
+        with _user_lock(uid):          # never decides at the same moment her confirm is running
+            row = _desk().decide(uid, body["payload"], body["signature"])
+            s = runtime.sessions.get(row["session_id"])
+            signed = row["signed"]
+            try:
+                if row["decision"] == "approve":
+                    runtime.kernel.approve_guardian(s, row["draft_id"], row["digest"], signed)
+                    return JSONResponse({"decision": "approve", "reply": "Approved. She can now sign this exact card. Nothing has moved yet."})
+                runtime.kernel.deny_guardian(s, row["draft_id"], row["digest"], signed)
+                _say(s, "Your family said no to this payment, so nothing was sent.")
+                s.settle()
+                return JSONResponse({"decision": "deny", "reply": "Denied. The payment is dead and nothing was sent."})
+            except KernelError as e:
+                return _err(str(e), e.code)
+    return await run_in_threadpool(work)
 
 
 async def guardian_freeze(request: Request):

@@ -40,6 +40,7 @@ class Phase(str, Enum):
     DRAFTED = "DRAFTED"            # draft created and graded by the rules
     COOLING = "COOLING"            # high-risk cooling-off period
     AWAITING_AUTH = "AWAITING_AUTH"
+    EXECUTING = "EXECUTING"        # signed and handed to the gateway: too late to cancel, whatever PayPal says next
     EXECUTED = "EXECUTED"          # the gateway accepted it; the payment's own lifecycle lives on its record
     CANCELLED = "CANCELLED"
     BLOCKED = "BLOCKED"

@@ -187,6 +187,17 @@ class Wallet(LedgerStorage):
         return [-t["amount_cents"] for t in self.user(user_id)["transactions"]
                 if t["payee_id"] == payee_id and t["amount_cents"] < 0]
 
+    def payee_sent_total(self, user_id: str, payee_id: str, exclude_draft: str = "") -> int:
+        """Everything on its way to or received by this payee: signed records not given back (in flight counts), plus any
+        older history with no record behind it."""
+        with self._lock:
+            recorded = sum(r["amount_cents"] for r in self.payments.values()
+                           if r["user_id"] == user_id and r["card"].get("payee_id") == payee_id and r["kind"] == "transfer"
+                           and r["draft_id"] != exclude_draft and r["state"] not in payments.RELEASES)
+            older = sum(-t["amount_cents"] for t in self.user(user_id)["transactions"]
+                        if t["payee_id"] == payee_id and t["amount_cents"] < 0 and not t.get("payment_id"))
+            return recorded + older
+
     def protection(self, user_id: str) -> dict:
         return self.user(user_id)["protection"]
 

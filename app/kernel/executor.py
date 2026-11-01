@@ -353,6 +353,8 @@ class Kernel:
 
     def deny_guardian(self, s, draft_id, digest, signed: dict | None = None):
         draft = self._get_draft(s, draft_id)
+        if s.phase in (Phase.EXECUTING, Phase.EXECUTED):
+            raise KernelError("This payment has already been handed to PayPal.", "ALREADY_SENT")
         if digest != draft.digest:
             raise KernelError("This decision is for a different card.", "DIGEST_MISMATCH")
         rec = self.approvals.deny(s.user_id, s.session_id, draft_id, digest, signed)
@@ -467,6 +469,7 @@ class Kernel:
         # Re-run the rules before executing (the allowance may have changed; prevents time-of-check vs time-of-use gaps)
         self._recheck_risk(s, draft)
         self._contract_gate(s, draft, signature=bool(s.signatures.get(draft_id)), verify_answer=True, stage="pre_execution")
+        s.transition(Phase.EXECUTING)      # from here on nobody may say "nothing was sent"
         # PayPal is behind a zero-trust gateway that re-verifies the device signature itself
         try:
             receipt = self.gateway.execute(user_id=s.user_id, session_id=s.session_id, card=draft.card_fields(),
@@ -477,6 +480,10 @@ class Kernel:
             s.transition(Phase.CANCELLED)
             self.record_decision(s, draft, stage="rejected", rejection=e.code)
             raise KernelError(str(e), e.code) from e
+        except Exception:
+            # A crash, not a refusal. With a write-ahead record the outcome is on that record; with none, nothing moved.
+            s.transition(Phase.EXECUTED if self.wallet.payment_by_draft(s.user_id, draft_id) else Phase.CANCELLED)
+            raise
         receipt = dict(receipt)
         s.transition(Phase.EXECUTED)
         draft.decision = receipt["verifiable"].get("decision", draft.decision)
@@ -600,6 +607,8 @@ class Kernel:
     # ------------------------------------------------------------------ Cancel
     def cancel(self, s: Session, draft_id: str, reason: str = "user") -> None:
         draft = self._get_draft(s, draft_id)
+        if s.phase in (Phase.EXECUTING, Phase.EXECUTED):
+            raise KernelError("It's too late to cancel: this payment has already been handed to PayPal.", "ALREADY_SENT")
         if s.phase in (Phase.DRAFTED, Phase.COOLING, Phase.AWAITING_AUTH, Phase.FROZEN):
             s.transition(Phase.CANCELLED)
             self.approvals.revoke(s.session_id, draft_id)

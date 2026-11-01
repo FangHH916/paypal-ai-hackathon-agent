@@ -11,13 +11,30 @@ import time
 
 from app.config import settings
 
-POLICY_VERSION = "star-contract-2.0"
+POLICY_VERSION = "star-contract-2.1"
+NEW_PAYEE_DAYS = 30           # how long someone she added herself still counts as new
+
+
+def payee_ramp(wallet, user_id, payee_id, amount_cents, draft_id="") -> bool:
+    """The small-test-payment scam: a little first, so the big one no longer looks like a first payment. For someone added
+    to her list (never the household people the demo starts with), history doesn't buy trust while the amounts still add up
+    past the threshold, and nothing above the threshold is waved through for being more than she has ever sent them."""
+    payee = wallet.payee(user_id, payee_id) or {}
+    added = payee.get("added_at")
+    if payee.get("type") != "person" or not added:
+        return False
+    limit = settings.guardian_threshold * 100
+    if amount_cents > limit and amount_cents > max(wallet.payee_history(user_id, payee_id), default=0):
+        return True
+    return time.time() - added <= NEW_PAYEE_DAYS * 86400 \
+        and wallet.payee_sent_total(user_id, payee_id, exclude_draft=draft_id) + amount_cents > limit
 
 
 def guardian_required(card, wallet):
     """When must the family co-approve? Money to someone she has never paid before above GUARDIAN_THRESHOLD (impersonation
-    scams always use a new payee), a merchant or invoice check marked for it (kernel/trust.py), and any payment in a
-    conversation that showed scam signs but was not stopped. Not: refunds, or asking someone to pay her back."""
+    scams always use a new payee), the same person building up to it with small payments (payee_ramp), a merchant or invoice
+    check marked for it (kernel/trust.py), and any payment in a conversation that showed scam signs but was not stopped.
+    Not: refunds, or asking someone to pay her back."""
     if card["kind"] in ("refund", "money_request"):
         return False
     if (card.get("trust") or {}).get("guardian"):
@@ -28,9 +45,11 @@ def guardian_required(card, wallet):
         return False
     user = card["user_id"]
     payee = wallet.payee(user, card["payee_id"]) or {}
-    if payee.get("type") != "person" or wallet.payee_history(user, card["payee_id"]):
+    if payee.get("type") != "person":
         return False
-    return card["amount_cents"] > settings.guardian_threshold * 100
+    if payee_ramp(wallet, user, card["payee_id"], card["amount_cents"], card.get("draft_id", "")):
+        return True
+    return not wallet.payee_history(user, card["payee_id"]) and card["amount_cents"] > settings.guardian_threshold * 100
 
 
 class GuardianApprovals:

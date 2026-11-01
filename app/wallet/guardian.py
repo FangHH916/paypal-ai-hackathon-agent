@@ -48,6 +48,7 @@ class GuardianDesk:
     # ---------------------------------------------------------------- pairing
     def invite(self, user_id: str, session_id: str = "") -> str:
         """Called only after Mrs. Lee signed the invite. Returns a one-time token for the link."""
+        self._refuse_replacement(user_id, session_id)
         token = secrets.token_urlsafe(24)
 
         def change(u):
@@ -56,8 +57,19 @@ class GuardianDesk:
         self._log("guardian.invited", session_id, {"expires_in": INVITE_TTL})
         return token
 
+    def _refuse_replacement(self, user_id: str, session_id: str = "") -> None:
+        """A paired guardian only leaves through request_removal and its delay. A signed invite, or a link held by someone
+        else, must not be a shortcut: that would also defeat "lifting a freeze takes two people"."""
+        if self.status(user_id)["status"] != "paired":
+            return
+        self.wallet.add_alert(user_id, "warn", "guardian", "Someone tried to replace the family guardian with a new device. It was refused.")
+        self._log("guardian.replace_refused", session_id, {})
+        raise GuardianError("A family guardian is already paired. Remove them first: that takes effect after a delay, "
+                            "and they are told.", "GUARDIAN_ALREADY_PAIRED")
+
     def pair(self, invite_token: str, jwk: dict) -> dict:
         user_id = self._user_for_invite(invite_token)
+        self._refuse_replacement(user_id)
         try:
             p256.public_point(jwk)
         except p256.InvalidKey as e:
@@ -70,6 +82,7 @@ class GuardianDesk:
                                  invite=None, paired_at=time.time(), removal=None)
         self.wallet.update_user(user_id, change)
         self._log("guardian.paired", "", {"key_id": p256.key_fingerprint(public)})
+        self.wallet.add_alert(user_id, "info", "guardian", "A family guardian device was paired.")
         return {"token": token, "key_id": p256.key_fingerprint(public), "customer": self.wallet.user(user_id)["name"]}
 
     def _user_for_invite(self, token: str) -> str:
