@@ -60,7 +60,8 @@ def payment_status(gw, s, _):
     """Local verified state only. The agent never triggers PayPal writes or reconciliation by asking."""
     label = gw.kernel.gateway.mode_status()["label"]
     return [{"payment_id": r["payment_id"], "what": _label(r), "amount": fmt_money(r["amount_cents"]), "state": r["state"],
-             "result": status_of(r), "verified": r["verified"], "mode": label} for r in gw.wallet.payments_for(s.user_id)[:8]]
+             "result": status_of(r), "verified": r["verified"], "mode": label,
+             "confirmed_by": "The simulator" if str(label).upper().startswith("SIM") else "PayPal"} for r in gw.wallet.payments_for(s.user_id)[:8]]
 
 
 def list_disputes(gw, s, _):

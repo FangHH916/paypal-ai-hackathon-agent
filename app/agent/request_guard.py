@@ -3,7 +3,8 @@ from app.config import settings
 import re
 
 _CANCEL = re.compile(r"\b(?:do not|don't|dont|never)\s+(?:send|pay|buy|invest|transfer|prepare)\b|"
-                     r"\bcancel\s+(?:that|it|all|the payment|the transfer)|^\s*stop\b", re.I)
+                     r"\bcancel\s+(?:that|it|all|the payment|the transfer)|^\s*stop\b|"
+                     r"^\s*(?:please\s+)?(?:cancel|never\s?mind|forget\s+(?:it|that|about it))\b(?:\s+please)?[\s.!]*$", re.I)
 
 
 def cancelled(text):

@@ -5,6 +5,7 @@ what they sign, and what gets executed are the same data.
 """
 from __future__ import annotations
 
+import re
 import time
 
 from app.agent.textparse import amount_digits_spoken, amount_words_en
@@ -82,7 +83,8 @@ def build_card(d: Draft, wallet: Wallet, phase: Phase, care: bool = True, offers
         "offers_checked": offers or [],
         "next_step_words": _next_step_words(d),
         "verification": {"status": v.get("status", "missing"), "fields": v.get("fields", {}),
-                         "mismatches": v.get("mismatches", []), "engine": v.get("engine", "")},
+                         "mismatches": v.get("mismatches", []), "engine": v.get("engine", ""),
+                         "independent": "offline" not in v.get("engine", "").lower()},
         "decision": d.decision,
         "guardian_required": checks.get("guardian_approval", {}).get("status") == "pending",
         "guardian_denied": checks.get("guardian_approval", {}).get("status") == "fail",
@@ -110,8 +112,21 @@ def build_card(d: Draft, wallet: Wallet, phase: Phase, care: bool = True, offers
     }
 
 
+def source_words(text: str, label: str = "") -> str:
+    """In simulator mode nothing came from PayPal, so Star doesn't say it did."""
+    if not str(label).upper().startswith("SIM"):
+        return text
+    text = re.sub(r"(^|[.!?]\s+)PayPal\b", lambda m: m.group(1) + "The simulator", text)
+    return text.replace("PayPal", "the simulator")
+
+
 def receipt_text(d: Draft, receipt: dict) -> str:
-    """What Star says after signing. Success words only from verified state: a redirect or a promise is never enough."""
+    """What Star says after signing, in the words of whoever really answered."""
+    return source_words(_receipt_words(d, receipt), receipt.get("paypal_mode", ""))
+
+
+def _receipt_words(d: Draft, receipt: dict) -> str:
+    """Success words only from verified state: a redirect or a promise is never enough."""
     state, who, m = receipt["state"], d.payee_name, fmt_money(d.amount_cents)
     verified = receipt.get("verified")
     if state == "UNKNOWN":

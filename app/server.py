@@ -656,7 +656,7 @@ async def orders_return(request: Request):
     rec = await run_in_threadpool(work)
     d = s.drafts.get(rec["draft_id"])
     receipt = runtime.execution_gateway.receipt(rec)
-    text = "PayPal confirms it's paid." if rec["state"] == "PAID" and rec["verified"] else (
+    text = presenter.source_words("PayPal confirms it's paid.", receipt["paypal_mode"]) if rec["state"] == "PAID" and rec["verified"] else (
         presenter.receipt_text(d, receipt) if d else "Checking with PayPal…")
     return JSONResponse({"payment": _payment_view(rec), "reply": text, "speak": text})
 

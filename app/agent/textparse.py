@@ -68,8 +68,15 @@ _TOKEN_RE = re.compile(r"[a-z]+")
 
 
 def _word_runs(text: str):
-    """Yield (tokens_of_number_run, token_after_run, tokens_after_that) for each run of number words."""
-    toks = _TOKEN_RE.findall(text.lower().replace("-", " "))
+    """Yield (tokens_of_number_run, tokens_after_it) for each run of number words."""
+    for run, rest, _, _ in _word_spans(text):
+        yield run, rest
+
+
+def _word_spans(text: str):
+    """The same runs, with where each one starts and ends in the text."""
+    found = list(_TOKEN_RE.finditer(text.lower().replace("-", " ")))
+    toks = [m.group(0) for m in found]
     i = 0
     while i < len(toks):
         t = toks[i]
@@ -85,7 +92,7 @@ def _word_runs(text: str):
                                  or (run and run[-1] == "point" and toks[j] in _ONES)):
             run.append(toks[j])
             j += 1
-        yield run, toks[j:]
+        yield run, toks[j:], found[i].start(), found[j - 1].end()
         i = j
 
 
@@ -104,26 +111,55 @@ def parse_amount(text: str) -> float | None:
         from decimal import Decimal
         cents = Decimal(str(base)) * 100 / (2 if fraction[1].lower() == "half" else 4)
         return float(cents / 100) if cents == cents.to_integral_value() else None
+    return _choose(_candidates(text), text)
+
+
+# What follows or precedes a number that isn't money: "for 3 months", "room 2", "at 5pm", "on October 3"
+_NOT_MONEY_AFTER = re.compile(r"\s*-?\s*(?:months?|years?|weeks?|days?|hours?|hrs?|minutes?|mins?|seconds?|times?|people|persons?|kids?|children|"
+                              r"grandkids?|boxes|items?|am|pm|a\.m|p\.m|o'?clock|st|nd|rd|th)\b", re.I)
+_NOT_MONEY_BEFORE = re.compile(r"\b(?:room|apartment|apt|unit|flight|page|number|no\.|floor|gate|bus|route|account|at|january|february|march|"
+                               r"april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s*#?\s*$|#\s*$", re.I)
+_NEXT_TO_VERB = re.compile(r"\b(?:send|sending|pay|paying|give|giving|transfer|wire|lend|request|ask\s+[a-z]+\s+for)\s+((?:[a-z'.-]+\s+){0,3})$", re.I)
+_BREAKS_THE_LINK = {"for", "in", "at", "on", "of", "by", "from", "about", "with", "after", "before", "room", "his", "her", "their", "because"}
+
+
+def _next_to_verb(before: str) -> bool:
+    m = _NEXT_TO_VERB.search(before)
+    return bool(m) and not _BREAKS_THE_LINK & {w.lower() for w in m.group(1).split()}
+
+
+def _candidates(text: str) -> list[dict]:
+    """Every number in the sentence that could be money, in order, each with what gives it away."""
+    out = []
     for m in _MONEY_RE.finditer(text):
         digits, cents, unit = m.group(1), m.group(2), (m.group(3) or "").lower()
-        if is_percent(text, m.end(1) + (len(cents) + 1 if cents else 0)):
+        end = m.end(1) + (len(cents) + 1 if cents else 0)
+        if is_percent(text, end):
             continue                                  # "20%" is a share, not $20
         # Skip long numbers that look like account numbers, phone numbers or dates
         raw = digits.replace(",", "")
+        before = re.sub(r"(?:\$|usd\s*)\s*$", "", text[:m.start(1)], flags=re.I)
+        marked = len(before) != len(text[:m.start(1)]) or bool(unit)
+        after_cents = re.match(r"\s*cents?\b", text[end:], re.I)
         if len(raw) >= 7 and not unit:
+            continue
+        if not marked and not after_cents and (_NOT_MONEY_AFTER.match(text[end:]) or _NOT_MONEY_BEFORE.search(before)):
             continue
         val = float(raw + (f".{cents}" if cents else ""))
         if unit in ("k", "thousand", "grand"):
             val *= 1000
-        return val
-    for run, rest in _word_runs(text):
+        if after_cents:
+            val, marked = val / 100, True
+        out.append({"value": val, "start": len(before), "end": m.end(), "unit": marked, "verb": _next_to_verb(before), "cents": bool(after_cents)})
+    for run, rest, start, end in _word_spans(text):
         base = words_to_number(run)
         if base is None or base == 0:
             continue
         has_unit = bool(rest) and rest[0] in _UNIT_WORDS
-        # A lone "two" / "five" with no "dollars" is probably not an amount
-        # (e.g. ASR heard "two hundred" as "two hundread") — better to ask than to guess
-        if len(run) == 1 and base < 10 and not has_unit:
+        is_cents = bool(rest) and rest[0] in ("cent", "cents")
+        if len(run) == 1 and base < 10 and not has_unit and not is_cents:
+            continue               # a lone "two" or "five" is probably not an amount: better to ask than to guess
+        if not has_unit and not is_cents and (_NOT_MONEY_AFTER.match(text[end:]) or _NOT_MONEY_BEFORE.search(text[:start])):
             continue
         if has_unit:   # "twenty dollars fifty" / "twenty dollars and fifty cents" -> 20.5
             after = rest[1:]
@@ -135,8 +171,36 @@ def parse_amount(text: str) -> float | None:
             c = words_to_number(cents_run)
             if c is not None and 0 < c < 100:
                 base += c / 100
-        return base
-    return None
+                end = start + len(text[start:])    # those words are part of this amount, not an amount of their own
+        if is_cents:
+            base /= 100
+        out.append({"value": base, "start": start, "end": end, "unit": has_unit or is_cents, "verb": _next_to_verb(text[:start]), "cents": is_cents})
+    out.sort(key=lambda c: c["start"])
+    merged = []
+    for c in out:                  # "86 dollars and 40 cents" is one amount
+        if merged and c["cents"] and not merged[-1]["cents"] and merged[-1]["end"] < len(text) and re.fullmatch(r"\s*(?:and|,)?\s*", text[merged[-1]["end"]:c["start"]], re.I):
+            merged[-1] = {**merged[-1], "value": merged[-1]["value"] + c["value"], "end": c["end"]}
+        elif not any(m["start"] <= c["start"] < m["end"] for m in merged):
+            merged.append(c)
+    return merged
+
+
+def _choose(candidates: list[dict], text: str) -> float | None:
+    """The number next to the verb ("send 20 ..."), else the one marked as money, else the only one. Two equally good
+    candidates means Star asks: a guessed amount on a card that looks right is the mistake to avoid."""
+    near = next((c for c in candidates if c["verb"]), None)
+    if near:
+        return near["value"]
+    marked = {c["value"] for c in candidates if c["unit"]}
+    if marked:
+        return marked.pop() if len(marked) == 1 else None
+    values = {c["value"] for c in candidates}
+    return values.pop() if len(values) == 1 else None
+
+
+def has_overlong_number(text: str) -> bool:
+    """Seven digits or more with no "dollars": parse_amount won't read it as money, so say so instead of just asking again."""
+    return bool(re.search(r"(?<![\d.,])\d{7,}(?!\d)", text))
 
 
 def is_percent(text: str, end: int) -> bool:

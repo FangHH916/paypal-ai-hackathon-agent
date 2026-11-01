@@ -1,4 +1,4 @@
-"""The PayPal routes over real HTTP: a redirect sets nothing, capture never happens on a GET, webhooks need a signature,
+﻿"""The PayPal routes over real HTTP: a redirect sets nothing, capture never happens on a GET, webhooks need a signature,
 a concurrent double click makes one payment, simulator routes vanish outside simulator mode."""
 import base64
 import json
@@ -103,7 +103,7 @@ class TestRedirectsSetNothing(Base):
         self.sim.buyer_decide_order(res["payment"]["paypal"]["order_id"], "approve")
         back = self.post("/api/paypal/orders/return", {"session_id": self.sid, "payment_id": res["payment"]["payment_id"]}).json()
         self.assertEqual((back["payment"]["state"], back["payment"]["verified"]), ("PAID", True))
-        self.assertIn("PayPal confirms", back["reply"])
+        self.assertIn("The simulator confirms", back["reply"])
         res2 = self.post("/api/confirm", self.confirm_body(self.card("I need a weekly groceries box"))).json()
         out = self.post("/api/paypal/orders/cancelled", {"session_id": self.sid, "payment_id": res2["payment"]["payment_id"]}).json()
         self.assertEqual(out["payment"]["state"], "BUYER_CANCELLED")

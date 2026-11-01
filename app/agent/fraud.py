@@ -48,7 +48,10 @@ PATTERNS = [
                       r"bitcoin|double your",
      "Investments that promise high returns are almost always scams."),
     ("giftcard_demand", 3, r"(pay|paid|asked|told|wants?|needs?).{0,40}(with|in|using|by) gift ?cards?|gift ?cards?.{0,30}(to pay|as payment|numbers?|codes?)|"
-                           r"google play card|itunes card",
+                           r"google play card|itunes card|"
+                           r"\b(?:man|woman|lady|guy|someone|somebody|caller|stranger|person)\b.{0,60}\b(?:must|have to|has to|need to|says?|said|told|asking|asked|wants?|made)\b.{0,40}gift ?cards?|"
+                           r"(?:on the phone|called me|phone call).{0,60}gift ?cards?|"
+                           r"\b(?:told|asked|instructed|made|forced)\b.{0,20}\b(?:buy|get|purchase)\b.{0,20}gift ?cards?",
      "Being asked to pay with gift cards is a classic sign of a scam."),
     ("giftcard", 2, r"gift ?card",
      "Gift cards are how scammers like to be paid, so your family checks this one."),

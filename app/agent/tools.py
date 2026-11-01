@@ -185,8 +185,7 @@ class ToolGateway:
             s.add_trace("judge", f"Scam assessment (separate model call): {j_level.value}", {"raw": raw[:300]})
             s.escalate_scam(prot.cap_scam(j_level, level_p), j_reasons)   # one-way escalation
 
-    @staticmethod
-    def _draft_result(d):
+    def _draft_result(self, d):
         frozen = d.verification.get("status") == "mismatch"
         if d.risk.level == RiskLevel.BLOCK:
             status = "This transaction was blocked by the rules and cannot be executed. Gently tell the user why."
@@ -196,10 +195,17 @@ class ToolGateway:
         else:
             status = ("Draft created and waiting for the user to check the confirmation card and authorize it "
                       "themselves. You cannot execute it; in one or two simple sentences, ask the user to check the card.")
+        family, guardian = "", self.wallet.user(d.user_id)["guardian"]
+        if not frozen and d.risk.level != RiskLevel.BLOCK and d.decision["checks"]["guardian_approval"]["status"] == "pending":
+            family = "waiting" if guardian["status"] == "paired" else "unpaired"
+            status = (f"Draft created, but {guardian['name']} (the family guardian) must approve it on her own device before the user can sign. "
+                      if family == "waiting" else
+                      "Draft created, but it needs the family guardian and none is paired, so it cannot be signed. Tell the user they can "
+                      "invite the guardian on the Family page, or cancel. ") + "Do not tell the user to confirm with a fingerprint yet."
         return {"draft_id": d.draft_id, "kind": d.kind, "payee": d.payee_name, "amount": fmt_money(d.amount_cents),
                 "risk_level": d.risk.level.value, "reasons": d.risk.reasons,
                 "frozen": frozen, "mismatches": d.verification.get("mismatches", []) if frozen else [],
-                "status": status}
+                "family": family, "guardian": guardian["name"].split()[0], "status": status}
 
     # ---------------------------------------------------------------- Control
     def _care(self, s: Session, a: CareArgs):

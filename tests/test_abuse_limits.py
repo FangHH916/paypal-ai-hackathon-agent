@@ -8,15 +8,17 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
-from app import runtime, security
-from app.config import ROOT, settings
-from app.kernel.state import SessionStore, UnknownSession
-from app.models import Phase
-from app.wallet import catalogue, payments
-from app.wallet.guardian import GuardianError
-from app.wallet.ledger import DEMO_USER, Wallet
-from tests.paypal_helpers import USER, World
-from tests.test_paypal_http import Base as HttpBase
+os.environ.setdefault("RULE_FIXED_HOUR", "14")     # before anything imports app.config: results can't depend on the clock
+
+from app import runtime, security  # noqa: E402
+from app.config import ROOT, settings  # noqa: E402
+from app.kernel.state import SessionStore, UnknownSession  # noqa: E402
+from app.models import Phase  # noqa: E402
+from app.wallet import catalogue, payments  # noqa: E402
+from app.wallet.guardian import GuardianError  # noqa: E402
+from app.wallet.ledger import DEMO_USER, Wallet  # noqa: E402
+from tests.paypal_helpers import USER, World  # noqa: E402
+from tests.test_paypal_http import Base as HttpBase  # noqa: E402
 
 
 def bill_record(n, invoice, cents=None):

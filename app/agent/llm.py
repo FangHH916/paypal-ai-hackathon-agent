@@ -14,7 +14,7 @@ import uuid
 import requests
 
 from app.agent import fraud
-from app.agent.textparse import fix_asr, match_payees, parse_amount
+from app.agent.textparse import fix_asr, has_overlong_number, match_payees, parse_amount
 from app.config import settings
 from app.kernel.evidence import confirmed_proposal
 from app.kernel.hotline import hotline_words
@@ -238,7 +238,7 @@ class OfflineLLM:
             r = rows[0]
             word = {"SENT": "was received", "PAID": "is paid", "REFUNDED": "was refunded"}.get(r["state"])
             if word and r["verified"]:
-                return self._say(f"Yes. PayPal confirms your {r['amount']} for {r['what']} {word}.")
+                return self._say(f"Yes. {r.get('confirmed_by', 'PayPal')} confirms your {r['amount']} for {r['what']} {word}.")
             if r["state"] == "UNKNOWN":
                 return self._say(f"I can't confirm your {r['amount']} for {r['what']} yet. Please don't pay again. I'm checking with PayPal.")
             return self._say(f"Your {r['amount']} for {r['what']} is not finished yet: {r['state'].replace('_', ' ').lower()}.")
@@ -334,6 +334,8 @@ class OfflineLLM:
                 if previous:
                     amount = -previous["amount_cents"] / 100
             if amount is None:
+                if has_overlong_number(text):
+                    return self._say(f"That number is too long to be an amount, so I won't use it. How much would you like to send to {payee['name']}?")
                 return self._say(f"How much would you like to send to your {payee['relation']} {payee['name']}?")
             if "draft_transfer" not in results:
                 if "draft_transfer" not in allowed:
@@ -427,6 +429,12 @@ class OfflineLLM:
             why = d["reasons"][0] if d["reasons"] else ""
             return OfflineLLM._say(f"I can't process this one: {why}")
         verb = {"refund": "back from", "money_request": "asked from", "purchase": "to"}.get(d.get("kind"), "to")
+        if d.get("family") == "unpaired":
+            return OfflineLLM._say(f"This one needs your family's OK: {d['amount']} {verb} {d['payee']}. Your family guardian isn't set up yet, "
+                                   "so it can't be sent. You can invite them on the Family page, or cancel this.")
+        if d.get("family") == "waiting":
+            return OfflineLLM._say(f"This one needs your family's OK: {d['amount']} {verb} {d['payee']}. {d['guardian']} sees this exact card on her own "
+                                   "device. Once she approves, you can sign it.")
         return OfflineLLM._say(f"Please check the card: {d['amount']} {verb} {d['payee']}. If it's right, confirm with your fingerprint.")
 
     @staticmethod

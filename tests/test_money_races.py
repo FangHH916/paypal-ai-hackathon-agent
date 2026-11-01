@@ -1,17 +1,20 @@
 """Regressions from the code review: races around a payment in flight, swapping the guardian, and the small-then-large scam."""
+import os
 import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
-from app import runtime
-from app.kernel import p256
-from app.kernel.executor import KernelError
-from app.models import Phase
-from app.wallet.guardian import GuardianError
-from tests.paypal_helpers import USER, World
-from tests.test_paypal_http import Base as HttpBase
+os.environ.setdefault("RULE_FIXED_HOUR", "14")     # before anything imports app.config: results can't depend on the clock
+
+from app import runtime  # noqa: E402
+from app.kernel import p256  # noqa: E402
+from app.kernel.executor import KernelError  # noqa: E402
+from app.models import Phase  # noqa: E402
+from app.wallet.guardian import GuardianError  # noqa: E402
+from tests.paypal_helpers import USER, World  # noqa: E402
+from tests.test_paypal_http import Base as HttpBase  # noqa: E402
 
 
 class TestCancelWhilePaying(HttpBase):
