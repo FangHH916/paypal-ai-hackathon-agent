@@ -77,7 +77,7 @@ An unknown outcome older than `PAYPAL_UNKNOWN_ALERT_MIN` alerts the guardian. St
 | R95 | A refund of something that isn't hers, can't be reversed, or is over what's left | BLOCK |
 | R96 | "We refunded you too much, send the difference" | BLOCK |
 
-Base rules are in `app/kernel/rules.py`: unknown payee, allowance, limits, new payee, velocity, night, grounding (R50 to R53), unknown outcome (R60) and recent duplicates (R61).
+Base rules are in `app/kernel/rules.py`: unknown payee, allowance, limits, new payee, velocity, night, grounding (R50 to R53), unknown outcome (R60), recent duplicates (R61), a bill already being paid (R62) and the small-payment-first ramp on someone she added herself (R15).
 
 ## Decisions
 

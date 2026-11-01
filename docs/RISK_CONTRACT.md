@@ -38,7 +38,7 @@ The dependency ids belong to the customer's signed card. The risk explanation is
 - **Verification missing:** waits, and can't be authorised.
 - **Dependency not executed:** refused, and the request is confirmed again.
 - **Velocity window full,** by default 5 in 10 minutes (`RULE_VELOCITY_MAX`, `RULE_VELOCITY_WINDOW_MIN`): new payments are refused until the window frees up. It is checked again under the write lock, and the count persists. Idempotent retries don't use up the count, and neither do refunds or money requests.
-- **Family guardian required:** a payment to **someone never paid before** above `GUARDIAN_THRESHOLD`, a merchant or bill check that asks for the family, or scam signs earlier in the conversation that weren't stopped outright. Refunds and money requests don't need it. Impersonation scams nearly always use a new payee, so this is where approval matters most.
+- **Family guardian required:** a payment to **someone never paid before** above `GUARDIAN_THRESHOLD`, someone she added herself building up to it (over the threshold in total within 30 days, or above the most she has ever sent them), a merchant or bill check that asks for the family, or scam signs earlier in the conversation that weren't stopped outright. Refunds and money requests don't need it. Impersonation scams nearly always use a new payee, so this is where approval matters most.
   Not needed: bills and family or payees paid before, though cooling-off, verify questions and signatures still apply. Hard limits always apply.
 - **Cooling-off, the extra question, the guardian and the device signature** are separate conditions and can't stand in for each other.
 - **Invalid signature, a replay, or risk raised before execution:** refused.
@@ -50,7 +50,7 @@ pip install -r tests/requirements.txt
 python -m app.serve
 ```
 
-The customer uses the chat and card at localhost:8000. Safety evidence is collapsed by default, to keep her path simple. **Security lab > Run risk demonstration** runs the whole isolated demonstration, with no online model.
+The customer uses the chat and card at localhost:8000. The safety evidence ("How Star checked this") is collapsed by default, to keep her path simple. **Security lab > Run risk demonstration** runs the whole isolated demonstration, with no online model.
 
 To show the family guardian:
 
