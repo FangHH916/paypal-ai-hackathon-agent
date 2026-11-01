@@ -35,6 +35,20 @@ def _sha(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _signed_body(payload) -> dict:
+    """A decision's JSON object, with a number for its expiry. Anything else is a clean refusal, never a crash."""
+    try:
+        body = json.loads(payload)
+    except (TypeError, ValueError) as e:
+        raise GuardianError("Malformed request.", "BAD_REQUEST") from e
+    if not isinstance(body, dict):
+        raise GuardianError("Malformed request.", "BAD_REQUEST")
+    expiry = body.get("expires_at")
+    if isinstance(expiry, bool) or not isinstance(expiry, (int, float)):
+        raise GuardianError("Malformed request.", "BAD_REQUEST")
+    return body
+
+
 class GuardianDesk:
     def __init__(self, wallet, audit=None):
         self.wallet, self.audit = wallet, audit
@@ -169,21 +183,22 @@ class GuardianDesk:
             body = json.loads(payload)
         except ValueError:
             return False
+        if not isinstance(body, dict):
+            return False
         if (body.get("domain"), body.get("draft_id"), body.get("digest"), body.get("decision")) != (DOMAIN, draft_id, digest, decision):
             return False
         return verify_device_signature(g["key_jwk"], payload, signature)
 
     def decide(self, user_id: str, payload: str, signature: str) -> dict:
         """Check a decision and use it up. Returns the row it was for. Replay of a signature: refused."""
-        try:
-            body = json.loads(payload)
-        except (TypeError, ValueError) as e:
-            raise GuardianError("Malformed decision.", "BAD_REQUEST") from e
+        body = _signed_body(payload)
         draft_id, decision = body.get("draft_id", ""), body.get("decision", "")
+        if not isinstance(draft_id, str) or not isinstance(decision, str):
+            raise GuardianError("Malformed request.", "BAD_REQUEST")
         row = self.wallet.user(user_id)["pending_approvals"].get(draft_id)
         if not row:
             raise GuardianError("This payment isn't waiting for you any more.", "GUARDIAN_NOT_PENDING")
-        if body.get("expires_at", 0) < time.time():
+        if body["expires_at"] < time.time():
             raise GuardianError("This confirmation expired. Please try again.", "EXPIRED")
         if body.get("digest") != row["digest"]:
             raise GuardianError("The card changed. This decision doesn't apply to it.", "DIGEST_MISMATCH")
@@ -200,11 +215,8 @@ class GuardianDesk:
     def sign_lift(self, user_id: str, payload: str, signature: str) -> None:
         """Guardian's half of lifting a freeze: same key, its own purpose string, no draft involved."""
         g = self.wallet.user(user_id)["guardian"]
-        try:
-            body = json.loads(payload)
-        except (TypeError, ValueError) as e:
-            raise GuardianError("Malformed request.", "BAD_REQUEST") from e
-        if body.get("domain") != DOMAIN + "-LIFT" or body.get("expires_at", 0) < time.time() or not g["key_jwk"] \
+        body = _signed_body(payload)
+        if body.get("domain") != DOMAIN + "-LIFT" or body["expires_at"] < time.time() or not g["key_jwk"] \
                 or not verify_device_signature(g["key_jwk"], payload, signature):
             raise GuardianError("That signature isn't from the paired guardian device.", "GUARDIAN_SIGNATURE")
 

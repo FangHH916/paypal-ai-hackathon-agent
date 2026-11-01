@@ -6,7 +6,7 @@ from app.agent.llm import OfflineLLM, OpenAICompatLLM, build_llm
 from app.agent.loop import Agent
 from app.agent.tools import ToolGateway
 from app.agent.verifier import Verifier
-from app.config import settings
+from app.config import secret_problem, settings
 from app.kernel.audit import AuditLog
 from app.kernel.credentials import CredentialRegistry
 from app.kernel.executor import Kernel
@@ -15,6 +15,10 @@ from app.kernel.voice import VoiceStore
 from app.paypal import config as paypal_config, factory
 from app.wallet.gateway import ExecutionGateway
 from app.wallet.ledger import Wallet
+
+_secret_problem = secret_problem(settings.signing_secret, public_demo=settings.public_demo, mode=paypal_config.load().mode)
+if _secret_problem:
+    raise SystemExit(_secret_problem)
 
 sessions = SessionStore(settings.ledger_path)
 wallet = Wallet(settings.ledger_path)

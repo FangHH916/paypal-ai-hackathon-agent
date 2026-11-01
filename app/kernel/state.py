@@ -14,6 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
+from app.config import settings
 from app.models import Draft, Phase, RiskLevel
 
 ALLOWED = {
@@ -145,6 +146,7 @@ class UnknownSession(Exception):
 
 class SessionStore:
     MAX_SESSIONS = 5000
+    MAX_BINDINGS = 20000
 
     def __init__(self, path=None):
         self.path = path
@@ -166,6 +168,13 @@ class SessionStore:
     def _trim(self) -> None:
         for old in list(self._s)[:max(0, len(self._s) - self.MAX_SESSIONS)]:
             self._s.pop(old, None)
+        forgotten = list(self._bindings)[:max(0, len(self._bindings) - self.MAX_BINDINGS)]
+        for old in forgotten:
+            self._bindings.pop(old, None)
+            self._s.pop(old, None)
+        if forgotten and self.path:
+            with closing(sqlite3.connect(self.path)) as db, db:
+                db.executemany("DELETE FROM sessions WHERE sid = ?", [(sid,) for sid in forgotten])
 
     def _create(self, sid, uid):
         self._bindings[sid] = uid
@@ -179,6 +188,8 @@ class SessionStore:
     def get(self, session_id: str | None) -> Session:
         with self._lock:
             if session_id is None:
+                if settings.public_demo:      # a shared server has no shared customer: each browser gets its own (new_for_visitor)
+                    raise UnknownSession("Session not found. Please start a new demo session.")
                 return self._create(uuid.uuid4().hex, "u_lee")
             if not isinstance(session_id, str) or not session_id:
                 raise ValueError("session_id must be a non-empty string")

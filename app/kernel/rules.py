@@ -94,6 +94,11 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
         if same:
             raise_to(RiskLevel.MEDIUM, "R61_RECENT_DUPLICATE", f"You just paid {payee['name'] if payee else 'them'} this same amount a few minutes ago.")
 
+    # ---- One bill, one payment. The ledger enforces this too, under its own lock ----
+    if draft.kind == "bill" and draft.invoice_id and wallet.open_bill_payment(user, draft.invoice_id, draft.draft_id):
+        raise_to(RiskLevel.BLOCK, "R62_BILL_IN_PROGRESS", "You've already started paying this bill, so I won't pay it twice. "
+                 "You can follow it on your Bills page.")
+
     # ---- Daily limit: money to other people today ----
     if draft.kind == "transfer" and payee is not None:
         lim = wallet.limits(user)["daily_transfer_cents"]

@@ -9,6 +9,7 @@ execution gateway (app/wallet/gateway.py), which re-verifies the customer's sign
 from __future__ import annotations
 
 import copy
+import itertools
 import secrets
 import threading
 import time
@@ -83,6 +84,7 @@ def _world_user() -> dict:
 class Wallet(LedgerStorage):
     def __init__(self, path=None):
         self._lock = threading.RLock()
+        self._tick, self._last_seen = itertools.count(1), {}      # who was active last, for choosing whom to forget
         self.path = None
         self.world, self.payments, self.recent_exec_times, self.outbox, self.webhook_events = {}, {}, {}, [], {}
         self.reset()
@@ -101,27 +103,47 @@ class Wallet(LedgerStorage):
     # ---------- Demo customers per visitor ----------
     # On a shared online demo every browser gets its own copy of Mrs. Lee ("u_lee~<visitor id>"), so one tester's
     # payments, resets and passkey never affect another's. Locally (no visitor id) everyone is plain "u_lee".
-    MAX_VISITORS = 2000
+    MAX_VISITORS = 300       # every write still snapshots the whole world (storage.py), so this also bounds its cost
 
     @staticmethod
     def visitor_user_id(visitor: str) -> str:
         return f"{DEMO_USER}~{visitor}"
 
     def _ensure(self, user_id: str) -> None:
-        if user_id in self.world["users"] or not user_id.startswith(DEMO_USER + "~"):
+        if not user_id.startswith(DEMO_USER + "~"):
+            return
+        self._last_seen[user_id] = next(self._tick)
+        if user_id in self.world["users"]:
             return
         with self._lock:
-            users = self.world["users"]
-            if user_id not in users:
-                visitors = [u for u in users if "~" in u]
-                for old in visitors[:max(0, len(visitors) - self.MAX_VISITORS + 1)]:   # forget the oldest
-                    users.pop(old, None)
-                users[user_id] = _world_user()
+            if user_id not in self.world["users"]:
+                self._make_room()
+                self.world["users"][user_id] = _world_user()
+
+    def _guarded(self, world_user: dict) -> bool:
+        return world_user["frozen"]["on"] or world_user["guardian"]["status"] == "paired"
+
+    def _make_room(self) -> None:
+        """At the cap the idlest visitor goes, along with their records. A world someone froze or paired a guardian on is
+        only given up when every other one is too."""
+        users = self.world["users"]
+        visitors = [u for u in users if "~" in u]
+        over = len(visitors) - self.MAX_VISITORS + 1
+        if over <= 0:
+            return
+        visitors.sort(key=lambda u: (self._guarded(users[u]), self._last_seen.get(u, 0)))
+        for old in visitors[:over]:
+            users.pop(old, None)
+            self._last_seen.pop(old, None)
+            self.recent_exec_times.pop(old, None)
+            self.payments = {k: r for k, r in self.payments.items() if r.get("user_id") != old}
 
     @atomic_write
     def reset_user(self, user_id: str) -> None:
         """Reset one demo customer's wallet, payees, invoices, guardian and records (nobody else's)."""
         with self._lock:
+            if user_id not in self.world["users"] and "~" in user_id:
+                self._make_room()
             self.world["users"][user_id] = _world_user()
             self.recent_exec_times.pop(user_id, None)
             self.payments = {k: r for k, r in self.payments.items() if r.get("user_id") != user_id}
@@ -251,6 +273,25 @@ class Wallet(LedgerStorage):
             r = self.payment_by_draft(user_id, draft_id)
             return {**copy.deepcopy(r), "status": payments.status_of(r)} if r else None
 
+    def open_bill_payment(self, user_id: str, invoice_id: str, exclude_draft: str = "") -> dict | None:
+        """A signed payment already on this invoice that hasn't been given back."""
+        with self._lock:
+            return next((r for r in self.payments.values() if r["user_id"] == user_id and r["kind"] == "bill"
+                         and r["card"].get("invoice_id") == invoice_id and r["draft_id"] != exclude_draft
+                         and r["state"] not in payments.RELEASES), None)
+
+    def _check_invoice(self, rec: dict) -> None:
+        invoice_id = rec["card"].get("invoice_id")
+        inv = self.invoice(rec["user_id"], invoice_id or "")
+        if not inv:
+            return
+        if inv["status"] not in ("SENT", "UNPAID"):
+            raise ValueError(f"R62_BILL_IN_PROGRESS: this bill is already {inv['status'].lower()}")
+        if inv["amount_cents"] != rec["amount_cents"]:
+            raise ValueError("R62_BILL_IN_PROGRESS: the amount isn't the amount on this bill")
+        if self.open_bill_payment(rec["user_id"], invoice_id, rec["draft_id"]):
+            raise ValueError("R62_BILL_IN_PROGRESS: a payment on this bill is already under way")
+
     # ---------- Write: only the execution gateway, reconcile and webhooks may call these ----------
     @atomic_write
     def begin_payment(self, rec: dict, *, reserve: bool) -> dict:
@@ -263,6 +304,8 @@ class Wallet(LedgerStorage):
                 raise ValueError("R14_WALLET_FROZEN: payments are frozen")
             if reserve:                     # only spending counts: getting money back is never rate limited
                 self._check_velocity(user, rec["card"])
+            if rec["kind"] == "bill":       # one bill, one payment: checked under the same lock as the reservation
+                self._check_invoice(rec)
             if reserve:
                 acct = self.accounts(user)[0]
                 if acct["balance_cents"] < cents:

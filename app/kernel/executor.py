@@ -33,7 +33,7 @@ _RAIL = {"transfer": "payouts", "bill": "invoice", "purchase": "orders", "money_
 _STOP_NAMES = {"R03_OVER_ALLOWANCE": "Over the allowance", "R04_HARD_LIMIT": "Over Star's limit", "R09_RAIL_UNAVAILABLE": "PayPal not configured",
                "R13_DAILY_LIMIT": "Over the daily limit", "R14_WALLET_FROZEN": "Payments frozen", "R21_VELOCITY": "Too many payments",
                "R52_NOT_REQUESTED": "Nobody asked for this", "R53_WRONG_SHARE": "Wrong share of an amount",
-               "R60_UNKNOWN_OUTCOME": "Earlier payment still unknown", "R80_INVOICE_PHONE": "Phone number in the invoice",
+               "R60_UNKNOWN_OUTCOME": "Earlier payment still unknown", "R62_BILL_IN_PROGRESS": "Bill already being paid", "R80_INVOICE_PHONE": "Phone number in the invoice",
                "R84_INSTRUCTION_IN_DATA": "Hidden instruction in the text", "R91_PRICE_ANOMALY": "Price far too high", "R92_MERCHANT_FLAGGED": "Flagged seller",
                "R93_NOT_IN_CATALOGUE": "Not the catalogue's offer", "R94_GIFT_CARD": "Gift card scam signs", "R95_REFUND_INVALID": "Refund not possible",
                "R96_REFUND_SCAM": "Refund scam signs", "R00_UNKNOWN_PAYEE": "Unknown person"}

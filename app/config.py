@@ -26,6 +26,17 @@ def _hosts() -> list[str]:
     return hosts
 
 
+_DEV_SECRET = "dev-only-change-me"
+_PLACEHOLDER_SECRETS = {_DEV_SECRET.encode(), b"change-me-to-a-long-random-string", b""}
+
+
+def secret_problem(secret: bytes, *, public_demo: bool, mode: str) -> str:
+    """The development secret is fine on one person's own machine with the simulator, and nowhere else."""
+    if secret in _PLACEHOLDER_SECRETS and (public_demo or mode != "simulator"):
+        return "SIGNING_SECRET must be set to a long random value on a shared server or outside the simulator."
+    return ""
+
+
 class Settings:
     ledger_path = Path(_f("LEDGER_PATH", str(ROOT / "data" / "ledger.sqlite3")))
     # ---- The wallet ----
@@ -75,7 +86,7 @@ class Settings:
     fixed_hour = int(os.environ["RULE_FIXED_HOUR"]) if os.getenv("RULE_FIXED_HOUR") else None
 
     # ---- Signing ----
-    signing_secret = _f("SIGNING_SECRET", "dev-only-change-me").encode()
+    signing_secret = (_f("SIGNING_SECRET", _DEV_SECRET) or _DEV_SECRET).encode()
     auth_token_ttl = int(_f("AUTH_TOKEN_TTL", "120"))
     # device_key = the browser signs every payment with its own non-extractable P-256 key (default)
     # mock       = also accept the old "demo-fingerprint" string (only for quick scripts; never for the demo)
@@ -87,6 +98,8 @@ class Settings:
     allowed_hosts = _hosts()
     # A shared online demo: every browser is its own demo customer, and nobody can reset everyone's world
     public_demo = _f("PUBLIC_DEMO", "0").lower() in ("1", "true", "yes")
+    # How many proxies of our own sit in front of the server (each appends to X-Forwarded-For). 0 = ignore the header.
+    trusted_proxy_hops = int(_f("TRUSTED_PROXY_HOPS", "0") or 0)
     # The demo's default signer: a simulated fingerprint step unlocks a non-extractable browser key that signs the
     # exact card. Real passkeys (Face ID / Touch ID / Windows Hello) are an
     # opt-in in Settings. Set ALLOW_BROWSER_KEY=0 to require a real passkey for every payment.

@@ -7,6 +7,7 @@ services:
     env_file: ../.env
     environment:
       PUBLIC_DEMO: "1"
+      TRUSTED_PROXY_HOPS: "1"     # Caddy below is the one proxy in front of the app
       PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST}
     volumes:
       - star-data:/srv/data

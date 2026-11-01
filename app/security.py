@@ -4,8 +4,8 @@
 * Same-origin POSTs   - a browser POST with a foreign Origin header is refused: blocks cross-site requests
 * JSON only           - POST bodies must be application/json: a plain HTML form can't trigger an API call
 * Size limits         - 32 KB for API calls, 64 KB for the webhook, 3 MB for the speech endpoint
-* Rate limits         - online demo only (PUBLIC_DEMO=1): model and speech calls per device per 5 minutes; the
-                        webhook and guardian endpoints always
+* Rate limits         - online demo only (PUBLIC_DEMO=1): model, speech, lab and reset calls per address per 5 minutes;
+                        the webhook and guardian endpoints always, and a guardian's feed per device as well
 * Security headers    - strict CSP (no inline script, no third-party code), no framing, no sniffing,
                         microphone allowed only for this page
 
@@ -14,6 +14,7 @@ This is a single-process demo server. Do not expose it to the internet as-is (se
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -58,22 +59,28 @@ LIMITS = {"/api/asr": ASR_LIMIT, "/api/paypal/webhook": WEBHOOK_LIMIT}
 
 
 # Each device gets a fair share of the model and speech APIs (they cost money and have quotas)
-COSTLY = {"/api/chat": 40, "/api/asr": 20, "/api/lab/contract": 6, "/api/lab/drill": 12, "/api/lab/naive-agent": 12}          # requests per device per 5 minutes
+COSTLY = {"/api/chat": 40, "/api/asr": 20, "/api/lab": 12, "/api/lab/contract": 6, "/api/lab/drill": 12, "/api/lab/naive-agent": 12,
+          "/api/demo/model-mistake": 12, "/api/reset": 30}          # requests per address per 5 minutes
 # These answer to anyone on the internet, so they are limited in every mode
-ALWAYS = {"/api/paypal/webhook": 600, "/api/guardian/pair": 30, "/api/guardian/feed": 400, "/api/guardian/challenge": 60,
+ALWAYS = {"/api/paypal/webhook": 600, "/api/guardian/pair": 30, "/api/guardian/feed": 2400, "/api/guardian/challenge": 60,
           "/api/guardian/decide": 60, "/api/guardian/freeze": 20, "/api/guardian/lift": 20, "/simulator/api/decide": 60}
+FEED_PER_DEVICE = 400         # a guardian page polls every 3 s. Several family devices can share one address.
 _WINDOW = 300
 _hits: dict[tuple[str, str], deque] = {}
 _hits_lock = threading.Lock()
 
 
 def _client(scope, headers) -> str:
-    # Never let arbitrary forwarded headers create a fresh rate-limit identity.
-    # The ASGI server must run with proxy_headers=False (see app/serve.py).
-    return (scope.get("client") or ("?",))[0]
+    # Never let arbitrary forwarded headers create a fresh rate-limit identity: only the entries our own proxies appended
+    # count, and everything to their left is forgeable. Without TRUSTED_PROXY_HOPS the header is ignored altogether, and
+    # behind a proxy all clients share one address. The ASGI server must run with proxy_headers=False (see app/serve.py).
+    peer = (scope.get("client") or ("?",))[0]
+    hops = settings.trusted_proxy_hops
+    chain = [a.strip() for a in headers.get("x-forwarded-for", "").split(",") if a.strip()]
+    return chain[-hops] if 0 < hops <= len(chain) else peer
 
 
-def _allow(client: str, path: str) -> bool:
+def _allow(client: str, path: str, limit: int | None = None) -> bool:
     now = time.time()
     with _hits_lock:
         if len(_hits) > 20000:
@@ -81,10 +88,18 @@ def _allow(client: str, path: str) -> bool:
         q = _hits.setdefault((client, path), deque())
         while q and now - q[0] > _WINDOW:
             q.popleft()
-        if len(q) >= {**COSTLY, **ALWAYS}[path]:
+        if len(q) >= (limit if limit is not None else {**COSTLY, **ALWAYS}[path]):
             return False
         q.append(now)
         return True
+
+
+def _feed_device(body: bytes) -> str:
+    try:
+        token = json.loads(body).get("token")
+    except (ValueError, AttributeError):
+        token = None
+    return hashlib.sha256(str(token).encode()).hexdigest()
 
 
 class SecurityMiddleware:
@@ -133,6 +148,8 @@ class SecurityMiddleware:
                 chunks.append(chunk)
                 if not message.get("more_body", False):
                     break
+            if path == "/api/guardian/feed" and not _allow("device:" + _feed_device(b"".join(chunks)), path, FEED_PER_DEVICE):
+                return await self._deny(send, 429, "RATE_LIMITED", "Too many requests from this device. Please wait a minute and try again.")
             original_receive = receive
             delivered = False
             async def buffered_receive():
