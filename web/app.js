@@ -826,7 +826,7 @@ function renderConfirm(){
       ${c.verification?.status === 'match' ? (c.verification.independent ? `<div class="vcheck">${icon('shield')}<span>A separate model re-read your words and agrees.</span></div>`
         : `<div class="vcheck plain">${icon('alert')}<span>Star read your words again with the same offline rules that prepared this card. That's not a second opinion, so please check it yourself.</span></div>`) : ''}
       ${c.decision ? decisionPanel(c.decision) : ''}
-      ${state.care ? '' : '<div class="ticker-host compact" data-compact="1"></div>'}
+      ${state.care ? '<details class="decision-panel"><summary>Calls to PayPal</summary><div class="ticker-host compact" data-compact="1"></div></details>' : '<div class="ticker-host compact" data-compact="1"></div>'}
     </div>
     <div class="cfoot">
       <button type="button" class="btn secondary" id="c-cancel">Cancel</button>
