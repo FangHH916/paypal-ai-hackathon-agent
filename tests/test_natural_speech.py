@@ -77,7 +77,9 @@ class TestGiftCardScripts(World):
                "Someone called and told me to buy gift cards",
                "The caller says I have to get gift cards for him",
                "I was told to buy gift cards and read out the numbers",
-               "a lady on the phone wants me to buy 3 gift cards"]
+               "a lady on the phone wants me to buy 3 gift cards",
+               "The caller wants 500 in gift cards",
+               "A lady from Microsoft asked me to get gift cards"]
 
     def test_being_told_to_buy_is_stopped_with_no_card_to_sign(self):
         for text in self.SCRIPTS:
@@ -86,6 +88,8 @@ class TestGiftCardScripts(World):
             self.assertTrue(self.s.current_draft is None or self.s.phase == Phase.BLOCKED, text)
             self.assertEqual(r.ui["type"], "blocked", (text, r.reply))
             self.assertRegex(r.reply, "(?i)scam")
+            self.assertNotIn("Earlier in this conversation", r.reply, text)   # it was this message, and it counts as a stop
+            self.assertTrue(self.wallet.stops(USER), text)
             self.assertEqual(self.writes(), [])
 
     def test_her_own_gift_card_still_goes_to_the_family(self):
@@ -95,6 +99,21 @@ class TestGiftCardScripts(World):
         self.assertIsNotNone(d)
         self.assertNotEqual(self.s.phase, Phase.BLOCKED)
         self.assertEqual(d.decision["checks"]["guardian_approval"]["status"], "pending")
+
+
+class TestPurchaseAmountSheNamed(World):
+    def test_a_price_that_is_not_the_offer_never_reaches_a_card_to_sign(self):
+        for text in ("Buy a 50 dollar gift card", "Buy my grandson a gift card for 50 dollars"):
+            self.setUp()
+            r = self.turn(text)
+            self.assertEqual(self.s.phase, Phase.IDLE if self.s.current_draft is None else Phase.FROZEN, (text, r.reply))
+            self.assertIn("match", r.reply, text)
+            self.assertEqual(self.writes(), [])
+
+    def test_the_offer_she_actually_named_still_works(self):
+        self.turn("Buy a 500 dollar gift card")
+        self.assertEqual(self.s.current_draft.amount_cents, 50000)
+        self.assertNotEqual(self.s.phase, Phase.FROZEN)
 
 
 class TestBackingOut(World):

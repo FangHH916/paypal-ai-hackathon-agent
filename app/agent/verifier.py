@@ -96,8 +96,9 @@ def extract_offline(utterances: list[str], cat: dict) -> dict:
             hits = match_payees(text, cat["payees"])
     payee = hits[0]["name"] if len(hits) == 1 else None
     amount = parse_amount(text) if intent in ("transfer", "money_request") or (intent == "purchase" and re.search(r"\$|\bdollars?\b|\bbucks?\b|\bfor \d", text, re.I)) else None
-    if intent == "purchase" and amount is not None and match_payees(str(int(amount)) + " gift card", cat["offers"]) and "gift card" in text.lower():
-        amount = None                               # "a 500 dollar gift card" names the item, not a price she set
+    if intent == "purchase" and amount is not None and "gift card" in text.lower() and any(
+            re.search(rf"{int(amount)}", name) for o in cat["offers"] for name in (o["name"], *o["aliases"]) if "gift card" in name.lower()):
+        amount = None                               # "a 500 dollar gift card" names the item; "a 50 dollar gift card" sets a price
     if amount is None and payee and re.search(r"\b(?:same again|usual amount)\b", text, re.I):
         prior = next((t for t in cat.get("transactions", []) if payee.lower() in t["desc"].lower() and t["amount_cents"] < 0), None)
         if prior:

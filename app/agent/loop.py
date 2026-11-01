@@ -290,7 +290,7 @@ class Agent:
         # This message itself hits high-risk phrases and involves moving money: block it without reaching the model.
         # If the session was flagged earlier, later requests go to the model, but the tool gateway has already
         # shrunk the tool set (no more drafting transactions).
-        if level.rank >= RiskLevel.HIGH.rank and fraud.wants_money_move(text):
+        if level.rank >= RiskLevel.HIGH.rank and (fraud.wants_money_move(text) or detect_intent(text) in _MONEY_INTENTS):
             return self._intercept(s, start, text, reasons)
 
         # 0. Plan
@@ -676,7 +676,7 @@ class Agent:
             if draft.risk and draft.risk.level == RiskLevel.BLOCK:
                 # Stopped by the wallet: always the code's wording and the rule that actually stopped it
                 s.add_trace("guard", "Draft blocked by the rules; using the code template", {"model_reply": reply})
-                return "I can't process this: " + " ".join((draft.risk.blocking or draft.risk.reasons)[:2])
+                return "I can't do this one. " + " ".join((draft.risk.blocking or draft.risk.reasons)[:2])
             elif draft.verification.get("status") == "mismatch":
                 # Frozen: always the code's wording, never the model's
                 s.add_trace("guard", "Draft frozen by the independent verifier; using the code template", {"model_reply": reply})

@@ -125,7 +125,7 @@ class TestOneSentenceManySteps(PlannerBase):
             self.sign_all()
         r = self.turn("Send 13 to my daughter")
         self.assertIn("R21_VELOCITY", self.s.current_draft.risk.rule_hits)
-        self.assertTrue(r.reply.startswith("I can't process this: Too many payments"))
+        self.assertTrue(r.reply.startswith("I can't do this one. Too many payments"))
 
     def test_plan_id_is_signed(self):
         self.use_plan(FOUR_STEPS)
