@@ -97,7 +97,7 @@ async function loadPayments(){
 function measureBars(){
   const narrow = matchMedia('(max-width:900px)').matches, root = document.documentElement.style;
   root.setProperty('--nav-h', `${narrow ? $('.sidebar')?.offsetHeight || 0 : 0}px`);
-  root.setProperty('--dock-h', `${$('.composer-wrap')?.offsetHeight || 0}px`);
+  root.setProperty('--dock-h', `${narrow ? $('.composer-wrap')?.offsetHeight || 0 : 0}px`);   // docked only on narrow screens
 }
 const barWatch = 'ResizeObserver' in window ? new ResizeObserver(measureBars) : null;
 function watchBars(){

@@ -528,7 +528,8 @@ dialog::backdrop{background:rgba(5,9,8,.76)}
 .ti pre{overflow:auto;font-size:.85rem;max-height:220px}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono)}
 /* Up over the banner's edge and out of the content column: a message here never sits on the thing it talks about. */
-#toast{position:fixed;right:16px;top:8px;max-width:min(32em,calc(100vw - 32px));padding:.7em 1.1em;background:var(--ink);color:var(--bg);border-radius:var(--radius);opacity:0;pointer-events:none;transition:opacity .15s;z-index:60;text-align:center;font-weight:600}
+/* At the bottom, above any docked bar: never over the SIMULATED band, the navigation or a page title */
+#toast{position:fixed;right:16px;bottom:calc(var(--nav-h,0px) + var(--dock-h,0px) + 12px);max-width:min(32em,calc(100vw - 32px));padding:.7em 1.1em;background:var(--ink);color:var(--bg);border-radius:var(--radius);opacity:0;pointer-events:none;transition:opacity .15s;z-index:60;text-align:center;font-weight:600}
 #toast.show{opacity:1}
 
 /* Shop, bills, family */

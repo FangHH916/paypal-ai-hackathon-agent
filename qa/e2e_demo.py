@@ -1209,6 +1209,58 @@ def run(browser, base: str, args) -> None:
                 server.terminate()
                 server.wait(10)
 
+
+    def toasts_clear():
+        """A toast never covers the SIMULATED band, the navigation or the page title: the Care toast on the app, the
+        pairing toast on the guardian page. 320, 390 and 1440 wide. Own server."""
+        if args.base:
+            return
+        cover = """(sels) => { const t = document.querySelector('#toast').getBoundingClientRect();
+          return [...document.querySelectorAll(sels)].filter(e => e.getClientRects().length).filter(e => { const r = e.getBoundingClientRect();
+            return r.width > 0 && r.left < t.right && t.left < r.right && r.top < t.bottom && t.top < r.bottom; })
+            .map(e => (e.className || e.tagName) + ': ' + e.textContent.trim().slice(0, 30)); }"""
+        for w in (320, 390, 1440):         # a fresh server each: pairing happens once per customer
+            port = free_port()
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+                server = start_server(port, data)
+                url = f"http://localhost:{port}"
+                try:
+                    phone = w < 700
+                    c = browser.new_context(viewport={"width": w, "height": 844 if phone else 900}, has_touch=phone, is_mobile=phone)
+                    q = c.new_page()
+                    watch(q, f"toast-{w}")
+                    try:
+                        q.goto(url + "/")
+                        q.locator("#welcome-enter").click()
+                        expect(q.locator(".hero h1")).to_be_visible()
+                        q.locator("#care-toggle").click()
+                        expect(q.locator("#toast.show")).to_contain_text("Care mode", timeout=5000)
+                        time.sleep(0.2)
+                        hits = q.evaluate(cover, ".band, .topbar, .sidebar .nav-btn, #main h1, .care-hello h1")
+                        check(f"toast {w}: the Care toast covers no band, nav or title", not hits, hits)
+                        shot(q, f"84-toast-care-{w}")
+                        q.locator("#care-toggle").click()
+                        nav(q, "Family")
+                        q.locator("#g-invite").click()
+                        q.locator(".mf-pad").click()
+                        expect(q.locator(".invite-box")).to_be_visible()
+                        link = q.locator("#g-link").input_value()
+                        g = c.new_page()
+                        watch(g, f"toast-guardian-{w}")
+                        g.goto(link)
+                        g.locator("#g-pair").click()
+                        expect(g.locator("#toast.show")).to_contain_text("Paired", timeout=8000)
+                        expect(g.locator("#g-title")).to_be_visible()
+                        time.sleep(0.2)
+                        hits = g.evaluate(cover, ".g-top, #g-title, #g-sub")
+                        check(f"toast {w}: the pairing toast covers no title", not hits, hits)
+                        shot(g, f"84-toast-pair-{w}")
+                    finally:
+                        c.close()
+                finally:
+                    server.terminate()
+                    server.wait(10)
+
     for name, fn in [("Landing and pages", landing), ("Send money to family", send_money), ("Same payment asked twice", double_payment),
                      ("Agentic purchase, approval, capture, refund", purchase_and_refund), ("Cancel on the approval page", cancel_on_approval),
                      ("Pay a bill by invoice", pay_bill), ("The fake invoice", fake_invoice), ("A spoken scam", spoken_scam),
@@ -1220,7 +1272,7 @@ def run(browser, base: str, args) -> None:
                      ("Rescore fixes on a phone", rescore_fixes), ("Rescore: one clock", one_clock),
                      ("Rescore: polish", polish_fixes), ("Rescore: guardian clears a scam alert", guardian_clears),
                      ("Rescore: Care on a phone", care_phone_layout), ("Rescore: landing stamp", landing_stamp),
-                     ("Rescore: activity words", activity_words)]:
+                     ("Rescore: activity words", activity_words), ("Rescore: toasts", toasts_clear)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()
