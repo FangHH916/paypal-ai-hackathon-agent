@@ -382,7 +382,11 @@ class Agent:
         # This message itself hits high-risk phrases and involves moving money: block it without reaching the model.
         # If the session was flagged earlier, later requests go to the model, but the tool gateway has already
         # shrunk the tool set (no more drafting transactions).
-        if level.rank >= RiskLevel.HIGH.rank and (fraud.wants_money_move(text) or detect_intent(text) in _MONEY_INTENTS or fraud.gift_card_script(cats)
+        # A refund or a status question with no amount and no "send" in it asks for no payment: that gets the warning below.
+        intent_now = detect_intent(text)
+        if level.rank >= RiskLevel.HIGH.rank and (fraud.wants_money_move(text) or fraud.gift_card_script(cats)
+                                                  or (intent_now in _MONEY_INTENTS and (intent_now in ("transfer", "bill_pay", "purchase", "add_payee")
+                                                                                        or parse_amount(text)))
                                                   or fraud.script_about_money(text, cats)):
             return self._intercept(s, start, text, reasons)
 
@@ -398,6 +402,11 @@ class Agent:
             s.add_trace("guard", "She said she is frightened or worried: pointed to her family and the hotline, nothing changed")
             self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "text", "llm": "help"})
             return TurnResult(reply, {"type": "text", "hotline": hotline()["spoken"]}, reply, s.trace[start:], "help")
+
+        # High-risk words, but no payment asked for ("the police said I'm suspected of money laundering"): warn her now, with
+        # the hotline, instead of the menu. Nothing is said to be stopped, because nothing was asked for.
+        if level.rank >= RiskLevel.HIGH.rank and intent_now in ("unknown", "refund", "stop_payout", "money_request", "status"):
+            return self._caution(s, start, text, reasons)
 
         # A lost or stolen phone / wallet: offer the freeze once, and don't act on anything else in the same sentence
         # ("I lost my phone, can you send 20 to my son"). "Freeze my payments" said outright still freezes at once.
@@ -808,6 +817,17 @@ class Agent:
         s.add_trace("guard", "She asked for her family or the hotline: answered by code, nothing about payments changed")
         self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "text", "llm": "help"})
         return TurnResult(reply, {"type": "text", "hotline": hotline()["spoken"]}, reply, s.trace[start:], "help")
+
+    def _caution(self, s: Session, start: int, text: str, reasons: list[str]) -> TurnResult:
+        """Scam signs in what she said, but no payment asked for: a warning and the hotline, said by code."""
+        s.plan.clear()
+        reasons = reasons[:2]
+        reply = ("Please be careful. " + " ".join(reasons) + " Nothing has been sent. If someone is asking you for money, "
+                 f"hang up and call {hotline_words()}, or talk to your family first.")
+        s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
+        s.add_trace("guard", "High-risk phrases but no payment asked for: warned, nothing stopped", {"reasons": reasons})
+        self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "text", "llm": "guard"})
+        return TurnResult(reply, {"type": "text", "reasons": reasons, "hotline": hotline()["spoken"]}, reply, s.trace[start:], "guard")
 
     # ------------------------------------------------------------------ Intercept
     def _intercept(self, s: Session, start: int, text: str, reasons: list[str] | None = None) -> TurnResult:

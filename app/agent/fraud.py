@@ -219,6 +219,19 @@ def _present_removed(text: str) -> str:
     return _PRESENT.sub(" ", text)
 
 
+# Her own surprise ("don't tell her it's from me", "it's a surprise so keep it a secret") is not secrecy someone forced on
+# her. Secrecy still counts when someone else asked for it ("the caller told me to keep it a secret").
+_SOMEONE_ASKED = re.compile(r"\b(?:said|says|told|tells|asked|asks|wants?|warned|insisted|instructed|made me|caller|he|she|they)\b"
+                            r"[^.]{0,30}\b(?:don'?t|do not|not to|never|keep|mustn'?t)\b")
+_FROM_ME = re.compile(r"\b(?:don'?t|do not)\s+tell\s+\w+\s+(?:that\s+)?(?:it'?s|it is|it was|who)\s+(?:from\s+)?(?:me|sent it)\b")
+
+
+def _her_own_secret(text: str) -> bool:
+    if _SOMEONE_ASKED.search(text):
+        return False
+    return bool(_FROM_ME.search(text) or re.search(r"\bsurprise\b", text))
+
+
 MONEY_MOVE = re.compile(r"\b(transfer|send|sent|pay|wire|give|buy|move|put|invest|top up|deposit)\b|money to", re.I)
 
 
@@ -229,6 +242,8 @@ def scan(text: str) -> tuple[RiskLevel, list[str], list[str]]:
     text = _NOT_A_THREAT.sub(" ", text.replace("’", "'"))
     score, reasons, cats = 0, [], []
     for cat, w, rx, why in _COMPILED:
+        if cat == "secrecy" and _her_own_secret(text):
+            continue
         if rx.search(_present_removed(text) if cat == "giftcard_told" else text):
             score += w
             cats.append(cat)
