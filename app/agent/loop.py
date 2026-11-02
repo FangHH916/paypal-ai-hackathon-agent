@@ -52,16 +52,29 @@ CARE_OFFER = ("Hello {name}, I'm Star. Would you like the easier version? Bigger
               "answers aloud. Just say yes or no.")
 CARE_ON = "Done. I've made everything bigger and I'll keep things simple. Tell me what you'd like to do, in your own words."
 CARE_OFF = "OK, we'll keep the standard view. Say \"make it easier\" any time to switch."
-_YES = re.compile(r"^\W*(yes|yeah|yep|yup|ya|ok(ay)?|sure|please|alright|of course|good|can|why not|easier|"
-                  r"bigger|larger)\b", re.I)
-_NO = re.compile(r"^\W*(no|nope|nah|not now|no thanks|standard|normal|i'?m (fine|ok))\b", re.I)
+# Words that only ever answer the invite ("Yes, make it easier", "No, standard is fine"): they can answer it even later on
+_CARE_WORDS = {"easier", "bigger", "larger", "make", "the", "version", "view", "standard", "normal", "is", "fine", "good",
+               "i'm", "im", "of", "course", "why", "thanks", "please", "ya", "keep"}
+_CARE_SPECIFIC = re.compile(r"\b(easier|bigger|larger|standard|normal)\b", re.I)
 
 
-def care_answer(text: str) -> bool | None:
-    """'Yes please' -> True, 'No thanks' -> False; anything else (e.g. a request) -> None."""
-    if _NO.match(text):
-        return False
-    return True if _YES.match(text) else None
+def care_answer(text: str, right_after: bool = True) -> bool | None:
+    """'Yes please' -> True, 'No thanks' -> False; anything else, a request above all ("Can you send Anna $50 please"),
+    -> None. Once Star has said something else since the invite, only an answer naming the choice counts
+    ("Yes, make it easier"): a bare "yes" then belongs to Star's later question."""
+    t = text.lower().replace("\u2019", "'")
+    if re.fullmatch(r"\W*(?:of course|why not)\W*", t):
+        return True
+    if re.fullmatch(r"\W*(?:standard|normal)(?: (?:is|view is|please))?(?: fine| good)?\W*", t) or \
+            re.fullmatch(r"\W*i'?m (?:fine|ok|okay)(?: thanks| thank you)?\W*", t):
+        answer = False
+    elif re.fullmatch(r"\W*(?:make it )?(?:easier|bigger|larger)(?: please)?\W*", t):
+        answer = True
+    else:
+        answer = plain_yes_no(text, _CARE_WORDS)
+    if answer is None or (not right_after and not _CARE_SPECIFIC.search(text)):
+        return None
+    return answer
 
 
 _YES_WORDS = {"yes", "yeah", "yep", "yup", "ok", "okay", "sure", "please", "alright", "go", "ahead", "do", "it"}
@@ -74,7 +87,7 @@ def plain_yes_no(text: str, extra: set[str] = frozenset()) -> bool | None:
     """A short, plain answer to Star's own yes/no question: "Yes", "yes please", "No thanks", "Yes, freeze it".
     Anything carrying a request of its own ("Can you send Anna $50 please") is None: it is not an answer."""
     words = re.findall(r"[a-z']+", text.lower().replace("’", "'"))
-    if not words or len(words) > 6 or not all(w in _FILLER or w in extra for w in words):
+    if not words or len(words) > 6 or not all(w in _FILLER or w in _YES_WORDS or w in _NO_WORDS or w in extra for w in words):
         return None
     if words[0] in _NO_WORDS or "not" in words or "don't" in words or "dont" in words:
         return False
@@ -208,10 +221,12 @@ class Agent:
 
         # Star asked "would you like the easier version?" when the customer arrived: a plain yes / no answers it
         s.care_changed = None
+        # Anything else is handled as a new request, and the invite waits (a later "Yes, make it easier" still answers it).
         if s.care_offer_pending:
-            s.care_offer_pending = False
-            answer = care_answer(text)
+            last = next((m.get("content", "") for m in reversed(s.messages) if m.get("role") == "assistant"), "")
+            answer = care_answer(text, right_after="easier version" in last)
             if answer is not None:
+                s.care_offer_pending = False
                 s.care_mode = s.care_changed = answer
                 reply = CARE_ON if answer else CARE_OFF
                 s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])

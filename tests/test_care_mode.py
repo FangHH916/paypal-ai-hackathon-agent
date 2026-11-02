@@ -61,6 +61,35 @@ class TestCareMode(unittest.TestCase):
         self.assertEqual([care_answer(t) for t in ("yes please", "OK", "No, thanks", "send 50 to my son")],
                          [True, True, False, None])
 
+    # Seen in an independent rescore: with the invite pending, "Can you send Anna $50 please" was read as "yes" ("can"),
+    # Care turned on and the payment request was dropped.
+    REQUESTS = ["Can you send Anna $50 please", "Sure, send 20 to my son", "Please send 40 to my daughter",
+                "OK so send 30 to Ben", "Yes I want to send 25 to Anna", "No, send 35 to my son instead"]
+
+    def test_a_request_is_never_an_answer(self):
+        for text in self.REQUESTS:
+            with self.subTest(text=text):
+                self.assertIsNone(care_answer(text))
+        self.assertEqual([care_answer(t) for t in ("Yes", "Yes, make it easier", "No, standard is fine", "nope", "sure, please")],
+                         [True, True, False, False, True])
+
+    def test_a_request_with_the_invite_pending_is_handled_and_the_invite_waits(self):
+        for text in self.REQUESTS:
+            with self.subTest(text=text):
+                self.setUp()
+                self.c.post("/api/care/offer", json={"session_id": self.sid})
+                r = self.chat(text)
+                self.assertNotIn("care_mode", r["ui"], f"{text!r} answered the invite: {r['reply']}")
+                self.assertEqual(r["ui"]["type"], "confirm", f"{text!r} -> {r['reply']}")
+                self.c.post("/api/cancel", json={"session_id": self.sid, "draft_id": r["ui"]["card"]["draft_id"]})
+                self.assertIs(self.chat("Yes, make it easier")["ui"].get("care_mode"), True)   # the invite is still there
+
+    def test_a_bare_yes_to_a_later_question_is_not_the_invite(self):
+        self.c.post("/api/care/offer", json={"session_id": self.sid})
+        self.chat("Send 30 to my grandson")                    # Star asks which grandson
+        r = self.chat("Yes")
+        self.assertNotIn("care_mode", r["ui"])
+
 
 class TestCareFollowsTheScreen(unittest.TestCase):
     def test_every_message_carries_the_view(self):

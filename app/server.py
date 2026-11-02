@@ -578,8 +578,8 @@ async def care_offer(request: Request):
     s.messages.append({"role": "assistant", "content": text})
     s.care_offer_pending = True
     return JSONResponse({"offer": text, "options": [
-        {"label": "Yes, make it easier", "detail": "Bigger text, simpler words, read aloud", "send": "Yes, please"},
-        {"label": "No, standard is fine", "detail": "You can switch any time", "send": "No, thanks"}]})
+        {"label": "Yes, make it easier", "detail": "Bigger text, simpler words, read aloud", "send": "Yes, make it easier"},
+        {"label": "No, standard is fine", "detail": "You can switch any time", "send": "No, standard is fine"}]})
 
 
 async def reset(request: Request):

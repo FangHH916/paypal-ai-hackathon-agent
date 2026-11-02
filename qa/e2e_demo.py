@@ -878,6 +878,40 @@ def run(browser, base: str, args) -> None:
     def no_stale_screens():
         check("/api/world is gone", requests.get(base + "/api/world", timeout=5).status_code == 404)
 
+    def rescore_fixes():
+        """What an independent rescore found on a phone. Its own server: own state."""
+        if args.base:
+            return
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data)
+            url = f"http://localhost:{port}"
+            c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+            q = c.new_page()
+            watch(q, "rescore")
+            try:
+                q.goto(url + "/")
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".hero h1")).to_be_visible()
+                nav(q, "Talk to Star")
+                # A request while the easier-version invite is open is a request; the invite waits for its own answer
+                expect(q.locator(".choice", has_text="Yes, make it easier")).to_be_visible()
+                say(q, "Can you send Anna $50 please")
+                expect(q.locator("#confirm .amt")).to_have_text("$50.00", timeout=15000)
+                check("a request with the invite open doesn't switch Care on", not q.evaluate("document.body.classList.contains('care')"))
+                q.locator("#c-cancel").click()
+                expect(q.locator("#confirm")).to_be_hidden()
+                expect(q.locator(".choice", has_text="Yes, make it easier")).to_be_visible()
+                q.locator(".choice", has_text="Yes, make it easier").click()
+                expect(q.locator("body.care")).to_be_visible(timeout=15000)
+                check("the waiting invite still answers", q.evaluate("document.body.classList.contains('care')"))
+            finally:
+                c.close()
+                server.terminate()
+                server.wait(10)
+
     for name, fn in [("Landing and pages", landing), ("Send money to family", send_money), ("Same payment asked twice", double_payment),
                      ("Agentic purchase, approval, capture, refund", purchase_and_refund), ("Cancel on the approval page", cancel_on_approval),
                      ("Pay a bill by invoice", pay_bill), ("The fake invoice", fake_invoice), ("A spoken scam", spoken_scam),
@@ -885,7 +919,8 @@ def run(browser, base: str, args) -> None:
                      ("The reply gets lost", lost_reply), ("Sandbox without keys", misconfigured),
                      ("Phone widths and Care mode", phone_and_care), ("Dark theme and focus", dark_and_focus),
                      ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens),
-                     ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo)]:
+                     ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo),
+                     ("Rescore fixes on a phone", rescore_fixes)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()

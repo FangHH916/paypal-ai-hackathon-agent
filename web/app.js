@@ -673,7 +673,7 @@ async function send(text, endpoint = '/api/chat', voice = false, auto = false, d
   state.voiceTurn = voice;
   if(state.page !== assistantPage()) go(assistantPage());
   state.busy = true; $('#text') && ($('#text').value = '');
-  state.messages = state.messages.filter(m => m.type !== 'choices' || m.done);
+  state.messages = state.messages.filter(m => m.type !== 'choices' || m.done || m.care);   // the easier-version invite waits for its own answer
   if(demo) push({type:'demo-intro'});
   push({role:'user', text, demo}); push({type:'typing'});
   try{
@@ -701,7 +701,7 @@ async function send(text, endpoint = '/api/chat', voice = false, auto = false, d
 function handleTurn(r){
   const ui = r.ui || {type:'text'};
   // "Yes please" / "make the text bigger": Star switched Care mode, so the screen follows before the reply is read
-  if(typeof ui.care_mode === 'boolean' && ui.care_mode !== state.care){ setCare(ui.care_mode, true); go(assistantPage()); }
+  if(typeof ui.care_mode === 'boolean'){ state.messages.forEach(m => { if(m.type === 'choices' && m.care) m.done = true; }); if(ui.care_mode !== state.care){ setCare(ui.care_mode, true); go(assistantPage()); } }
   if(r.demo?.kind === 'model_mistake' && ui.card){ showCaught(r); return; }
   if(ui.plan?.length > 1) push({type:'plan', items: ui.plan});
   const calls = state.calls.money_moving_this_task;
