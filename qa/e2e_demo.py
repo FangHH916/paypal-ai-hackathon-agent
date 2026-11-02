@@ -1204,6 +1204,7 @@ def run(browser, base: str, args) -> None:
                 for w, h in ((1440, 900), (1024, 800), (390, 844), (320, 700)):
                     q.set_viewport_size({"width": w, "height": h})
                     totals_whole(f"care-{w}")
+                check("the grid loads without an AG Grid console warning", not warnings, warnings)
             finally:
                 c.close()
                 server.terminate()

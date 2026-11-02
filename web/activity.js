@@ -116,7 +116,7 @@ export async function mountGrid(host, opts){
     $('.grid-host', host).classList.toggle('filters-on', filters);
     api.setGridOption('floatingFiltersHeight', filters ? 52 : 0);
     const more = $('[data-act="more"]', host); more.hidden = isNarrow() || care;
-    api.resetRowHeights();
+    totals();          // fresh pinned rows take the height for this width; every other row is sized by its own content
   };
   const totals = () => {
     let sent = 0, back = 0, stops = 0;
