@@ -257,8 +257,15 @@ _SCRIPTS = {"gov_threat", "prize_fee", "online_stranger", "family_impersonation"
 _MONEY_CUE = re.compile(r"\$\s?\d|\b\d[\d,.]*\b|\b(?:needs?|needed|owes?|owed|fees?|bail|money|cash|dollars?|bucks|costs?)\b", re.I)
 
 
+# Any other high-risk sign stops too when an amount or a demand for money is in the same sentence ("the technician wants
+# 400 to fix it"). A bare word such as "money laundering" is not a demand: that gets a warning, not a stop.
+_ASKS_MONEY = re.compile(r"\$\s?\d|(?<![\d.])\d{2,}(?:[,.]\d+)*\b|\b(?:needs?|needed|owes?|owed|fees?|bail|costs?|charges?)\b", re.I)
+
+
 def script_about_money(text: str, cats: list[str]) -> bool:
-    return bool(_SCRIPTS & set(cats)) and bool(_MONEY_CUE.search(text))
+    if _SCRIPTS & set(cats):
+        return bool(_MONEY_CUE.search(text))
+    return bool(cats) and bool(_ASKS_MONEY.search(text))
 
 
 def wants_money_move(text: str) -> bool:
