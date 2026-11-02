@@ -69,7 +69,7 @@ class ToolGateway:
         self.tools: dict[str, Tool] = {t.name: t for t in [
             Tool("get_recent_transactions", "read", "Get recent incoming and outgoing payments. Use it to answer whether the pension has arrived or how much was spent recently.",
                  TxnArgs, self._get_txns),
-            Tool("freeze_payments", "control", "Freeze all payments straight away, e.g. when her phone is lost or she suspects fraud. "
+            Tool("freeze_payments", "control", "Freeze all payments straight away, e.g. when she asks, says yes after losing her phone, or suspects fraud. "
                  "Protective, so no confirmation card is needed. Lifting it needs her signature and her family's.", FreezeArgs, self._freeze),
             Tool("queue_follow_up", "control", "The user asked for more than one transaction in one message: draft the "
                  "FIRST one now, and call this once for each remaining one. It is prepared automatically right after "

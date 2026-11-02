@@ -20,7 +20,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from app.agent import fraud, planner, presenter, request_guard
-from app.agent.llm import LLMError, OfflineLLM, detect_intent
+from app.agent.llm import LOST_DEVICE, LLMError, OfflineLLM, detect_intent
 from app.agent.prompts import _unexpected_answer, state_summary, system_prompt
 from app.agent.textparse import money_mentions, parse_amount, relative_in
 from app.kernel.evidence import derived_amounts, user_utterances
@@ -63,6 +63,28 @@ def care_answer(text: str) -> bool | None:
         return False
     return True if _YES.match(text) else None
 
+
+_YES_WORDS = {"yes", "yeah", "yep", "yup", "ok", "okay", "sure", "please", "alright", "go", "ahead", "do", "it"}
+_NO_WORDS = {"no", "nope", "nah", "not", "don't", "dont"}
+_FILLER = {"please", "thanks", "thank", "you", "it", "them", "that", "everything", "my", "all", "payments", "now", "freeze",
+           "frozen", "do", "don't", "dont", "not", "go", "ahead", "yes", "no", "ok", "okay", "need", "to", "i", "sure"}
+
+
+def plain_yes_no(text: str, extra: set[str] = frozenset()) -> bool | None:
+    """A short, plain answer to Star's own yes/no question: "Yes", "yes please", "No thanks", "Yes, freeze it".
+    Anything carrying a request of its own ("Can you send Anna $50 please") is None: it is not an answer."""
+    words = re.findall(r"[a-z']+", text.lower().replace("’", "'"))
+    if not words or len(words) > 6 or not all(w in _FILLER or w in extra for w in words):
+        return None
+    if words[0] in _NO_WORDS or "not" in words or "don't" in words or "dont" in words:
+        return False
+    return True if words[0] in _YES_WORDS else None
+
+
+LOST_PHONE_ASK = ("I'm sorry about your {what}. Would you like me to freeze all payments now, so nobody else can send your money? "
+                  "Nothing has been sent. Please say yes or no.")
+FREEZE_DONE = "Done. All payments are frozen. Nothing can be sent until you and your family lift the freeze."
+FREEZE_DECLINED = "OK, I haven't frozen anything, and nothing has been sent. If you'd still like to pay someone, tell me who and how much."
 
 _NOTE = re.compile(r"\s*\[system note:[^\]]*\]", re.I)
 NUDGE = ("[Harness check] No draft exists: you did not call any draft tool in this turn, so nothing has been prepared. "
@@ -198,6 +220,18 @@ class Agent:
                 self.audit.append("ui.care_mode", s.session_id, {"on": answer, "by": "answer", "text": text})
                 return TurnResult(reply, {"type": "text", "care_mode": answer}, reply, s.trace[start:], "care mode")
 
+        # Star asked "shall I freeze all payments?" after a lost phone: only a plain yes / no answers it
+        if s.freeze_offer_pending:
+            s.freeze_offer_pending = False
+            answer = plain_yes_no(text)
+            if answer is not None:
+                if answer:
+                    self.gateway.call(s, "freeze_payments", {"reason": "Her phone or wallet is lost or stolen; she said yes to freezing"})
+                reply = FREEZE_DONE if answer else FREEZE_DECLINED
+                s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
+                s.start_task()
+                return TurnResult(reply, {"type": "text"}, reply, s.trace[start:], "freeze question")
+
         raw_text = text
         reference_parent_id = None
         s.plan_pos = None
@@ -287,6 +321,22 @@ class Agent:
         # shrunk the tool set (no more drafting transactions).
         if level.rank >= RiskLevel.HIGH.rank and (fraud.wants_money_move(text) or detect_intent(text) in _MONEY_INTENTS or fraud.gift_card_script(cats)):
             return self._intercept(s, start, text, reasons)
+
+        # A lost or stolen phone / wallet: offer the freeze once, and don't act on anything else in the same sentence
+        # ("I lost my phone, can you send 20 to my son"). "Freeze my payments" said outright still freezes at once.
+        lost = LOST_DEVICE.search(text)
+        if lost and detect_intent(text) != "freeze":
+            what = next((w for w in ("wallet", "purse", "handbag", "tablet", "ipad") if w in lost.group(0).lower()), "phone")
+            reply = LOST_PHONE_ASK.format(what=what)
+            s.freeze_offer_pending = True
+            s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
+            s.start_task()
+            s.add_trace("guard", "Lost or stolen device: asked before freezing, and nothing else in the sentence was acted on")
+            self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "choose", "llm": "freeze question"})
+            return TurnResult(reply, {"type": "choose", "options": [
+                {"label": "Yes, freeze payments", "detail": "Nothing can be sent until you and your family lift it", "send": "Yes, freeze them"},
+                {"label": "No, don't freeze", "detail": "Nothing has been sent", "send": "No, don't freeze"}]},
+                reply, s.trace[start:], "freeze question")
 
         error = request_guard.problem(text) if detect_intent(text) in _MONEY_INTENTS else None
         if error:

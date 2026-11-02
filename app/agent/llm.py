@@ -70,8 +70,8 @@ class OpenAICompatLLM:
 # ====================================================================== Offline model
 _RX = {
     "handoff": r"human|real person|customer service|(talk|speak) to (someone|a person|staff|an officer)",
-    "freeze": r"\bfreeze\b|\b(stop|block|lock)\b.{0,20}\b(everything|all (my )?payments|my (wallet|account|paypal))\b|"
-              r"\b(lost|stolen)\b.{0,20}\b(phone|wallet|device)\b",
+    # Only an outright request freezes at once. A lost phone on its own makes Star ASK first (LOST_DEVICE, agent/loop.py).
+    "freeze": r"\bfreeze\b|\b(stop|block|lock)\b.{0,20}\b(everything|all (my )?payments|my (wallet|account|paypal))\b",
     "stop_payout": r"\b(stop|cancel|take back|call back)\b.{0,25}\b(that|the|my)\s+(payment|payout|transfer)\b",
     "refund": r"\bmoney back\b|\brefund\b|\breturn (it|this|the)\b|\bsend (it|this) back\b",
     "money_request": r"\b(ask|request)\b.{0,40}\b(pay me|pay back|paying me|money|to pay)\b|\bowes? me\b|\bpay me back\b",
@@ -90,6 +90,14 @@ _RX = {
     "balance": r"balance|allowance|how much (money )?(do i have|have i got|is (there )?in|is left|left|can i spend)",
     "spending": r"\bspen[dt]|spending|expenses|transactions|history",
 }
+
+
+# Her phone, wallet or purse is lost or stolen ("lost my phone", "my wallet was stolen"), not an accessory ("phone charger")
+LOST_DEVICE = re.compile(
+    r"\b(?:lost|lose|losing|misplaced|can'?t find|cannot find|stolen|stole|snatched|took)\b.{0,25}?"
+    r"\b(?:phone|cell ?phone|mobile|device|tablet|ipad|wallet|purse|handbag)\b(?!\s*(?:charger|case|cover|cable|stand|holder|number|screen))|"
+    r"\b(?:phone|cell ?phone|mobile|device|tablet|ipad|wallet|purse|handbag)\b.{0,30}\b(?:it'?s|it is|is|was|got|has been|been) "
+    r"(?:stolen|lost|taken|gone|missing)\b", re.I)
 
 
 def _has(key: str, text: str) -> bool:
