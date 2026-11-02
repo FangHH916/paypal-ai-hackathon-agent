@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import random
 import re
 import socket
 import subprocess
@@ -102,6 +103,18 @@ def last_tracker(page: Page):
     return page.locator(".tracker").last
 
 
+def free_port() -> int:
+    """A free local port in 7100-7999. Any port the OS hands out can be one browsers refuse (ERR_UNSAFE_PORT, e.g. 1719)."""
+    for port in random.sample(range(7100, 8000), 900):
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    raise SystemExit("No free port in 7100-7999.")
+
+
 def start_server(port: int, data: str, extra: dict | None = None):
     env = {**os.environ, "PAYPAL_MODE": "simulator", "LLM_PROVIDER": "offline", "ASR_PROVIDER": "browser", "PAYPAL_CLIENT_ID": "", "PAYPAL_CLIENT_SECRET": "", "PUBLIC_DEMO": "", "RULE_FIXED_HOUR": "14",   # no late-night rule depending on when this runs
            "LEDGER_PATH": os.path.join(data, "ledger.sqlite3"), "AUDIT_PATH": os.path.join(data, "audit.jsonl"),
@@ -133,9 +146,7 @@ def main() -> int:
     if args.base:
         base = args.base.rstrip("/")
     else:
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
+        port = free_port()
         proc = start_server(port, tmp.name)
         base = f"http://localhost:{port}"
     try:
@@ -575,9 +586,7 @@ def run(browser, base: str, args) -> None:
     def misconfigured():
         if args.base:
             return
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
+        port = free_port()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
             server = start_server(port, data, {"PAYPAL_MODE": "sandbox", "SIGNING_SECRET": "e2e-only-not-a-real-secret"})
             c = browser.new_context(viewport={"width": 1280, "height": 860})
@@ -605,9 +614,7 @@ def run(browser, base: str, args) -> None:
         the back button, a Freeze button that didn't freeze, a card signed with two Enter presses. Its own server: own state."""
         if args.base:
             return
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
+        port = free_port()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
             server = start_server(port, data)
             url = f"http://localhost:{port}"
@@ -771,9 +778,7 @@ def run(browser, base: str, args) -> None:
         """What a design review found at 320 px, at 200% text and with the network gone. Its own server: own state."""
         if args.base:
             return
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
+        port = free_port()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
             server = start_server(port, data)
             url = f"http://localhost:{port}"
@@ -854,9 +859,7 @@ def run(browser, base: str, args) -> None:
     def public_demo():
         if args.base:
             return
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
+        port = free_port()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
             server = start_server(port, data, {"PUBLIC_DEMO": "1", "SIGNING_SECRET": "e2e-only-not-a-real-secret"})
             c = browser.new_context(viewport={"width": 1280, "height": 860})
@@ -883,9 +886,7 @@ def run(browser, base: str, args) -> None:
         """What an independent rescore found on a phone. Its own server: own state."""
         if args.base:
             return
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
+        port = free_port()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
             server = start_server(port, data)
             url = f"http://localhost:{port}"
@@ -950,9 +951,7 @@ def run(browser, base: str, args) -> None:
         steady = [z for z in zones if at_night(z) == at_night(z, 1) and datetime.now(ZoneInfo(z)).minute < 55]
         day_zone = next(z for z in steady if not at_night(z) and 7 <= datetime.now(ZoneInfo(z)).hour < 21)
         night_zone = next(z for z in steady if at_night(z))
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
+        port = free_port()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
             server = start_server(port, data, {"RULE_FIXED_HOUR": "", "CUSTOMER_TIMEZONE": night_zone})
             c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True, timezone_id=day_zone)
