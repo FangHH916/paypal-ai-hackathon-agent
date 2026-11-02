@@ -493,12 +493,13 @@ function stageHtml(m, i){
   if(m.type === 'next') return m.done ? '' : `<div class="next-chips"><button class="btn primary small nx-go" type="button" data-i="${i}">Continue: ${esc(m.task)}</button><button class="btn secondary small nx-no" type="button" data-i="${i}">Not now</button></div>`;
   return `<div class="msg bot">${msgSide(m, 'Star', i)}<div class="msg-body">${esc(m.text)}</div></div>`;
 }
-// Care on a phone: the way to get help comes first, then one short line; the full reasons stay open below.
+// Care on a phone: the way to get help comes first, then one line (short for a scam stop, whose reasons follow; any other
+// stop keeps its own words, such as the family's no); the full reasons stay open below.
 const careStopHtml = (m, i) => `<div class="stop-block care-stop" data-fx="${i}"><h3>${icon('shield')}I've stopped this for you</h3>
     <div class="acts"><a class="btn danger" href="tel:${esc(hotline().number)}">${icon('phone')}<span>Call <span class="nowrap">${esc(hotline().spoken)}</span></span></a>
       <button class="btn secondary notify" type="button">${icon('family')}Tell ${esc(guardianName())}</button>
       <button class="replay btn secondary small" type="button" data-i="${i}" aria-label="Read this aloud">${icon('speaker')}</button></div>
-    <p>Please don't send any money. If someone asked you to, hang up and call this number or your family.</p>
+    <p>${m.scamStop ? "Please don't send any money. If someone asked you to, hang up and call this number or your family." : esc(m.text)}</p>
     <details class="why" open><summary>Why I stopped this</summary>${whyHtml(m.reasons?.length ? m.reasons : [m.text])}</details>
     ${m.hint ? `<small class="muted">${esc(m.hint)}</small>` : ''}${stopCount(m)}
     <p class="muted small">${esc(hotline().name[0].toUpperCase() + hotline().name.slice(1))}, ${esc(hotline().number)}.</p></div>`;
@@ -727,7 +728,7 @@ function handleTurn(r){
   if(ui.plan?.length > 1) push({type:'plan', items: ui.plan});
   const calls = state.calls.money_moving_this_task;
   if(ui.type === 'blocked' && !ui.card){
-    push({type:'blocked', role:'bot', text:r.reply, reasons: ui.reasons, hint: ui.hint, calls}); speak(r.speak, true);
+    push({type:'blocked', role:'bot', text:r.reply, reasons: ui.reasons, hint: ui.hint, calls, scamStop: !!(ui.hotline || ui.locked)}); speak(r.speak, true);
     state.check = {title:'Stopped before reaching the payment step', rows:[
       ['pass', 'Request heard', 'We listened to everything you said.'],
       ['fail', 'Looks like a scam', (ui.reasons || []).join(' ') || 'This matches common scam patterns.'],
