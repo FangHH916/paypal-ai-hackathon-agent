@@ -86,3 +86,27 @@ class TestRepeatingPaymentsAreNotSilentlyOneOff(World):
                 self.assertNotIn(ONCE_ONLY, r.reply, f"{text!r} -> {r.reply}")
                 self.assertIsNotNone(self.s.current_draft, f"{text!r} -> {r.reply}")
                 self.assertEqual(self.s.current_draft.kind, kind)
+
+
+class TestHugeAmountsExplainTheLimit(World):
+    def test_a_million_is_read_and_the_limit_explained(self):
+        for text in ("Send 1,000,000 to my daughter",          # the defect
+                     "Send $2,500,000 to Anna",
+                     "Give my son one million dollars",
+                     "Pay Ben Lee a million",
+                     "Transfer 1,200,000 dollars to my grandson Sam"):
+            with self.subTest(text=text):
+                self.setUp()
+                r = self.turn(text)
+                self.assertNotIn("How much would you like", r.reply, f"{text!r} -> {r.reply}")
+                self.assertIn("$5,000.00", r.reply, f"{text!r} -> {r.reply}")       # the most Star handles in one payment
+                self.assertEqual(self.s.phase, Phase.BLOCKED)
+
+    def test_long_numbers_that_are_not_money_are_still_not_amounts(self):
+        from app.agent.textparse import parse_amount
+        self.assertIsNone(parse_amount("my account is 12345678"))
+        self.assertIsNone(parse_amount("call me on 5551234567"))
+        self.assertEqual(parse_amount("send 1,000 to anna"), 1000)
+        self.assertEqual(parse_amount("one million two hundred thousand dollars"), 1_200_000)
+        r = self.turn("Send 12345678 to my daughter")
+        self.assertIn("too long to be an amount", r.reply)

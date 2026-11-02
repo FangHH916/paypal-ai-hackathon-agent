@@ -12,7 +12,7 @@ _ONES = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six":
          "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19}
 _TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80,
          "ninety": 90}
-_SCALES = {"hundred": 100, "thousand": 1000, "k": 1000, "grand": 1000}
+_SCALES = {"hundred": 100, "thousand": 1000, "k": 1000, "grand": 1000, "million": 1_000_000}
 _UNIT_WORDS = {"dollar", "dollars", "buck", "bucks", "usd"}
 _NUM_WORDS = set(_ONES) | set(_TENS) | set(_SCALES)
 
@@ -49,6 +49,9 @@ def words_to_number(tokens: list[str]) -> float | None:
         elif t == "hundred":
             current = (current or 1) * 100
             seen = True
+        elif t == "million":
+            total = (total + (current or 1)) * 1_000_000 if not total else total + (current or 1) * 1_000_000
+            current, seen = 0, True
         elif t in ("thousand", "k", "grand"):
             total += (current or 1) * 1000
             current, seen = 0, True
@@ -141,8 +144,8 @@ def _candidates(text: str) -> list[dict]:
         before = re.sub(r"(?:\$|usd\s*)\s*$", "", text[:m.start(1)], flags=re.I)
         marked = len(before) != len(text[:m.start(1)]) or bool(unit)
         after_cents = re.match(r"\s*cents?\b", text[end:], re.I)
-        if len(raw) >= 7 and not unit:
-            continue
+        if len(raw) >= 7 and not unit and "," not in digits:
+            continue                                  # "1,000,000" is grouped like money; "12345678" is an account or a phone
         if not marked and not after_cents and (_NOT_MONEY_AFTER.match(text[end:]) or _NOT_MONEY_BEFORE.search(before)):
             continue
         val = float(raw + (f".{cents}" if cents else ""))
