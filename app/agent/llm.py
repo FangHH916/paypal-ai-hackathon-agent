@@ -76,7 +76,7 @@ _RX = {
     "refund": r"\bmoney back\b|\brefund\b|\breturn (it|this|the)\b|\bsend (it|this) back\b",
     "money_request": r"\b(ask|request)\b.{0,40}\b(pay me|pay back|paying me|money|to pay)\b|\bowes? me\b|\bpay me back\b",
     # "a phone case", "a new case for his glasses": a thing bought, not one of her PayPal cases
-    "disputes": r"\bdisputes?\b|\b(?<!\ba )(?<!\bnew )(?<!phone )(?<!glasses )(paypal )?cases?\b"
+    "disputes": r"\bdisputes?\b|\b(?<!\ba )(?<!\bnew )(?<!phone )(?<!glasses )(?<!court )(?<!legal )(?<!\w's )(paypal )?cases?\b"
                 r"(?! for (?:a|my|his|her|the|their)\b)|\bcomplaints?\b",
     "status": r"\b(go|gone|went) through\b|\bdid (it|that|my|the)\b.{0,25}\b(arrive|work|send|sent|pay|paid)\b|\bstatus\b|"
               r"\bwhere is my (payment|money|refund)\b",
