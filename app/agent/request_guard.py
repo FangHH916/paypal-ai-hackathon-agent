@@ -22,7 +22,8 @@ def cancelled(text):
 _CONDITION = re.compile(r"\b(?:if|unless|or|otherwise|until|when)\b[^.,;!?]*$", re.I)
 
 
-_STOPS_CARD = re.compile(r"\b(?:stop|cancel|halt|call off|kill)\b\s+(?:(?:that|the|this|my|it)\b|(?:payment|transfer))|"
+_STOPS_CARD = re.compile(r"\b(?:stop|cancel|halt|call off|kill|scrap|undo|drop|ditch)\b\s+(?:(?:that|the|this|my|it)\b|(?:payment|transfer))|"
+                         r"\btake (?:it|that|this) back\b|\bscrap (?:it|that)\b|"
                          r"\bcall (?:it|that|this) off\b|\b(?:don'?t|do not|never)\s+(?:send|pay|transfer)\s+(?:it|that|this|the money)\b|"
                          r"^\W*(?:please\s+)?(?:stop|cancel)\b", re.I)
 

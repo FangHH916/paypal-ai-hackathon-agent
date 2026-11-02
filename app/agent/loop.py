@@ -125,7 +125,10 @@ _FAMILY_WORD = re.compile(rf"\b{_KIN}\b", re.I)
 # "Call my daughter", "please tell my family", "what's the scam hotline?", "who can I call about a scam?"
 _HELP = re.compile(rf"\bhotline\b|\b(?:call|ring|phone|talk to|speak to|speak with|talk with|tell|contact|reach|get hold of|let)\b"
                    rf"(?:\s+\w+){{0,2}}?\s+(?:my|our)\s+{_KIN}\b|"
-                   r"\bwho (?:can|should|do) i (?:call|tell|talk to|ring)\b|\breport (?:a |the |this )?scam\b", re.I)
+                   r"\bwho (?:can|should|do) i (?:call|tell|talk to|ring)\b|\breport (?:a |the |this )?scam\b|"
+                   # "Where do I report this?", "What number should I ring to report it?", "Get Anna on the phone"
+                   r"\b(?:where|how|who) (?:do|can|should) i report\b|\bwhat number\b.{0,30}\b(?:call|ring|phone|report)\b|"
+                   r"\bget\s+(?:my\s+\w+|[a-z]+)\s+on the (?:phone|line)\b", re.I)
 
 _NOTE = re.compile(r"\s*\[system note:[^\]]*\]", re.I)
 NUDGE = ("[Harness check] No draft exists: you did not call any draft tool in this turn, so nothing has been prepared. "
