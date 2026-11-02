@@ -9,7 +9,7 @@ from app.wallet import payments
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
-PAGES = ("app.js", "common.js", "activity.js", "guardian.js", "simulator.js")
+PAGES = ("app.js", "common.js", "activity.js", "guardian.js", "simulator.js", "motion.js")
 
 
 def luminance(hex_color: str) -> float:
@@ -30,6 +30,21 @@ class TestStaticFiles(unittest.TestCase):
 
     def test_grid_is_vendored_with_its_licence(self):
         self.assertIn("MIT", (WEB / "vendor" / "ag-grid" / "LICENSE.txt").read_text(encoding="utf-8"))
+
+    def test_fonts_are_vendored_with_their_licence_and_nothing_loads_from_elsewhere(self):
+        css = (WEB / "styles.css").read_text(encoding="utf-8")
+        licence = (WEB / "fonts" / "LICENSE.txt").read_text(encoding="utf-8")
+        self.assertIn("Open Font License", licence)
+        self.assertIn("web/fonts/", (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8"))
+        self.assertNotRegex(css, r"url\(['\"]?https?:|@import")
+        for url in re.findall(r"url\((/[^)]+)\)", css):
+            self.assertIn(url, STATIC, url)
+        self.assertLess(sum(p.stat().st_size for p in (WEB / "fonts").glob("*.woff2")), 100_000)
+
+    def test_a_reader_who_asks_for_less_motion_gets_none_from_the_script(self):
+        motion = (WEB / "motion.js").read_text(encoding="utf-8")
+        self.assertIn("prefers-reduced-motion: reduce", motion)
+        self.assertIn("prefers-reduced-motion:reduce", (WEB / "styles.css").read_text(encoding="utf-8"))
 
     def test_no_third_party_code_or_inline_code(self):
         for path in WEB.glob("*.html"):
@@ -89,6 +104,12 @@ class TestContrast(unittest.TestCase):
         for palette in self.tokens():
             for fg, bg in pairs:
                 self.assertGreaterEqual(contrast(palette[fg], palette[bg]), 4.5, f"{fg} on {bg}")
+
+
+    def test_main_text_reaches_seven_to_one(self):
+        for palette in self.tokens():
+            for bg in ("bg", "surface"):
+                self.assertGreaterEqual(contrast(palette["ink"], palette[bg]), 7, bg)
 
 
 class TestPublishedClaims(unittest.TestCase):

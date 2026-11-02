@@ -94,3 +94,17 @@ Base rules are in `app/kernel/rules.py`: unknown payee, allowance, limits, new p
 | Replaces a card lock | A freeze: instant for Mrs. Lee or Anna, lifted only by both signatures | Protective actions should be fast, and undoing them slow |
 
 **Not doing, on purpose:** live PayPal mode, Subscriptions, Vault, JS SDK v6, an MCP server, real email or SMS, purchases with no human approval, accepting or fighting disputes, onboarding merchants.
+
+## Art direction: security print
+
+Star protects a payment, so it looks like the paper payments used to be made of: a cheque or a banknote. Everything comes from that.
+
+- **Line work.** The rosette and band are engraving patterns computed by `scripts/build_guilloche.py`, used as CSS masks so one file takes every theme's ink. They are background only and never carry information.
+- **Two materials.** Ink is the rail and the landing, the same in both themes. Paper is the card she signs, in both themes the brightest thing on screen, because it is the thing to read.
+- **One owned colour.** Seal red appears for the stop, the stamp and the zero, and for the primary hover. It always has a word beside it: Stopped, Frozen, 0 money-moving calls.
+- **Type.** Gloock for figures and her own words, large, because they are the evidence everything is checked against. Atkinson Hyperlegible Next for reading and Mono for codes and mode tags: it was drawn for low vision, and its slashed zero is why a 0 can't be mistaken for an O. All vendored, all sized in rem.
+- **Two signature moments.** A stop comes down like a hand stamp and the zero lands. Verified money closes an engraved seal around a tick. `web/motion.js` runs only the Web Animations API, on elements that are already in their final place and already readable, so nothing waits for an animation. With `prefers-reduced-motion` none of it runs and the page is the same, complete.
+- **Landing.** The first screen is the safety test itself: the model's $500, her $50, the zero, and a scam script stamped, each labelled SIMULATED. Not a list of features.
+- **Rules, not boxes.** Sections are a rule and their content. A filled block means something happened: a stop, a warning, a wait.
+- **Older eyes come first.** Main text at least 7:1 (`tests/test_frontend.py`), secondary at least 4.5:1, targets at least 44px, visible focus, no horizontal scroll at 320px. In a stop, the words and the call button come before everything else.
+- **The simulator is left plain on purpose.** Striped and monospaced, so nobody takes it for a real payment page. It imitates no brand.

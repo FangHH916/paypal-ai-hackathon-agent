@@ -201,7 +201,7 @@ button.pill:hover{border-color:var(--ink)}
 .pill.prot.queued{border-color:var(--warn);color:var(--warn)}
 .dot{width:.6em;height:.6em;border-radius:50%;background:var(--muted)}
 .dot.on{background:var(--ok)}
-.icon-btn,.care-toggle{display:inline-flex;align-items:center;gap:.4em;min-height:44px;padding:.3em .8em;border-radius:var(--radius);border:1.5px solid var(--ink);background:transparent;font-size:.95rem;font-weight:650;transition:background-color .14s,color .14s}
+.icon-btn,.care-toggle{display:inline-flex;align-items:center;justify-content:center;gap:.4em;min-height:44px;min-width:44px;padding:.3em .8em;border-radius:var(--radius);border:1.5px solid var(--ink);background:transparent;font-size:.95rem;font-weight:650;transition:background-color .14s,color .14s}
 .icon-btn:hover,.care-toggle:hover{background:var(--ink);color:var(--bg)}
 .care-toggle{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
 .icon-btn[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
@@ -376,18 +376,24 @@ body.care .mic{font-size:1.05em;padding:.4em 1em}
 .caught{container-type:inline-size;position:relative;padding:clamp(18px,2vw,28px) 0;border-top:6px solid var(--accent);border-bottom:2px solid var(--ink);overflow:clip}
 .caught-head b{display:block;margin-top:.3em;font:400 clamp(1.7rem,3vw,2.8rem)/1.08 var(--head)}
 .caught-badge{display:inline-block;padding:.12em .42em;border:3px solid var(--accent);color:var(--accent);font:400 clamp(1rem,1.5vw,1.3rem)/1.05 var(--head);letter-spacing:.05em;text-transform:uppercase;transform:rotate(-3deg)}
-.caught-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:0;margin:1em 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.caught-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:1em 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .cg{padding:.8em 1em;border-left:1px solid var(--line);min-width:0;overflow-wrap:anywhere}
 .cg:first-child{border-left:0;padding-left:0}
 .cg small,.cg span{display:block;font-size:.95rem;line-height:1.3;color:var(--muted)}
 .cg small{font-weight:650;margin-bottom:.35em}
-.cg strong{display:block;font:400 clamp(2.1rem,7.2cqi,3.2rem)/1.05 var(--head);color:var(--ink);white-space:nowrap}
-.cg .quote{font:400 clamp(1.4rem,1.9vw,1.8rem)/1.14 var(--head)}
+.cg strong{display:block;font:400 clamp(2.1rem,7cqi,3.2rem)/1.05 var(--head);color:var(--ink);white-space:nowrap}
+.cg .quote{font:400 clamp(1.4rem,1.9vw,1.8rem)/1.14 var(--head);white-space:normal}
 .cg.bad strong{color:var(--bad);text-decoration:line-through;text-decoration-thickness:.07em}
 .cg.good strong{color:var(--ok)}
 .caught-zero{display:flex;flex-wrap:wrap;align-items:flex-end;gap:.2em .35em;margin:.2em 0 1em;padding:clamp(14px,2vw,24px);background:var(--accent);color:var(--accent-ink);font-weight:700;line-height:1.2;font-size:1.15em}
 .caught-zero b{font:400 clamp(6rem,30cqi,12rem)/.8 var(--head);margin-right:.08em}
 .caught-zero .mode-tag{color:var(--accent-ink)}
+@container (max-width:520px){
+  .caught-grid{grid-template-columns:minmax(0,1fr)}
+  .cg{border-left:0;border-top:1px solid var(--line);padding-left:0}
+  .cg:first-child{border-top:0}
+  .cg strong:not(.quote){font-size:clamp(2.6rem,17cqi,4rem)}
+}
 .caught-path{list-style:none;margin:0 0 .7em;padding:0;display:flex;flex-wrap:wrap;gap:0}
 .caught-path li{flex:1 1 92px;padding:.4em .6em;border-left:1px solid var(--line);font-weight:650;font-size:.95em;line-height:1.25}
 .caught-path li:first-child{border-left:0;padding-left:0}
@@ -665,6 +671,9 @@ body.not-found{min-height:100dvh}
 
 /* Figures that decide something keep tabular digits */
 .stat-value,.crow.amount .amt,.tracker-amt,.inv-amt,.offer-price,.counter b,.g-amount,.lab-score,.care-left b,.stop-count b,.cg strong{font-variant-numeric:lining-nums tabular-nums}
+
+/* Desktop: what Star checked stays beside the conversation as the page scrolls. */
+@media (min-width:901px){.star-side{position:sticky;top:12px;max-height:calc(100dvh - 24px);overflow-y:auto}}
 
 /* Phone and tablet: a composition of its own. The rail becomes a thumb bar. */
 @media (max-width:900px){

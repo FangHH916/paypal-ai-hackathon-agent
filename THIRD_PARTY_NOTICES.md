@@ -5,6 +5,7 @@ Star's own code is under the MIT licence in [LICENSE](LICENSE). These parts in t
 | Part | Where | Licence | Source |
 | --- | --- | --- | --- |
 | AG Grid Community 36.2.0, unmodified | `web/vendor/ag-grid/` | MIT, see `web/vendor/ag-grid/LICENSE.txt` | npm package `ag-grid-community` |
+| Gloock, Atkinson Hyperlegible Next and Mono, Latin subsets, unmodified | `web/fonts/` | SIL OFL 1.1, see `web/fonts/LICENSE.txt` | npm packages `@fontsource/gloock`, `@fontsource-variable/atkinson-hyperlegible-next`, `@fontsource-variable/atkinson-hyperlegible-mono` 5.3.0 |
 | A subset of PayPal's REST API specifications, descriptions stripped, used only by tests | `tests/fixtures/paypal/` | Apache-2.0, see `tests/fixtures/paypal/NOTICE` | https://github.com/paypal/paypal-rest-api-specifications |
 
 Installed at build time, not stored here: the packages in `requirements.txt`, `tests/requirements.txt` and `qa/requirements.txt`, each under its own licence.
