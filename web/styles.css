@@ -155,8 +155,8 @@ body.welcome-active{overflow-x:clip;background:#0a100e}
 .welcome-scam{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:clamp(24px,6vw,96px);align-items:center;padding:clamp(56px,9vw,136px) clamp(16px,4vw,56px);background:var(--surface)}
 .scam-intro h2{font-size:clamp(2.2rem,4.6vw,4.6rem);line-height:1.02;margin-bottom:.35em}
 .scam-intro p{font-size:1.2rem;line-height:1.45;max-width:30em}
-.welcome-scam .stop-block{margin:0}
-.welcome-scam .stop-block>p:not(.stop-count){font-size:1.15rem;line-height:1.45}
+.welcome-scam :is(.stop-block,.stop-plate){margin:0}
+.welcome-scam :is(.stop-block,.stop-plate)>p:not(.stop-count){font-size:1.15rem;line-height:1.45}
 .welcome-scam .stop-count{order:2}
 .welcome-rule{padding:clamp(40px,6vw,88px) clamp(16px,4vw,56px)}
 .welcome-rule h2{font-size:clamp(2.2rem,4.6vw,4.6rem);line-height:1.02;margin-bottom:.5em}
@@ -307,18 +307,18 @@ main#main{flex:1;padding:clamp(20px,3.4vw,52px) clamp(16px,4vw,56px);outline:non
 .plan b,.demo-intro b{display:block}
 .plan ol{margin:.3em 0 0;padding-left:1.3em}
 /* The stop. The seal word comes from CSS and is repeated in the heading, so nothing is lost without it. */
-.stop-block{display:flex;flex-direction:column;position:relative;padding:clamp(18px,2vw,28px);padding-right:clamp(18px,2vw,28px);background:var(--bad-bg);border-top:6px solid var(--bad);overflow-wrap:anywhere;--ros:560px;--ros-x:calc(100% + 240px);--ros-y:-200px;isolation:isolate;overflow:clip}
-.stop-block::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:var(--bad);opacity:.14;-webkit-mask:url(/rosette.svg) no-repeat var(--ros-x) var(--ros-y)/var(--ros);mask:url(/rosette.svg) no-repeat var(--ros-x) var(--ros-y)/var(--ros)}
-.stop-block::after{content:"Stopped";position:absolute;right:clamp(10px,2vw,24px);top:clamp(12px,1.6vw,20px);padding:.12em .42em;border:3px solid var(--bad);color:var(--bad);font:400 clamp(1.05rem,1.8vw,1.7rem)/1 var(--head);letter-spacing:.06em;text-transform:uppercase;transform:rotate(-7deg);pointer-events:none}
-.stop-block.frozen::after{content:"Frozen"}
-.stop-block.frozen{background:var(--pend-bg);border-top-color:var(--pend)}
-.stop-block.frozen::before{background:var(--pend)}
-.stop-block.frozen::after{border-color:var(--pend);color:var(--pend)}
-.stop-block.frozen h3{color:var(--pend)}
-.stop-block h3{display:flex;gap:.45em;align-items:flex-start;color:var(--bad);font:400 clamp(1.6rem,2.6vw,2.5rem)/1.08 var(--head);margin:0 clamp(7.2rem,18%,12rem) .4em 0}
-.stop-block>.acts{order:1}
-.stop-block>.why,.stop-block>small,.stop-block>.stop-count{order:2}
-.stop-block h3 .ico{margin-top:.1em}
+:is(.stop-block,.stop-plate){display:flex;flex-direction:column;position:relative;padding:clamp(18px,2vw,28px);padding-right:clamp(18px,2vw,28px);background:var(--bad-bg);border-top:6px solid var(--bad);overflow-wrap:anywhere;--ros:560px;--ros-x:calc(100% + 240px);--ros-y:-200px;isolation:isolate;overflow:clip}
+:is(.stop-block,.stop-plate)::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:var(--bad);opacity:.14;-webkit-mask:url(/rosette.svg) no-repeat var(--ros-x) var(--ros-y)/var(--ros);mask:url(/rosette.svg) no-repeat var(--ros-x) var(--ros-y)/var(--ros)}
+:is(.stop-block,.stop-plate)::after{content:"Stopped";position:absolute;right:clamp(10px,2vw,24px);top:clamp(12px,1.6vw,20px);padding:.12em .42em;border:3px solid var(--bad);color:var(--bad);font:400 clamp(1.05rem,1.8vw,1.7rem)/1 var(--head);letter-spacing:.06em;text-transform:uppercase;transform:rotate(-7deg);pointer-events:none}
+:is(.stop-block,.stop-plate).frozen::after{content:"Frozen"}
+:is(.stop-block,.stop-plate).frozen{background:var(--pend-bg);border-top-color:var(--pend)}
+:is(.stop-block,.stop-plate).frozen::before{background:var(--pend)}
+:is(.stop-block,.stop-plate).frozen::after{border-color:var(--pend);color:var(--pend)}
+:is(.stop-block,.stop-plate).frozen h3{color:var(--pend)}
+:is(.stop-block,.stop-plate) h3{display:flex;gap:.45em;align-items:flex-start;color:var(--bad);font:400 clamp(1.6rem,2.6vw,2.5rem)/1.08 var(--head);margin:0 clamp(7.2rem,18%,12rem) .4em 0}
+:is(.stop-block,.stop-plate)>.acts{order:1}
+:is(.stop-block,.stop-plate)>.why,:is(.stop-block,.stop-plate)>small,:is(.stop-block,.stop-plate)>.stop-count{order:2}
+:is(.stop-block,.stop-plate) h3 .ico{margin-top:.1em}
 .stop-count{display:flex;flex-wrap:wrap;gap:.2em .6em;align-items:baseline;margin:.7em 0;font-weight:650}
 .stop-count b{font:400 clamp(4rem,7vw,6.5rem)/.9 var(--head);color:var(--bad)}
 .why summary{font-weight:680;cursor:pointer;min-height:44px;padding:.5em 0}
@@ -852,7 +852,7 @@ body.not-found{min-height:100dvh}
   .signnote{padding:0 14px 12px}
   .cg{border-left:0;border-top:1px solid var(--line);padding-left:0}
   .cg:first-child{border-top:0}
-  .stop-block h3{margin-right:0;margin-top:2em}
+  :is(.stop-block,.stop-plate) h3{margin-right:0;margin-top:2em}
   .btn{padding-left:.8em;padding-right:.8em}
 }
 /* The calm version: everything already in its final place, nothing lost, nothing moving. */
@@ -862,6 +862,6 @@ body.not-found{min-height:100dvh}
 }
 @media (forced-colors:active){
   .plate .zero,.caught-zero{border:3px solid CanvasText}
-  .engraved::before,.sidebar::before,.stop-block::before,.confirm::before,.band-rule,.mf-pad::before{display:none}
+  .engraved::before,.sidebar::before,:is(.stop-block,.stop-plate)::before,.confirm::before,.band-rule,.mf-pad::before{display:none}
 }
 @media print{.sidebar,.topbar,.band,#toast,.trace,.welcome-actions{display:none}}

@@ -729,10 +729,13 @@ def run(browser, base: str, args) -> None:
                     gc.close()
                 # Activity: no summed "kept safe" number
                 nav(q, "Activity")
-                expect(q.locator(".grid-host .row-total").first).to_be_visible(timeout=15000)
+                expect(q.locator(".grid-host .ag-root").first).to_be_visible(timeout=15000)
+                time.sleep(0.5)
                 grid_text = q.locator(".grid-host").inner_text()
                 check("no 'kept safe' total", "kept safe" not in grid_text.lower(), grid_text[-200:])
-                check("stops are counted, not added up", "Stops" in grid_text, grid_text[-200:])
+                check("an empty ledger is one plain line, without zero totals", "Nothing here yet" in grid_text and q.locator(".grid-host .row-total").count() == 0, grid_text[-200:])
+                grid_box = q.locator(".grid-host").bounding_box()
+                check("an empty ledger stays short", grid_box["height"] < 240, grid_box["height"])
                 # Freeze means freeze, one tap, from Home
                 nav(q, "Home")
                 q.locator("#home-freeze").click()
@@ -804,7 +807,7 @@ def run(browser, base: str, args) -> None:
                 expect(q.locator("#drill-out .lab-score")).to_contain_text("1 payout exists", timeout=60000)
                 fits("failure drill result")
                 # Care mode: the button she signs with, the dock, the stop
-                nav(q, "Settings")
+                nav(q, "Home")
                 q.locator("#care-toggle").click()
                 expect(q.locator(".care-hello h1")).to_be_visible()
                 time.sleep(0.4)
