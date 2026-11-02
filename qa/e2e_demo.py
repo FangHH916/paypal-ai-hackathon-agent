@@ -412,6 +412,7 @@ def run(browser, base: str, args) -> None:
         expect(rows.first).to_be_visible(timeout=20000)
         time.sleep(1)
         shot(page, "36-activity-grid", True)
+        expect(grid).to_contain_text("SIMULATED", timeout=5000)      # cells are drawn a moment after a resize
         check("status always has its tag", "SIMULATED" in grid.inner_text())
         check("stops are in the grid", grid.locator(".row-stopped").count() >= 1, grid.locator(".row-stopped").count())
         check("totals are pinned at the bottom", grid.locator(".row-total", has_text="Total sent").count() == 1)
@@ -833,8 +834,9 @@ def run(browser, base: str, args) -> None:
                 check("Care, 320: the signing button fits a purchase card too", go["x"] + go["width"] <= card["x"] + card["width"], (go, card))
                 q.locator("#c-cancel").click()
                 expect(q.locator("#confirm")).to_be_hidden()
+                stops = q.locator(".stop-block").count()
                 say(q, "The police say I must move my savings to a safe account")
-                expect(q.locator(".stop-block").last).to_be_visible()
+                expect(q.locator(".stop-block")).to_have_count(stops + 1, timeout=15000)   # this stop, not an earlier one
                 fits("Care stop")
                 # The network goes: plain words and a way to retry
                 c.route("**/api/**", lambda route: route.abort())
