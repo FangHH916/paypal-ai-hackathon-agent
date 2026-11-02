@@ -115,7 +115,13 @@ NUDGE_LOOKUP = ("[Harness check] You answered without calling any tool, so you h
                 "person, offer or invoice doesn't exist without looking it up. Call the right tool now "
                 "(list_payees, search_catalogue, list_invoices, get_allowance, list_refundable, payment_status), then continue.")
 _DATA_INTENTS = ("transfer", "bill_pay", "purchase", "refund", "stop_payout", "money_request", "bill_query", "income", "balance",
-                 "spending", "limits", "add_payee", "status", "disputes")
+                 "spending", "limits", "add_payee", "status", "disputes", "last_payment", "who")
+# "I'm scared", "I feel frightened": she is told where help is, not given the menu. "I'm not scared" is not this.
+_FEAR = re.compile(r"\b(?:scared|afraid|frightened|terrified|worried|nervous|anxious|panicking|panicked|confused|upset|unsafe)\b", re.I)
+_NOT_FEAR = re.compile(r"\b(?:not|n't|never|no longer)\s+(?:\w+\s+)?$", re.I)
+COMFORT = ("I'm sorry you feel this way. Nothing has been sent. Nothing is ever sent unless you check it and confirm it yourself, "
+           "so you can take your time. Please call your family on the number you already have. If someone is pressuring you "
+           "about money, hang up and call {hotline}.")
 
 
 @dataclass
@@ -352,6 +358,15 @@ class Agent:
         # Calling her family or the scam hotline: always answered, scam alert or not, and never mistaken for a payment
         if _HELP.search(text) and not parse_amount(text) and detect_intent(text) not in ("freeze", "handoff"):
             return self._help(s, start, text)
+
+        # She's frightened or worried, and asking for nothing else: her family and the hotline, said by code
+        fear = _FEAR.search(text)
+        if fear and not _NOT_FEAR.search(text[:fear.start()]) and detect_intent(text) == "unknown" and not parse_amount(text):
+            reply = COMFORT.format(hotline=hotline_words())
+            s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
+            s.add_trace("guard", "She said she is frightened or worried: pointed to her family and the hotline, nothing changed")
+            self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "text", "llm": "help"})
+            return TurnResult(reply, {"type": "text", "hotline": hotline()["spoken"]}, reply, s.trace[start:], "help")
 
         # A lost or stolen phone / wallet: offer the freeze once, and don't act on anything else in the same sentence
         # ("I lost my phone, can you send 20 to my son"). "Freeze my payments" said outright still freezes at once.

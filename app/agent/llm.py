@@ -89,7 +89,16 @@ _RX = {
     "income": r"pension|(come|came|gone) in|arrived|received",
     "balance": r"balance|allowance|how much (money )?(do i have|have i got|is (there )?in|is left|left|can i spend)",
     "spending": r"\bspen[dt]|spending|expenses|transactions|history",
+    # "What did I pay last?", "When did I last pay someone?", "What was my last payment?": a question, never a payment
+    "last_payment": r"^\W*(?:what|who|when|which|where)\b[^.?!]{0,40}\b(?:pay|paid|send|sent|buy|bought|transfer(?:red)?|gave)\b[^.?!]{0,25}"
+                    r"\b(?:last|most recently|latest)\b(?!\s+(?:time|month|week|year))|"
+                    r"^\W*(?:what|who|when|which)\b[^.?!]{0,20}\blast\s+(?:pay|paid|send|sent|buy|bought)\b|"
+                    r"^\W*(?:what|who|when|which|tell me|show me|remind me)\b[^.?!]{0,30}\b(?:last|latest|most recent|previous)\s+"
+                    r"(?:payments?|transfers?|purchases?|thing (?:i|I) (?:paid|bought))\b",
 }
+# "Who is Anna?", "Who's my grandson?": one name or one relation, nothing more ("Who is calling me about my bank?" is not this)
+WHO_IS = re.compile(r"^\W*who(?:'s|\s+is|\s+are)\s+(?:my\s+)?(?!(?:this|that|it|there|he|she|they|you|star|that man|that woman)\b)"
+                    r"([A-Za-z][A-Za-z'-]+(?:\s+[A-Za-z][A-Za-z'-]+)?)\W*$", re.I)
 
 
 # Her phone, wallet or purse is lost or stolen ("lost my phone", "my wallet was stolen"), not an accessory ("phone charger")
@@ -125,6 +134,10 @@ def detect_intent(text: str) -> str:
         return "status"
     if _has("disputes", text):
         return "disputes"
+    if _has("last_payment", text):
+        return "last_payment"
+    if WHO_IS.search(text):
+        return "who"
     if _has("invoice_ask", text):
         return "bill_query"
     if _has("bill", text) and _has("pay", text):
@@ -240,6 +253,33 @@ class OfflineLLM:
             if not outs:
                 return self._say(f"You haven't spent anything yet this month ({named}).")
             return self._say(f"This month ({named}) you've spent {fmt_money(total)} across {len(outs)} payment{'' if len(outs) == 1 else 's'} so far.")
+
+        if intent == "last_payment":
+            if "get_recent_transactions" not in results:
+                return self._call("get_recent_transactions", {"limit": 20}, "Read the payments to find the newest one she made.")
+            outs = sorted((t for t in results["get_recent_transactions"]["data"] if t["amount_cents"] < 0),
+                          key=lambda t: t["date"], reverse=True)
+            if not outs:
+                return self._say("I don't see any payments from you yet.")
+            t = outs[0]
+            to = re.sub(r"^Transfer to\s+", "", t["desc"])
+            when = time.strftime("%B %d, %Y", time.strptime(t["date"], "%Y-%m-%d")).replace(" 0", " ")
+            return self._say(f"Your last payment was {fmt_money(-t['amount_cents'])} to {to}, on {when}.")
+
+        if intent == "who":
+            if "list_payees" not in results:
+                return self._call("list_payees", {}, "Look up who she means among her saved people.")
+            asked = WHO_IS.search(text).group(1)
+            people = results["list_payees"]["data"]
+            hits = match_payees(asked, people)
+            if not hits:
+                return self._say(f"{asked.strip().title()} isn't one of your saved people, so I can't send them money. "
+                                 "If someone you don't know is asking you for money, please talk to your family first.")
+            def who(p):
+                return f"{p['name']} is {'your ' + p['relation'] if p['type'] == 'person' else 'a company you pay bills to'}"
+            return self._say(". ".join(who(p) for p in hits) + ". " +
+                             ("They are saved in Star, so you can send them money." if len(hits) > 1 or hits[0]["type"] == "person"
+                              else "It is saved in Star, so you can pay its bills."))
 
         if intent == "status":
             if "payment_status" not in results:

@@ -110,3 +110,78 @@ class TestHugeAmountsExplainTheLimit(World):
         self.assertEqual(parse_amount("one million two hundred thousand dollars"), 1_200_000)
         r = self.turn("Send 12345678 to my daughter")
         self.assertIn("too long to be an amount", r.reply)
+
+
+GENERIC = "What would you like to do?"
+
+
+class TestQuestionsGetTheirOwnAnswers(World):
+    def test_last_payment(self):
+        for text in ("What did I pay last?",                       # the defect
+                     "What was my last payment?", "Who did I send money to last?", "When did I last pay someone?",
+                     "Tell me my most recent payment", "What's the latest thing I bought or paid for?"):
+            with self.subTest(text=text):
+                self.setUp()
+                r = self.turn(text)
+                self.assertIn("$200.00", r.reply, f"{text!r} -> {r.reply}")     # 28 September, to Anna Lee: the newest
+                self.assertIn("Anna Lee", r.reply)
+                self.assertIn("September 28", r.reply)
+                self.assertEqual(self.s.phase, Phase.IDLE)
+                self.assertIsNone(self.s.current_draft_id)
+
+    def test_last_payment_follows_a_new_one(self):
+        self.turn("Send 20 to my grandson Ben")
+        self.sign()
+        r = self.turn("What was my last payment?")
+        self.assertIn("$20.00", r.reply)
+        self.assertIn("Ben Lee", r.reply)
+
+    def test_last_payment_look_alikes_are_still_payments(self):
+        for text in ("Send 20 to Ben, like last time", "Pay Anna 30, the same as last month"):
+            with self.subTest(text=text):
+                self.setUp()
+                r = self.turn(text)
+                self.assertNotIn("Your last payment", r.reply)
+                self.assertIsNotNone(self.s.current_draft, f"{text!r} -> {r.reply}")
+
+    def test_who_is_someone(self):
+        for text, want in (("Who is Anna", "Anna Lee is your daughter"),          # the defect
+                           ("Who's David?", "David Lee is your son"),
+                           ("who is sam lee", "Sam Lee is your grandson"),
+                           ("Who is my daughter?", "Anna Lee is your daughter"),
+                           ("Who is my grandson?", "Ben Lee"),
+                           ("Who is Tom?", "isn't one of your saved people")):
+            with self.subTest(text=text):
+                self.setUp()
+                r = self.turn(text)
+                self.assertIn(want, r.reply, f"{text!r} -> {r.reply}")
+                self.assertNotIn(GENERIC, r.reply)
+                self.assertIsNone(self.s.current_draft_id)
+        r = self.turn("Who is my grandson?")
+        self.assertIn("Sam Lee", r.reply)
+
+    def test_who_look_alikes(self):
+        self.assertNotIn("saved people", self.turn("Who is calling me about my bank?").reply)
+        self.assertNotIn("saved people", self.turn("Who are you?").reply)
+
+    def test_scared_points_to_family_and_the_hotline(self):
+        from app.kernel.hotline import hotline
+        for text in ("I'm scared",                                   # the defect
+                     "I feel frightened", "I am really worried", "I'm afraid", "I'm so nervous about all this",
+                     "I'm confused and upset"):
+            with self.subTest(text=text):
+                self.setUp()
+                r = self.turn(text)
+                self.assertIn(hotline()["spoken"], r.reply, f"{text!r} -> {r.reply}")
+                self.assertIn("family", r.reply)
+                self.assertIn("Nothing has been sent", r.reply)
+                self.assertNotIn(GENERIC, r.reply)
+                self.assertEqual(r.ui.get("hotline"), hotline()["spoken"])
+
+    def test_scared_look_alikes(self):
+        r = self.turn("I'm worried about my power bill")
+        self.assertIn("Riverside Power", r.reply)
+        self.setUp()
+        r = self.turn("I'm not scared, send 20 to Ben")
+        self.assertIsNotNone(self.s.current_draft, r.reply)
+        self.assertEqual(self.s.current_draft.amount_cents, 2000)
