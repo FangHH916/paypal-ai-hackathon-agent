@@ -295,7 +295,7 @@ def demo(r: Run) -> None:
     time.sleep(2.5)
     page.locator(".chip", has_text="All").click()
     time.sleep(0.5)
-    rows.filter(has_text="Money sent").first.click()
+    rows.filter(has_text="Sent, verified").first.click()
     expect(page.locator("#detail .timeline")).to_be_visible()
     time.sleep(0.5)
     r.shot(page, "20-row-detail")
