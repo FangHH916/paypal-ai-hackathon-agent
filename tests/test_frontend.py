@@ -186,5 +186,33 @@ class TestSavedReceipt(unittest.TestCase):
         self.assertNotEqual(payments.receipt_hash(as_browser), body["receipt_sha256"])
 
 
+class TestPlainZero(unittest.TestCase):
+    """Seen in a rescore: amounts and times in body text showed a slashed zero (the vendored Atkinson faces have no plain
+    zero). Figures in body text and amounts come from a face with a plain zero; the slashed-zero mono is kept only for
+    reference codes, where telling 0 from O matters."""
+    CODES = {"code", ".mode-tag", ".ticker .code", "pre", ".invite-box input"}
+
+    def setUp(self):
+        self.css = re.sub(r"/\*.*?\*/", "", (WEB / "styles.css").read_text(encoding="utf-8"), flags=re.S)
+
+    def test_body_figures_come_from_a_face_with_a_plain_zero(self):
+        body = re.search(r"--body:([^;]+);", self.css).group(1).strip()
+        self.assertTrue(body.startswith("'Plain Figures'"), body)
+        faces = re.findall(r"@font-face\{font-family:'Plain Figures';[^}]*\}", self.css)
+        self.assertGreaterEqual(len(faces), 2, "a regular and a bold face")
+        for face in faces:
+            self.assertIn("unicode-range:U+30-39", face)          # figures only: every letter stays Atkinson
+            self.assertNotIn("atkinson", face.lower())
+            self.assertNotRegex(face, r"url\(")                   # nothing new is fetched
+
+    def test_mono_only_where_it_is_a_reference_code(self):
+        users = set()
+        for selectors, body in re.findall(r"([^{}]+)\{([^{}]*var\(--mono\)[^{}]*)\}", self.css):
+            if selectors.strip().startswith(":root") or "--mono:" in body:
+                continue
+            users.update(s.strip() for s in selectors.split(","))
+        self.assertLessEqual(users, self.CODES, users - self.CODES)
+
+
 if __name__ == "__main__":
     unittest.main()
