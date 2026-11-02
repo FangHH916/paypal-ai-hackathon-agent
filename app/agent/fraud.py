@@ -64,6 +64,15 @@ PATTERNS = [
      "Someone you only know online asking for money is how romance scams work, however kind they seem."),
     ("family_impersonation", 5, r"\b(?:grandma|grandpa|granny|grandmother|grandfather|nana|nanna|gran|gramps|grams|nan)\b[,!]?\s*"
                                 r"(?:it'?s|its|this is) (?:me|your)\b|"
+                                # "Grandpa, this is Kevin, ... stuck / stolen wallet / send 400": a name, then trouble or money
+                                r"\b(?:grandma|grandpa|granny|grandmother|grandfather|nana|nanna|gran|gramps|grams|nan)\b[,!]?\s*"
+                                r"(?:it'?s|its|this is) (?!me\b|your\b)[a-z]+\b(?!'s)(?=.{0,120}\b(?:lost|stolen|stole|gone|died|"
+                                r"broke|broken|smashed|stuck|stranded|trouble|jail|bail|accident|hospital|new (?:number|phone|account)|"
+                                r"need|send|wire|transfer)\b)|"
+                                # "It's me Tommy, my phone was stolen ... new account": her family's phone or wallet gone, money elsewhere
+                                r"\bit'?s me\b.{0,80}\b(?:phone|wallet|purse|cell|mobile)\b.{0,20}\b(?:stolen|lost|gone|died|dead|"
+                                r"broke|broken|smashed|missing)\b|"
+                                r"\bit'?s me\b.{0,100}\b(?:new|this|different|another) (?:account|number)\b|"
                                 r"\b(?:it'?s me|this is (?:your|ur) (?:grand(?:son|daughter|child|kid)|son|daughter|nephew|niece))\b.{0,80}"
                                 r"\b(?:lost|broke|broken|smashed|dropped|new|different|friend'?s|borrowed|someone else'?s)\b.{0,15}"
                                 r"\b(?:phone|number|cell|mobile)\b|"
