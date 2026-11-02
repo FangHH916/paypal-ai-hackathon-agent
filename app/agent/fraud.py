@@ -189,7 +189,8 @@ PATTERNS = [
      "Gift cards are how scammers like to be paid, so your family checks this one."),
     ("romance", 2, r"online friend|met online|(boyfriend|girlfriend) (overseas|abroad)|army officer|dating app",
      "Sending money to someone you've only met online is very risky."),
-    ("asks_money", 1, r"\b(he|she|they|him|her)\b.{0,20}\b(needs?|wants?|asked (me )?for|asking (me )?for)\b.{0,20}"
+    ("asks_money", 1, r"\b(he|she|they|him|her|friend|boyfriend|girlfriend|sweetheart|gentleman|man|woman|lady|guy|someone|"
+                      r"somebody)\b.{0,20}\b(needs?|wants?|asked (me )?for|asking (me )?for)\b.{0,20}"
                       r"(money|\$|\d)|\blend (him|her|them)\b|\bborrow(ed)? (money|\$|\d)",
      "Someone asking you for money, especially someone you haven't met in person, is a warning sign."),
     ("urgency", 1, r"urgent|immediately|right now|right away|within (the )?(hour|day|\d+ minutes)",
@@ -235,6 +236,10 @@ def _her_own_secret(text: str) -> bool:
 MONEY_MOVE = re.compile(r"\b(transfer|send|sent|pay|wire|give|buy|move|put|invest|top up|deposit)\b|money to", re.I)
 
 
+# Words that are a sign only together with someone asking for the money, or inside a named script
+_WEAK_ALONE = {"prize", "romance"}
+
+
 def scan(text: str) -> tuple[RiskLevel, list[str], list[str]]:
     """Returns (risk level, plain-language reasons, matched categories)."""
     text = text.lower().replace("p0lice", "police")
@@ -251,6 +256,8 @@ def scan(text: str) -> tuple[RiskLevel, list[str], list[str]]:
                 reasons.append(why)
     if cats == ["giftcard"]:
         level = RiskLevel.LOW      # no scam sign by itself: the card's own rule (R94) warns her and brings in the family
+    elif set(cats) <= _WEAK_ALONE:
+        level = RiskLevel.LOW      # "Anna won a prize", "the lottery tickets she bought us": only with someone asking ("he needs 400")
     elif "safe_account" in cats or score >= 6:
         level = RiskLevel.BLOCK
     elif score >= 3:
