@@ -369,6 +369,17 @@ class Agent:
                 {"label": "No, don't freeze", "detail": "Nothing has been sent", "send": "No, don't freeze"}]},
                 reply, s.trace[start:], "freeze question")
 
+        # "Send 50 to my daughter every month": Star can't repeat a payment, so it never turns that into a quiet one-off
+        repeat = request_guard.once_only(text)
+        if repeat:
+            reply, once = repeat
+            s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
+            s.start_task()
+            s.add_trace("guard", "A repeating payment was asked for: Star only sends once, so nothing was prepared")
+            self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "choose" if once else "text", "llm": "request guard"})
+            ui = {"type": "choose", "options": [{"label": "Send it once now", "detail": once, "send": once}]} if once else {"type": "text"}
+            return TurnResult(reply, ui, reply, s.trace[start:], "request guard")
+
         error = request_guard.problem(text) if detect_intent(text) in _MONEY_INTENTS else None
         if error:
             s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": error}])

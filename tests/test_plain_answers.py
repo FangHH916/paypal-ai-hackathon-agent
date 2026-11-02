@@ -43,3 +43,46 @@ class TestSpendingThisMonth(World):
         reply = self.spend("how much did I spend", zone="America/New_York")
         self.assertIn("October 2026", reply)
         self.assertIn("haven't spent anything", reply)
+
+
+ONCE_ONLY = "can only send"
+
+
+class TestRepeatingPaymentsAreNotSilentlyOneOff(World):
+    def test_a_repeating_request_is_refused_plainly_and_nothing_is_drafted(self):
+        for text in ("Send 50 to my daughter every month",          # the defect
+                     "Pay Ben Lee 20 dollars every week",
+                     "Set up a monthly payment of 100 to my son",
+                     "Give my grandson Sam 10 dollars each Friday",
+                     "Send Anna 30 monthly",
+                     "Transfer 40 to David on the first of every month",
+                     "Keep sending my daughter 25 every two weeks",
+                     "Can you send 15 to Ben automatically from now on"):
+            with self.subTest(text=text):
+                self.setUp()
+                r = self.turn(text)
+                self.assertIn(ONCE_ONLY, r.reply, f"{text!r} -> {r.reply}")
+                self.assertIn("can't set up", r.reply)
+                self.assertEqual(self.s.phase, Phase.IDLE, f"{text!r} drafted a card")
+                self.assertIsNone(self.s.current_draft_id)
+
+    def test_she_is_offered_the_one_off_payment_in_her_own_words(self):
+        r = self.turn("Send 50 to my daughter every month")
+        sends = [o["send"] for o in r.ui.get("options", [])]
+        self.assertEqual(sends, ["Send 50 to my daughter"])
+        r = self.turn(sends[0])
+        self.assertEqual(self.s.phase, Phase.AWAITING_AUTH, r.reply)
+        self.assertEqual(self.s.current_draft.amount_cents, 5000)
+
+    def test_look_alikes_are_one_off_payments(self):
+        for text, kind in (("Pay my monthly water bill", "bill"),
+                           ("Pay the power bill that comes every month", "bill"),
+                           ("I usually send Anna 50 every month, please send it now", "transfer"),
+                           ("Send 50 to my daughter", "transfer"),
+                           ("Send 50 to my daughter for her weekly groceries", "transfer")):
+            with self.subTest(text=text):
+                self.setUp()
+                r = self.turn(text)
+                self.assertNotIn(ONCE_ONLY, r.reply, f"{text!r} -> {r.reply}")
+                self.assertIsNotNone(self.s.current_draft, f"{text!r} -> {r.reply}")
+                self.assertEqual(self.s.current_draft.kind, kind)

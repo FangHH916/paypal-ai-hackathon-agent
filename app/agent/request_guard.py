@@ -31,6 +31,45 @@ def stops_open_card(text):
     return cancelled(text) or bool(_STOPS_CARD.search(text))
 
 
+# A payment asked for again and again ("every month", "each Friday", "monthly", "from now on"). Star only sends once, now.
+_REPEAT = re.compile(
+    r"\b(?:every|each)\s+(?:other\s+)?(?:day|week|fortnight|month|year|morning|evening|weekend|monday|tuesday|wednesday|"
+    r"thursday|friday|saturday|sunday|(?:two|three|four|six|\d+)\s+(?:days|weeks|months))\b"
+    r"|\b(?:monthly|weekly|daily|fortnightly|yearly|annually)\b(?=\s*(?:[.,!?]|$|please\b|from\b|starting\b|until\b|on\b))"
+    r"|\b(?:monthly|weekly|daily|fortnightly|yearly|annual|regular|recurring|repeating|repeat|automatic|scheduled|standing)\s+"
+    r"(?:payments?|transfers?|orders?|debits?)\b"
+    r"|\bfrom now on\b|\bautomatically\b|\bkeep (?:sending|paying|giving)\b|\bon a schedule\b|\bauto-?pay\b|\bdirect debit\b", re.I)
+# "the bill that comes every month", "I usually send her 50 every month": a habit described, not a repeat asked for
+_HABIT = re.compile(r"\b(?:that|which|usually|normally|always|often|comes|arrives|due|used to)\b", re.I)
+_MONEY_WORD = re.compile(r"\b(?:send|sending|pay|paying|payments?|transfers?|transferring|give|giving)\b", re.I)
+
+
+def repeating(text):
+    """The words asking for a repeating payment, or None."""
+    for m in _REPEAT.finditer(text):
+        if not _HABIT.search(text[max(0, m.start() - 40):m.start()]) and _MONEY_WORD.search(text):
+            return m
+    return None
+
+
+def once_only(text):
+    """(reply, the same request without the repeat) for a repeating payment, or None. The one-off is offered only when
+    what is left is still a whole request."""
+    m = repeating(text)
+    if not m:
+        return None
+    from app.agent.llm import detect_intent
+    from app.agent.textparse import parse_amount
+    once = re.sub(r"\s+", " ", (text[:m.start()].rstrip() + " " + text[m.end():].lstrip())).strip(" ,.")
+    once = re.sub(r"\s+on the \w+ of$", "", once, flags=re.I).strip(" ,.")
+    if repeating(once) or not parse_amount(once) or detect_intent(once) not in ("transfer", "bill_pay"):
+        once = ""
+    reply = ("I can only send a payment once, right now. I can't set up monthly or other repeating payments, so I haven't "
+             "prepared anything. " + (f"If you'd like to send it once now, tap below or say \"{once}\"." if once
+                                       else "If you'd like to send money once now, tell me who and how much."))
+    return reply, once
+
+
 def correction(text):
     return bool(re.search(r"\b(?:change|correct|revise)\s+(?:the\s+)?amount\s+to\b|\bmake\s+(?:it|that)\b", text, re.I))
 
