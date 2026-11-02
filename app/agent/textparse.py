@@ -218,12 +218,26 @@ def find_raw_account(text: str) -> str | None:
     return digits if len(digits) >= 7 else None
 
 
+_KIN_WORDS = {"daughter", "son", "grandson", "granddaughter", "grandchild", "wife", "husband", "sister", "brother", "niece",
+              "nephew", "my girl", "my boy"}
+# "his daughter's surgery", "their son", "the pastor's daughter": someone else's relative, never hers by the relation word
+_OTHERS_KIN = re.compile(r"\b(?:his|her|their|its|(?!(?:it|she|he|that|what|who|there|here|this|where|let)'s)\w+'s)\s+(?:\w+\s+)?(?:daughter|son|grand\w+|wife|husband|sister|brother|"
+                         r"niece|nephew)\b", re.I)
+# The money goes to an account that isn't one of hers: "send 700 to his account", "pay 400 to this account"
+_TO_OTHER_ACCOUNT = re.compile(r"\bto (?:his|her|their|this|that|a|an|another|the|some) (?:new |different |other |friend'?s |"
+                               r"bank |special )?account\b", re.I)
+
+
 def match_payees(text: str, payees: list[dict]) -> list[dict]:
-    """Find payees by alias in the text; return every hit (the caller must ask if there's more than one)."""
-    low = text.lower()
+    """Find payees by alias in the text; return every hit (the caller must ask if there's more than one).
+    A relation word only counts when it is her relative: "his daughter" is not her daughter, and a payment "to his account"
+    is not to a relative only mentioned in passing. Names still count ("Send Anna 40 to her account")."""
+    low = text.lower().replace("’", "'")
+    kin_ok = not _TO_OTHER_ACCOUNT.search(low)
+    low = _OTHERS_KIN.sub(" someone's relative ", low)      # "his son's fees" -> "someone's relative's fees"
     hits = []
     for p in payees:
-        names = [p["name"].lower(), *[a.lower() for a in p.get("aliases", [])]]
+        names = [p["name"].lower(), *[a.lower() for a in p.get("aliases", []) if kin_ok or a.lower() not in _KIN_WORDS]]
         if any(n and re.search(rf"(?<![a-z]){re.escape(n)}(?![a-z])", low) for n in names):
             hits.append(p)
     if len(hits) > 1:

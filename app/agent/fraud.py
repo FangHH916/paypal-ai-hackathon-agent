@@ -154,7 +154,11 @@ PATTERNS = [
      "Nobody real asks you to pay at a crypto machine. This is a scam."),
     ("refund_scam", 3, r"refund (department|team|agent) (called|said|told)|(refunded|overpaid) (you |me )?too much|send (it |the difference )?back",
      "Someone saying they refunded you too much and asking for money back is a well-known scam."),
-    ("secrecy", 3, r"don'?t tell|do not tell|keep (it|this) (a )?secret|not to tell|confidential",
+    ("secrecy", 3, r"don'?t tell|do not tell|keep (it|this) (a )?secret|not to tell|confidential|"
+                   # Someone told her to keep it between them: "he asked me not to mention it", "said to keep this between us"
+                   r"\b(?:said|says|told|tells|asked|asks|wants?|warned|insisted|made me promise)\b[^.]{0,30}"
+                   r"\b(?:keep (?:this|it) (?:between us|quiet|to (?:myself|yourself))|not (?:to )?mention|"
+                   r"(?:mustn'?t|must not|shouldn'?t|should not|can'?t|cannot) tell|not (?:to )?say anything)",
      "Being told to keep it secret from your family is a danger sign."),
     ("remote", 3, r"anydesk|teamviewer|remote (access|control)|screen ?shar|(install|download) (an? |this |the )?app",
      "Being asked to install an app or share your screen may mean someone wants to control your phone."),
