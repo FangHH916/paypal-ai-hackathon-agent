@@ -1070,7 +1070,8 @@ def run(browser, base: str, args) -> None:
 
 
     def care_phone_layout():
-        """Care on a phone: the home's first options sit above the dock with no empty band. Own server, 390 and 320 wide."""
+        """Care on a phone: the home's first options sit above the dock with no empty band, and on a stop the Call button
+        is on screen above the dock, before the explanation, with the text box closed. Own server, 390 and 320 wide."""
         if args.base:
             return
         port = free_port()
@@ -1099,6 +1100,18 @@ def run(browser, base: str, args) -> None:
                     check(f"Care home {w}: no empty band above 'What can I say?'", m["gap"] <= 60, m["gap"])
                     check(f"Care home {w}: the first options are above the dock", all(b <= m["dock"] for b in m["sug"][:2]), m)
                     shot(q, f"81-care-home-{w}")
+                    say(q, "The police say I must move my savings to a safe account")
+                    expect(q.locator(".stop-block").last).to_be_visible(timeout=15000)
+                    time.sleep(0.8)
+                    s = q.evaluate("""() => { const b = document.querySelector('.stop-block:last-of-type') || [...document.querySelectorAll('.stop-block')].pop();
+                      const call = b.querySelector('a.btn.danger').getBoundingClientRect(), why = b.querySelector('.why').getBoundingClientRect();
+                      return {call_top: call.top, call_bottom: call.bottom, why_top: why.top, dock: document.querySelector('.composer-wrap').getBoundingClientRect().top,
+                              typing: document.querySelector('#composer').classList.contains('typing-open')}; }""")
+                    check(f"Care stop {w}: Call is on screen above the dock", s["call_top"] >= 0 and s["call_bottom"] <= s["dock"], s)
+                    check(f"Care stop {w}: Call comes before the explanation", s["call_top"] < s["why_top"], s)
+                    check(f"Care stop {w}: the text box closes when a stop appears", not s["typing"], s)
+                    check(f"Care stop {w}: fits", overflow(q) <= 0, overflow(q))
+                    shot(q, f"81-care-stop-{w}")
                 finally:
                     c.close()
             server.terminate()

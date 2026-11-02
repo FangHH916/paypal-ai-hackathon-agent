@@ -449,11 +449,12 @@ function bindAssistant(){
   renderStage();
 }
 // Care mode on a phone: one big button to speak. Typing is one tap away, so the dock doesn't take a third of a small screen.
-function setTyping(on){
+function setTyping(on, focus = true){
   state.typing = on;
   $('#composer')?.classList.toggle('typing-open', on);
   const b = $('#type-open'); if(b){ b.textContent = on ? 'Close' : 'Type'; b.setAttribute('aria-expanded', String(on)); }
-  if(on) $('#text')?.focus();
+  if(on && focus) $('#text')?.focus();
+  if(!on && document.activeElement === $('#text')) document.activeElement.blur();
   measureBars();
 }
 const clockNow = at => at ? new Date(at).toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}) : '';
@@ -481,16 +482,26 @@ function stageHtml(m, i){
   if(m.type === 'frozen') return `<div class="stop-block frozen" data-fx="${i}"><h3>${icon('freeze')}Frozen: this didn't match what you said</h3>
     <ul class="why-list">${m.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="muted small">A second reading of your own words caught it. Nothing went to PayPal.</p>
     ${stopCount(m)}<div class="acts"><button class="btn secondary again" type="button">Say it again</button></div></div>`;
+  if(m.type === 'blocked' && state.care && m.scam !== false) return careStopHtml(m, i);
   if(m.type === 'blocked') return `<div class="stop-block" data-fx="${i}"><h3>${icon('shield')}${m.scam === false ? "I can't do this one" : "I've stopped this for you"}</h3>
     <p>${esc(m.text)}</p>${state.care || m.reasons?.length ? `<details class="why" ${state.care ? 'open' : ''}><summary>Why I stopped this</summary>${whyHtml(m.reasons?.length ? m.reasons : [m.text])}</details>` : ''}
     ${m.hint ? `<small class="muted">${esc(m.hint)}</small>` : ''}${stopCount(m)}
-    <div class="acts">${m.scam === false ? '' : `<a class="btn danger" href="tel:${esc(hotline().number)}">${icon('phone')}Call ${esc(hotline().spoken)}</a>`}
+    <div class="acts">${m.scam === false ? '' : `<a class="btn danger" href="tel:${esc(hotline().number)}">${icon('phone')}<span>Call <span class="nowrap">${esc(hotline().spoken)}</span></span></a>`}
       <button class="btn secondary notify" type="button">${icon('family')}Tell ${esc(guardianName())}</button>
       <button class="replay btn secondary small" type="button" data-i="${i}" aria-label="Read this aloud">${icon('speaker')}</button></div>
     ${m.scam === false ? '' : `<p class="muted small">${esc(hotline().name[0].toUpperCase() + hotline().name.slice(1))}, ${esc(hotline().number)}.</p>`}</div>`;
   if(m.type === 'next') return m.done ? '' : `<div class="next-chips"><button class="btn primary small nx-go" type="button" data-i="${i}">Continue: ${esc(m.task)}</button><button class="btn secondary small nx-no" type="button" data-i="${i}">Not now</button></div>`;
   return `<div class="msg bot">${msgSide(m, 'Star', i)}<div class="msg-body">${esc(m.text)}</div></div>`;
 }
+// Care on a phone: the way to get help comes first, then one short line; the full reasons stay open below.
+const careStopHtml = (m, i) => `<div class="stop-block care-stop" data-fx="${i}"><h3>${icon('shield')}I've stopped this for you</h3>
+    <div class="acts"><a class="btn danger" href="tel:${esc(hotline().number)}">${icon('phone')}<span>Call <span class="nowrap">${esc(hotline().spoken)}</span></span></a>
+      <button class="btn secondary notify" type="button">${icon('family')}Tell ${esc(guardianName())}</button>
+      <button class="replay btn secondary small" type="button" data-i="${i}" aria-label="Read this aloud">${icon('speaker')}</button></div>
+    <p>Please don't send any money. If someone asked you to, hang up and call this number or your family.</p>
+    <details class="why" open><summary>Why I stopped this</summary>${whyHtml(m.reasons?.length ? m.reasons : [m.text])}</details>
+    ${m.hint ? `<small class="muted">${esc(m.hint)}</small>` : ''}${stopCount(m)}
+    <p class="muted small">${esc(hotline().name[0].toUpperCase() + hotline().name.slice(1))}, ${esc(hotline().number)}.</p></div>`;
 const stopCount = m => m.calls === undefined ? '' : `<p class="stop-count"><b>${esc(m.calls)}</b> money-moving PayPal calls for this request ${modeTag(mode())}</p>`;
 function renderStage(){
   const st = $('#stage'); if(!st) return;
@@ -535,6 +546,7 @@ function playMoments(st){
 function announce(text, urgent = false){ const el = $(urgent ? '#sr-alert' : '#sr-live'); if(el && text){ el.textContent = ''; setTimeout(() => { el.textContent = text; }, 30); } }
 function push(m){
   m.at ??= Date.now();
+  if(m.type === 'blocked' && state.care && state.typing) setTyping(false, false);   // a stop needs the screen, not the keyboard
   state.messages.push(m); renderStage(); saveChat();
   if(m.role === 'bot' && m.type === 'blocked') announce(`Stopped. ${m.text}`, true);
   else if(m.role === 'bot') announce(m.text);

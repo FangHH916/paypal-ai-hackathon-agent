@@ -328,6 +328,9 @@ body.care .stage.empty .welcome-msg{margin-top:0}
 :is(.stop-block,.stop-plate)>.acts{order:1}
 :is(.stop-block,.stop-plate)>.why,:is(.stop-block,.stop-plate)>small,:is(.stop-block,.stop-plate)>.stop-count{order:2}
 :is(.stop-block,.stop-plate) h3 .ico{margin-top:.1em}
+.nowrap{white-space:nowrap}
+.stop-block.care-stop>*{order:0}
+.stop-block.care-stop>.acts{margin:.2em 0 .6em}
 .stop-count{display:flex;flex-wrap:wrap;gap:.2em .6em;align-items:baseline;margin:.7em 0;font-weight:650}
 .stop-count b{font:400 clamp(4rem,7vw,6.5rem)/.9 var(--head);color:var(--bad)}
 .why summary{font-weight:680;cursor:pointer;min-height:44px;padding:.5em 0}
