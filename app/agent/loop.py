@@ -534,6 +534,12 @@ class Agent:
             s.plan_references[s.plan[0]] = new_draft.draft_id
         new_change = s.pending_change if (s.pending_change or {}).get("change_id") not in (None, change_before) else None
         reply = self._validate_reply(s, reply, new_draft, text_now, changed=bool(new_change))
+        # A bill card is always for the bill's own amount: if she said another amount, tell her in words, not only on the card
+        if new_draft and new_draft.kind == "bill" and s.phase not in (Phase.BLOCKED, Phase.FROZEN):
+            said = parse_amount(text_now)
+            if said and round(said * 100) != new_draft.amount_cents:
+                reply = (f"Your {new_draft.payee_name} bill is {fmt_money(new_draft.amount_cents)}, not the "
+                         f"{fmt_money(round(said * 100))} you said, so the card is for the bill's own amount. " + reply)
         # What the model sees next turn: the reply PLUS what really happened. Without this note the history looks like
         # "user asks -> assistant says 'I've prepared it'" (tool calls aren't kept), and the model learns to skip the tools.
         note = self._what_happened(s, new_draft) or (

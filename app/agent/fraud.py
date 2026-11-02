@@ -132,6 +132,16 @@ PATTERNS = [
                                 r"(?:number|phone|cell|mobile)\b",
      "Someone saying they are your grandchild or family, on a new or borrowed phone, and asking for money, is a common "
      "scam. Hang up and call them on the number you already have."),
+    # A utility cut-off with a deadline in hours, said by a caller, or paid to an account she doesn't know:
+    # "the electric company called, they'll disconnect me within the hour unless I pay 300". A planned shut-off for
+    # repairs, or her own "pay the bill before they cut it off", is not this.
+    ("utility_threat", 5, r"^(?=.*\b(?:cut (?:off|it off|me off|you off)|shut (?:off|it off)|disconnect\w*|turn(?:ed)? (?:off|it off))\b)"
+                          r"(?=.*\b(?:power|electric\w*|gas|water|utility|utilities|lights?|heating)\b)"
+                          r"(?=.*(?:\bto (?:this|that|a|an|another|their|his|her) (?:new |different |special |other )?account\b|"
+                          r"\b(?:called|phoned|rang|says?|said|told|texted|e-?mailed|caller|man|woman|someone|somebody)\b.{0,100}"
+                          r"\b(?:today|tonight|within (?:the |an |\d+ )?(?:hour|hours|minutes?)|right now|immediately)\b))",
+     "Utility companies don't threaten to cut you off within hours unless you pay a new account on the phone. Pay only the bill "
+     "you already know, and call the company on the number on your bill."),
     # The authority is the one asking her: "the police called", "a man from Medicare told me", "the IRS says I owe".
     # "My son is a police officer", "he covered my Medicare co-pay", "call the IRS about my refund" are not this.
     ("authority", 3, r"\b(?:police|irs|medicare|social security|the treasury|fbi|bank (?:officer|staff)|government (?:officer|official)|"
@@ -275,7 +285,7 @@ def gift_card_script(cats: list[str]) -> bool:
 
 
 # A named scam script that talks about money stops even without a "send" or "pay" in it ("need 700 for bail").
-_SCRIPTS = {"gov_threat", "prize_fee", "online_stranger", "family_impersonation", "grandchild", "safe_account"}
+_SCRIPTS = {"gov_threat", "prize_fee", "online_stranger", "family_impersonation", "grandchild", "safe_account", "utility_threat"}
 _MONEY_CUE = re.compile(r"\$\s?\d|\b\d[\d,.]*\b|\b(?:needs?|needed|owes?|owed|fees?|bail|money|cash|dollars?|bucks|costs?)\b", re.I)
 
 
