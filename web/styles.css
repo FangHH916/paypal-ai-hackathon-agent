@@ -722,6 +722,10 @@ body.not-found{min-height:100dvh}
 
 /* Phone and tablet: a composition of its own. The rail becomes a thumb bar. */
 @media (max-width:900px){
+  body{overflow-wrap:anywhere}   /* a long reference or a very large browser font wraps; the page never scrolls sideways */
+  .counter{flex-wrap:wrap}
+  .ticker li{flex-wrap:wrap}
+  .ticker .code{white-space:normal}
   /* The first screen of a phone is its own composition: headline, then a three-line ledger ending in the zero, all above the buttons. */
   .welcome-top{padding:10px clamp(16px,4vw,56px)}
   .welcome h1{font-size:min(clamp(2.1rem,10.4vw,4.4rem),12vw);line-height:1;margin-bottom:.3em}
@@ -781,9 +785,12 @@ body.not-found{min-height:100dvh}
   .assistant{overflow:visible}
   .composer-wrap{position:fixed;left:0;right:0;bottom:var(--nav-h,66px);z-index:25;background:var(--bg);padding:8px clamp(16px,4vw,56px)}
   .composer{flex-wrap:nowrap;align-items:stretch}
-  .composer textarea{flex:1 1 auto;order:0;width:auto;resize:none}
+  .composer textarea{flex:1 1 auto;order:0;width:auto;resize:none;font-size:min(1em,5.6vw)}
   .composer .mic span,.composer .send .label{display:none}
   .mic,.send{flex:none;min-width:52px;justify-content:center;padding:.3em .6em}
+  .composer .ico{width:26px;height:26px}
+  body.care .composer .mic{font-size:min(1.2rem,6vw)}
+  body.care .type-open{font-size:min(1rem,5.6vw)}
   .composer-foot{display:none}
   .hint:empty{display:none}
   /* Care mode: one big button to speak, a smaller one to type. The text box opens on request, above them. */
