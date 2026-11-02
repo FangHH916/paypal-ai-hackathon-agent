@@ -186,6 +186,36 @@ class TestSavedReceipt(unittest.TestCase):
         self.assertNotEqual(payments.receipt_hash(as_browser), body["receipt_sha256"])
 
 
+class TestAuditWords(unittest.TestCase):
+    """Seen in a rescore: the audit list mixed raw event names (paypal.webhook, paypal.call) with plain words. Every
+    event the server can write has plain words on the page, and the page never prints a raw name."""
+
+    def events(self) -> set[str]:
+        found = set()
+        for path in (ROOT / "app").rglob("*.py"):
+            src = path.read_text(encoding="utf-8")
+            found.update(re.findall(r"(?:append|_log|sink\.append)\(\s*\"([a-z_]+\.[a-z_]+)\"", src))
+            found.update(re.findall(r"\"event\":\s*\"([a-z_]+\.[a-z_]+)\"", src))
+            for group in re.findall(r"for event in \(([^)]*)\)", src):
+                found.update(re.findall(r"\"([a-z_]+\.[a-z_]+)\"", group))
+        return found
+
+    def test_every_event_has_plain_words(self):
+        js = (WEB / "app.js").read_text(encoding="utf-8")
+        table = re.search(r"const AUDIT_WORDS = \{(.*?)\};", js, re.S).group(1)
+        words = {k: a or b for k, a, b in re.findall(r"""'([a-z_]+\.[a-z_]+)':\s*(?:'([^']+)'|"([^"]+)")""", table)}
+        events = self.events()
+        self.assertGreater(len(events), 30)
+        self.assertIn("paypal.call", events)
+        self.assertEqual(events - set(words), set())
+        for name, text in words.items():
+            self.assertNotRegex(text, r"^[a-z_]+\.[a-z_]+$", name)
+
+    def test_the_list_never_prints_a_raw_event_name(self):
+        js = (WEB / "app.js").read_text(encoding="utf-8")
+        self.assertFalse("AUDIT_WORDS[e.event] || e.event" in js, "the raw name is the fallback")
+
+
 class TestPlainZero(unittest.TestCase):
     """Seen in a rescore: amounts and times in body text showed a slashed zero (the vendored Atkinson faces have no plain
     zero). Figures in body text and amounts come from a face with a plain zero; the slashed-zero mono is kept only for

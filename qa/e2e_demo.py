@@ -1142,6 +1142,73 @@ def run(browser, base: str, args) -> None:
         finally:
             c.close()
 
+
+    def activity_words():
+        """Activity: the totals' labels are whole at every width, the audit list is all plain words, and the grid loads
+        without a console warning. Own server."""
+        if args.base:
+            return
+        port = free_port()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data)
+            url = f"http://localhost:{port}"
+            c = browser.new_context(viewport={"width": 1440, "height": 900})
+            q = c.new_page()
+            watch(q, "activity-words")
+            warnings = []
+            q.on("console", lambda m: warnings.append(m.text[:200]) if m.type == "warning" and "AG Grid" in m.text else None)
+            try:
+                q.goto(url + "/")
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".hero h1")).to_be_visible()
+                nav(q, "Talk to Star")
+                q.locator(".choice", has_text="No, standard").click()
+                say(q, "Send 20 to my son")
+                expect(q.locator("#confirm .amt")).to_have_text("$20.00", timeout=15000)
+                sign_card(q)
+                expect(last_tracker(q)).to_contain_text("Sent, verified", timeout=30000)
+                say(q, "The police say I must move my savings to a safe account")
+                expect(q.locator(".stop-block").last).to_be_visible(timeout=15000)
+                nav(q, "Activity")
+                expect(q.locator(".grid-host .ag-row").first).to_be_visible(timeout=20000)
+                expect(q.locator(".audit-entry").first).to_be_visible(timeout=15000)
+                q.locator(".audit-all > summary").click()
+                raw = q.evaluate(r"[...document.querySelectorAll('.audit-entry > b')].map(b => b.textContent).filter(t => /^[a-z_]+\.[a-z_.]+$/.test(t))")
+                check("the audit list is plain words, no raw event names", not raw, raw)
+                def totals_whole(label):
+                    time.sleep(0.8)
+                    for _ in range(20):
+                        labels = q.evaluate(r"[...document.querySelectorAll('.row-total')].map(r => r.textContent.replace(/\s+/g, ' ').trim())")
+                        if labels and all(labels):
+                            break
+                        time.sleep(0.25)
+                    cut = q.evaluate("""() => [...document.querySelectorAll('.row-total .ag-cell')].filter(c => c.textContent.trim())
+                      .filter(c => [c, ...c.querySelectorAll('*')].some(v => v.scrollWidth > v.clientWidth + 1 && getComputedStyle(v).overflow !== 'visible'))
+                      .map(c => c.textContent.trim())""")
+                    check(f"activity {label}: the totals' labels are whole", not cut and any("Stops" in x for x in labels), {"cut": cut, "labels": labels})
+                    q.evaluate("[...document.querySelectorAll('.row-total')].pop()?.scrollIntoView({block: 'end'})")
+                    time.sleep(0.3)
+                    shot(q, f"83-activity-{label}")
+                for w, h in ((1440, 900), (1024, 800), (390, 844), (320, 700)):
+                    q.set_viewport_size({"width": w, "height": h})
+                    totals_whole(str(w))
+                q.set_viewport_size({"width": 1440, "height": 900})
+                time.sleep(0.5)
+                q.locator("[data-act=more]").click()
+                totals_whole("1440-all-columns")
+                q.locator("[data-act=more]").click()
+                q.locator("#care-toggle").click()
+                expect(q.locator("body.care")).to_be_visible()
+                nav(q, "Activity")
+                expect(q.locator(".grid-host .ag-row").first).to_be_visible(timeout=20000)
+                for w, h in ((1440, 900), (1024, 800), (390, 844), (320, 700)):
+                    q.set_viewport_size({"width": w, "height": h})
+                    totals_whole(f"care-{w}")
+            finally:
+                c.close()
+                server.terminate()
+                server.wait(10)
+
     for name, fn in [("Landing and pages", landing), ("Send money to family", send_money), ("Same payment asked twice", double_payment),
                      ("Agentic purchase, approval, capture, refund", purchase_and_refund), ("Cancel on the approval page", cancel_on_approval),
                      ("Pay a bill by invoice", pay_bill), ("The fake invoice", fake_invoice), ("A spoken scam", spoken_scam),
@@ -1152,7 +1219,8 @@ def run(browser, base: str, args) -> None:
                      ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo),
                      ("Rescore fixes on a phone", rescore_fixes), ("Rescore: one clock", one_clock),
                      ("Rescore: polish", polish_fixes), ("Rescore: guardian clears a scam alert", guardian_clears),
-                     ("Rescore: Care on a phone", care_phone_layout), ("Rescore: landing stamp", landing_stamp)]:
+                     ("Rescore: Care on a phone", care_phone_layout), ("Rescore: landing stamp", landing_stamp),
+                     ("Rescore: activity words", activity_words)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()

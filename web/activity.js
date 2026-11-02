@@ -82,7 +82,7 @@ export async function mountGrid(host, opts){
      valueGetter:p => p.data.time ? new Date(p.data.time * 1000) : null,
      valueFormatter:p => p.value ? p.value.toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : ''},
     {field:'type', headerName:'Type', minWidth:140, flex:1, filter:'agTextColumnFilter'},
-    {field:'to', headerName:'To / from', minWidth:190, flex:1.3, filter:'agTextColumnFilter', valueFormatter:p => p.value || 'No one: stopped before a draft',
+    {field:'to', headerName:'To / from', minWidth:190, flex:1.3, filter:'agTextColumnFilter', wrapText:true, autoHeight:true, valueFormatter:p => p.value || 'No one: stopped before a draft',
      tooltipValueGetter:p => p.data.handle || ''},
     {field:'amount_cents', headerName:'Amount', type:'rightAligned', minWidth:210, flex:1, filter:'agNumberColumnFilter',
      filterValueGetter:p => Math.abs(p.data.amount_cents || 0) / 100, valueFormatter:moneyCell},

@@ -599,6 +599,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono)}
 .grid-host .ag-floating-filter-input input{min-height:44px}
 .grid-why{display:block;margin-top:.25em;line-height:1.3;white-space:normal;color:var(--muted)}
 .grid-host .ag-cell[col-id="status"]{padding-top:.6em;padding-bottom:.6em;line-height:1.3;white-space:normal}
+.grid-host .ag-cell[col-id="to"]{padding-top:.6em;padding-bottom:.6em;line-height:1.3}
 .ag-row.row-stopped{background:var(--bad-bg)}
 .ag-row.row-stopped .ag-cell[col-id="amount_cents"]{color:var(--bad);font-weight:700}
 .ag-row.row-attention{background:var(--warn-bg)}

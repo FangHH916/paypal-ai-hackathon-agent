@@ -1261,7 +1261,16 @@ const AUDIT_WORDS = {'user.utterance':'You said something', 'voice.recorded':'A 
   'draft.cancelled':'A card was cancelled', 'contract.decision':'The safety checks ran', 'trust.check':'The seller or bill was checked', 'auth.challenge_issued':'The card was ready to sign', 'auth.granted':'Your signature was verified',
   'auth.rejected':'A signature was refused', 'gateway.posted':'The gateway accepted the signed card', 'gateway.rejected':'The gateway refused it', 'commit.executed':'The payment was handed over', 'commit.rejected':'The payment was refused before it went out',
   'payment.state':'The payment changed state', 'wallet.frozen':'Payments were frozen', 'wallet.unfrozen':'The freeze was lifted', 'guardian.invited':'A family guardian was invited', 'guardian.paired':'A family guardian was paired',
-  'guardian.approved':'Your family approved a card', 'guardian.denied':'Your family said no', 'guardian.alert':'Your family was alerted', 'guardian.replace_refused':'A guardian swap was refused', 'demo.world_reset':'The demo was reset', 'ui.care_mode':'Care mode changed'};
+  'guardian.approved':'Your family approved a card', 'guardian.denied':'Your family said no', 'guardian.alert':'Your family was alerted', 'guardian.replace_refused':'A guardian swap was refused', 'demo.world_reset':'The demo was reset', 'ui.care_mode':'Care mode changed',
+  'agent.reply':'Star answered', 'llm.call':'The AI model was asked', 'tool.call':'Star used one of its tools', 'plan.model':'The AI model split the request into steps',
+  'plan.reference_resolved':'Star worked out an amount from an earlier payment', 'scam.intercepted':'Star stopped words that looked like a scam', 'invoice.sanitized':"A bill's text was cleaned before Star read it",
+  'limit.lowered':'A spending limit was lowered', 'settings.protection_raised':'Protection was raised', 'settings.protection_lowering_scheduled':'Lowering protection was asked for: it waits out a delay',
+  'change.requested':'An account change was asked for', 'change.cancelled':'An account change was cancelled', 'change.applied':'An account change was made',
+  'device.key_registered':"This device's signing key was registered", 'device.passkey_enrolled':'A passkey was added', 'device.passkey_removed':'A passkey was removed',
+  'paypal.call':'Star called {pp}', 'paypal.webhook':'An update came from {pp}, its signature checked', 'paypal.webhook_rejected':'An update said to be from {pp} was refused',
+  'guardian.removal_scheduled':'Removing the family guardian was asked for: it waits out a delay', 'guardian.alert_cleared':'Your family guardian cleared a scam alert'};
+// Plain words for every audit record. In the simulator, the simulator is never called PayPal.
+const auditWords = ev => (AUDIT_WORDS[ev] || 'A step was recorded').replace('{pp}', mode() === 'SIMULATED' ? 'the PayPal simulator' : 'PayPal');
 async function activityPage(m){
   m.innerHTML = head('Trust and transparency', 'Activity &amp; audit', 'Every payment, and every payment that was stopped, with who stopped it and why. Open a row for its whole story.') + `
     <section class="card pad" aria-labelledby="ac-h"><h2 id="ac-h" class="sr">Activity table</h2><div id="grid-mount"><p class="muted">Loading the table…</p></div></section>
@@ -1279,7 +1288,7 @@ async function activityPage(m){
       <div class="voice-row"><audio controls preload="none" src="/api/voice/${encodeURIComponent(state.sid)}/${esc(e.data.audio_sha256)}"></audio>
         <span>“${esc(e.data.transcript)}”<small>${new Date(e.ts * 1000).toLocaleTimeString()} · ${esc(String(e.data.seconds))} s · SHA-256 ${esc(e.data.audio_sha256.slice(0, 12))}…</small></span></div>`).join('')}
       <p class="muted small">Each recording's SHA-256 is in the hash chain, and cards made from it carry the same hash, so your signature covers it. Demo recordings are deleted when the server restarts.</p></div>` : '';
-    const entry = e => `<div class="audit-entry"><b>${esc(AUDIT_WORDS[e.event] || e.event)}</b>
+    const entry = e => `<div class="audit-entry"><b>${esc(auditWords(e.event))}</b>
       <div class="muted small">${new Date(e.ts * 1000).toLocaleTimeString()} · <code>${esc(e.hash.slice(0, 16))}…</code></div>
       <details><summary>Details</summary><pre>${esc(JSON.stringify(e.data, null, 2))}</pre></details></div>`;
     const newest = a.entries.slice().reverse(), main = newest.filter(e => !/^(llm|tool|agent)\./.test(e.event));
