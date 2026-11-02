@@ -908,6 +908,26 @@ def run(browser, base: str, args) -> None:
                 q.locator(".choice", has_text="Yes, make it easier").click()
                 expect(q.locator("body.care")).to_be_visible(timeout=15000)
                 check("the waiting invite still answers", q.evaluate("document.body.classList.contains('care')"))
+                # Care on a phone: the card's question can sit below the fold. The main button must lead her to it.
+                say(q, "Send 400 to my son")
+                expect(q.locator("#confirm .verify .q")).to_be_visible(timeout=15000)
+                time.sleep(0.4)
+                question = q.locator("#confirm .verify")
+                go = q.locator("#c-go")
+                check("Care 390x844: the main button says what to do", "question" in go.inner_text().lower(), go.inner_text())
+                go.click()
+                time.sleep(0.6)
+                box = question.bounding_box()
+                check("Care 390x844: the main button brings the question into view",
+                      box is not None and box["y"] >= 0 and box["y"] + min(box["height"], 200) <= 844, box)
+                check("Care 390x844: focus moves to the question's answers",
+                      q.evaluate("!!document.activeElement?.closest('#confirm .verify')"), q.evaluate("document.activeElement?.outerHTML?.slice(0, 80)"))
+                check("Care 390x844: nothing was signed before the answer", q.locator(".mockfp").count() == 0)
+                q.locator("#confirm .yesno button[data-v=yes]").click()
+                expect(go).to_be_enabled()
+                check("Care 390x844: after the answer the button signs", "fingerprint" in go.inner_text().lower(), go.inner_text())
+                q.locator("#c-cancel").click()
+                expect(q.locator("#confirm")).to_be_hidden()
             finally:
                 c.close()
                 server.terminate()

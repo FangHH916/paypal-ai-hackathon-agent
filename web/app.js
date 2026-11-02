@@ -788,7 +788,7 @@ function openConfirm(c){
   renderConfirm(); const dlg = $('#confirm');
   // She reads first: focus starts on the title, and Confirm only wakes after a moment, so Enter can't run through the card.
   const go1 = $('#c-go:not([disabled])');
-  if(go1){ go1.disabled = true; setTimeout(() => { const b = $('#c-go'); if(state.card === c && b && b.disabled && canGoNow(c)) b.disabled = false; }, 1000); }
+  if(go1){ go1.disabled = true; setTimeout(() => { const b = $('#c-go'); if(state.card === c && b && b.disabled && (canGoNow(c) || awaitingAnswer(c))) b.disabled = false; }, 1000); }
   if(!dlg.open){ dlg.showModal(); cardIn(dlg); }
   setTimeout(() => $('#c-title')?.focus(), 50);
   if(c.cooldown_left > 0){
@@ -825,14 +825,25 @@ function waitForGuardian(){
   }, 2500);
 }
 const canGoNow = c => c.can_confirm && !(c.cooldown_left > 0) && (!c.verify_question || state.verify === true) && state.signMode !== 'none' && !state.confirming;
-const coolWords = n => `${n} more second${n === 1 ? '' : 's'}`;
+// The card can be signed once its question is answered, and the question is all that's missing
+const awaitingAnswer = c => !!c && !!c.verify_question && state.verify !== true && c.can_confirm && !(c.cooldown_left > 0)
+  && !c.guardian_required && state.signMode !== 'none' && !state.confirming;
+function showQuestion(){
+  const v = $('#confirm .verify'); if(!v) return;
+  v.scrollIntoView({block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  v.classList.remove('nudge'); void v.offsetWidth; v.classList.add('nudge');
+  v.querySelector('.yesno button')?.focus({preventScroll: true});
+}
+const coolWords = n =>`${n} more second${n === 1 ? '' : 's'}`;
 function renderConfirm(){
   const c = state.card; if(!c) return;
   const needVerify = !!c.verify_question, cooling = c.cooldown_left > 0;
   const canGo = c.can_confirm && !cooling && (!needVerify || state.verify === true) && state.signMode !== 'none';
+  const toQuestion = awaitingAnswer(c);   // only the question is missing: the button takes her to it (it may be below the fold)
   const rel = c.payee_relation && c.payee_relation !== 'payee' ? ` (${esc(c.payee_relation)})` : '';
   const goLabel = state.signMode === 'none' ? "Can't sign in this browser" : c.guardian_required ? (guardianPaired() ? `Waiting for ${esc(guardianName())}` : `Needs ${esc(guardianName())}'s OK`) : cooling ? 'Please wait'
     : needVerify && state.verify !== true ? 'Answer the question first' : 'Confirm with fingerprint';
+  const goIcon = toQuestion ? icon('alert') : icon('fingerprint');
   const off = c.offers_checked || [];
   const trust = c.trust?.reasons?.length ? c.trust.reasons : [];
   $('#confirm').innerHTML = `
@@ -854,7 +865,7 @@ function renderConfirm(){
       ${off.length ? `<details class="offers" ${c.kind === 'purchase' ? 'open' : ''}><summary>Star checked ${off.length} offer${off.length === 1 ? '' : 's'}</summary><ul>${off.map(o => `<li class="offer-line verdict-${esc(o.verdict)}"><span><b>${esc(o.merchant)}</b> ${esc(o.price)}</span><span class="verdict">${esc(verdictWord(o.verdict))}</span>${o.reasons?.length ? `<small>${esc(o.reasons[0])}</small>` : ''}</li>`).join('')}</ul></details>` : ''}
       ${trust.length ? `<div class="risk ${c.trust.level === 'BLOCK' ? 'BLOCK' : 'MEDIUM'}"><b>Seller check</b><ul>${trust.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
       ${c.risk_level !== 'LOW' ? `<div class="risk ${esc(c.risk_level)}"><b>${c.risk_level === 'MEDIUM' ? 'Please take a second look' : "For your safety, let's wait a little"}</b><ul>${c.reasons.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
-      ${needVerify ? `<div class="verify"><div class="q">${esc(c.verify_question)}</div><div class="yesno">
+      ${needVerify ? `<div class="verify"><div class="q" id="c-q">${esc(c.verify_question)}</div><div class="yesno">
         <button type="button" class="btn secondary" data-v="yes" aria-pressed="${state.verify === true}">${c.verify_kind === 'new_payee' ? 'Yes, my own idea' : 'Yes'}</button>
         <button type="button" class="btn secondary" data-v="no" aria-pressed="${state.verify === false}">${c.verify_kind === 'new_payee' ? 'No, someone asked me' : 'No, or not sure'}</button></div></div>` : ''}
       ${c.guardian_required ? (guardianPaired()
@@ -872,7 +883,7 @@ function renderConfirm(){
     </div>
     <div class="cfoot">
       <button type="button" class="btn secondary" id="c-cancel">Cancel</button>
-      <button type="button" class="btn primary" id="c-go" ${canGo ? '' : 'disabled'}>${icon('fingerprint')}${goLabel}</button>
+      <button type="button" class="btn primary${toQuestion ? ' to-question' : ''}" id="c-go" ${canGo || toQuestion ? '' : 'disabled'} ${toQuestion ? 'aria-describedby="c-q"' : ''}>${goIcon}${goLabel}</button>
     </div>
     <div class="signnote">Confirmation code ${esc(c.digest.slice(0, 8))}…${esc(c.digest.slice(-4))}. ${state.signMode === 'none' ? esc(NO_SIGNER) : state.signMode === 'device'
       ? "Demo: the fingerprint sensor is simulated. Your tap unlocks this browser's private key, which signs exactly this card. Star and its payment gateway each verify that signature."
@@ -886,7 +897,10 @@ function renderConfirm(){
     (state.verify ? $('#c-go:not([disabled])') : $('#c-cancel'))?.focus();
   });
   $('#c-cancel').onclick = cancelCard;
-  $('#c-go').onclick = () => { stopSpeaking(); confirmCard(); };
+  $('#c-go').onclick = () => {
+    if(awaitingAnswer(state.card)) return showQuestion();     // never signs: it only takes her to the question
+    stopSpeaking(); confirmCard();
+  };
   $('#c-invite') && ($('#c-invite').onclick = () => { closeConfirm(); go('family'); });
   $('#c-play') && ($('#c-play').onclick = () => playClip(c.you_said_audio[0]));
   $('#c-repk') && ($('#c-repk').onclick = async () => {
