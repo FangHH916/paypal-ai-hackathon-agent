@@ -25,6 +25,49 @@ PATTERNS = [
      "A message asking you to transfer money to verify an account is a scam warning. Do not follow the message's payment instructions."),
     ("safe_account", 5, r"safe(ty)? account|secure account|holding account|protected account|safekeeping account",
      "Real police, government and bank staff will never ask you to move money into a so-called \"safe account\"."),
+    # Four classic elder-scam scripts. Each one names the script, not just a word in it, so its look-alikes ("my grandson
+    # won a prize at school", "my son got a new phone") are not stopped. Weight 5: high risk on its own.
+    ("gov_threat", 5, r"\b(?:irs|internal revenue|tax (?:office|department|agency|authority|man|people|collector)|revenue (?:office|service|agency)|"
+                      r"social security|medicare|sheriff|marshals?|court|government|customs|immigration|police|fbi|federal|officer)\b"
+                      r".{0,120}\b(?:arrest(?:ed)?|jail|prison|warrants?|deport(?:ed)?|sued?|lawsuit|suspend(?:ed)?|cut off|"
+                      r"lose (?:my|your) (?:benefits|pension|house|home))\b|"
+                      r"\b(?:arrest(?:ed)?|jail|prison|warrants?|deport(?:ed)?)\b.{0,80}\b(?:irs|tax(?:es)?|social security|medicare|"
+                      r"sheriff|court|government|customs|immigration|police|fbi)\b|"
+                      r"\b(?:or|unless|otherwise|if (?:i|you) (?:don'?t|do not|can'?t))\b.{0,40}\b(?:i'?ll|i will|you'?ll|you will|"
+                      r"they'?ll|they will|i'?m going to|i am going to)\s+(?:be (?:arrested|jailed|deported|sued)|go to (?:jail|prison))|"
+                      r"\b(?:i'?ll|i will|you'?ll|you will|i'?m going to|i am going to)\s+(?:be (?:arrested|jailed|deported|sued)|"
+                      r"go to (?:jail|prison))\b.{0,40}\b(?:unless|if (?:i|you) (?:don'?t|do not|can'?t))\b",
+     "Government offices, the tax office and the police never threaten you with arrest to make you pay on the phone. That is a scam."),
+    ("prize_fee", 5, r"\b(?:won(?!['’])|winner|winnings|prize|lottery|lotto|sweepstakes?|jackpot|lucky draw|raffle)\b.{0,100}"
+                     r"\b(?:fees?|tax(?:es)?|charges?|processing|release|unlock|clearance|customs|deposit|to (?:claim|collect))\b|"
+                     r"\b(?:fees?|charges?|processing|release|unlock|clearance|customs|to (?:claim|collect))\b.{0,80}"
+                     r"\b(?:winnings|prize|lottery|lotto|sweepstakes?|jackpot)\b|"
+                     r"\b(?:inheritance|inherited|unclaimed (?:funds|money)|compensation)\b.{0,100}"
+                     r"\b(?:fees?|charges?|processing|release|unlock|clearance|customs|deposit)\b",
+     "Real prizes and inheritances never make you pay a fee first. Anyone asking for one is a scammer."),
+    ("online_stranger", 5, r"(?=.{0,200}\b(?:needs?|wants?|asked|asking|send|wire|pay|transfer|money|ticket|flight|visa|customs|stuck|"
+                           r"hospital|fees?)\b)(?:"
+                           r"\b(?:man|woman|lady|guy|gentleman|someone|somebody|person|friend|boyfriend|girlfriend|sweetheart|soldier|"
+                           r"fianc[eé]e?|he|she)\b[^.]{0,30}\b(?:i|we)(?:'ve| have)? (?:met|been (?:talking|chatting|writing) (?:to|with)|"
+                           r"know|talk to|chat with|write to)\b[^.]{0,15}\b(?:online|on the internet|on (?:facebook|instagram|whatsapp|"
+                           r"telegram|tiktok|(?:a|the) dating (?:site|app))|through (?:a|the) dating (?:site|app))|"
+                           r"\b(?:online|internet|facebook|instagram|whatsapp|telegram|dating[- ](?:site|app)) (?:boyfriend|girlfriend|"
+                           r"sweetheart|fianc[eé]e?|partner|man|lady|gentleman)\b|"
+                           r"\b(?:boyfriend|girlfriend|sweetheart|fianc[eé]e?|partner|man|lady|gentleman|friend) (?:from|on) (?:the |a )?"
+                           r"(?:dating (?:site|app)|internet|facebook|instagram|whatsapp|telegram|tiktok)\b|"
+                           r"\b(?:never|not yet|haven'?t|have not) (?:even )?met (?:him|her|them)? ?(?:in person|face to face)\b)",
+     "Someone you only know online asking for money is how romance scams work, however kind they seem."),
+    ("family_impersonation", 5, r"\b(?:grandma|grandpa|granny|grandmother|grandfather|nana|nanna|gran|gramps|grams|nan)\b[,!]?\s*"
+                                r"(?:it'?s|its|this is) (?:me|your)\b|"
+                                r"\b(?:it'?s me|this is (?:your|ur) (?:grand(?:son|daughter|child|kid)|son|daughter|nephew|niece))\b.{0,80}"
+                                r"\b(?:lost|broke|broken|smashed|dropped|new|different|friend'?s|borrowed|someone else'?s)\b.{0,15}"
+                                r"\b(?:phone|number|cell|mobile)\b|"
+                                r"\b(?:grand(?:son|daughter|child|kid)|son|daughter|nephew|niece|relative)\b.{0,40}"
+                                r"\b(?:called|texted|messaged|rang|wrote|emailed|contacted)\b.{0,40}\b(?:from|on|using|with) "
+                                r"(?:a |an |the )?(?:new|different|friend'?s|borrowed|unknown|strange|someone else'?s)\s+(?:phone |cell )?"
+                                r"(?:number|phone|cell|mobile)\b",
+     "Someone saying they are your grandchild or family, on a new or borrowed phone, and asking for money, is a common "
+     "scam. Hang up and call them on the number you already have."),
     ("authority", 3, r"police|\birs\b|medicare|social security|the treasury|\bfbi\b|bank (officer|staff)|"
                      r"(someone|people|man|woman|lady) from the bank|government (officer|official)|embassy|customs officer",
      "Someone claiming to be the police, government or bank and asking you to send money is the most common scam."),
@@ -80,6 +123,8 @@ PATTERNS = [
      "Winning a prize but having to pay a fee first is a scam."),
 ]
 _COMPILED = [(c, w, re.compile(p, re.I), why) for c, w, p, why in PATTERNS]
+# A general sign whose reason would repeat the reason of a script already named (it still counts towards the score)
+_SAYS_IT_BETTER = {"prize": {"prize_fee"}, "romance": {"online_stranger"}, "relative_new_number": {"family_impersonation"}}
 
 _FAMILY = r"(?:son|daughter|wife|husband|sister|brother|mother|mom|mum|father|dad|grandson|granddaughter|grandchild(?:ren)?|grandkids?|" \
           r"niece|nephew|aunt|uncle|cousin|kids?|child(?:ren)?|son-in-law|daughter-in-law)"
@@ -111,7 +156,8 @@ def scan(text: str) -> tuple[RiskLevel, list[str], list[str]]:
         if rx.search(_present_removed(text) if cat == "giftcard_told" else text):
             score += w
             cats.append(cat)
-            reasons.append(why)
+            if not (_SAYS_IT_BETTER.get(cat, set()) & set(cats)):     # the script's own reason already says this
+                reasons.append(why)
     if cats == ["giftcard"]:
         level = RiskLevel.LOW      # no scam sign by itself: the card's own rule (R94) warns her and brings in the family
     elif "safe_account" in cats or score >= 6:

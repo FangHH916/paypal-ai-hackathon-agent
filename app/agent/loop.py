@@ -272,13 +272,8 @@ class Agent:
             reply = error or "Please make a new payment request with the recipient and amount."
             s.start_task()
             return TurnResult(reply, {"type": "text"}, reply, s.trace[start:], "request guard")
-        error = request_guard.problem(text) if detect_intent(text) in _MONEY_INTENTS else None
-        if error:
-            s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": error}])
-            s.start_task()
-            return TurnResult(error, {"type": "text"}, error, s.trace[start:], "request guard")
-
-        # 0. pre-hook, before any model sees the words (the planner included): deterministic scam scan
+        # 0. pre-hook, before any model sees the words (the planner included) and before any question about the amount:
+        #    deterministic scam scan
         #    (standard protection turns HIGH into a warning; BLOCK stops everyone)
         level_p = prot.effective(self.wallet, s.user_id)
         raw_level, reasons, cats = fraud.scan(text)
@@ -292,6 +287,12 @@ class Agent:
         # shrunk the tool set (no more drafting transactions).
         if level.rank >= RiskLevel.HIGH.rank and (fraud.wants_money_move(text) or detect_intent(text) in _MONEY_INTENTS or fraud.gift_card_script(cats)):
             return self._intercept(s, start, text, reasons)
+
+        error = request_guard.problem(text) if detect_intent(text) in _MONEY_INTENTS else None
+        if error:
+            s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": error}])
+            s.start_task()
+            return TurnResult(error, {"type": "text"}, error, s.trace[start:], "request guard")
 
         # 0. Plan
         plan_before = list(s.plan)
