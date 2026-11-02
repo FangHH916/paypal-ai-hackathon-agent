@@ -432,7 +432,7 @@ function assistantHtml(){
         <button type="button" class="mic" id="mic" aria-label="Tap to speak, tap again to stop">${icon('mic')}<span>${state.care ? 'Tap to speak' : 'Speak'}</span></button>
         <button type="button" class="type-open" id="type-open" aria-expanded="${!!state.typing}" aria-controls="text">${state.typing ? 'Close' : 'Type'}</button>
         <label class="sr" for="text">Type your request</label>
-        <textarea id="text" rows="1" placeholder="${state.care ? 'Or type here' : 'Send 50 to Anna'}"></textarea>
+        <textarea id="text" rows="1" maxlength="500" placeholder="${state.care ? 'Or type here' : 'Send 50 to Anna'}"></textarea>
         <button class="send" type="submit" aria-label="Send">${icon('send')}<span class="label">Send</span></button>
       </form>
       <div class="hint" id="hint" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -696,10 +696,14 @@ async function send(text, endpoint = '/api/chat', voice = false, auto = false, d
     handleTurn(r);
   }catch(e){
     state.messages = state.messages.filter(m => m.type !== 'typing' && m.type !== 'retry');
-    // A chat turn can only read and draft: no tool it can reach moves money, so this one sentence is safe to say here and only here.
-    const known = e.status === 403 || e.status === 429;
-    push({role:'bot', text: known ? e.message : "I can't reach Star right now. No money has moved."}); console.warn(e);
-    if(!known) push({type:'retry', text, endpoint});
+    // A chat turn can only read and draft: no tool it can reach moves money, so "no money has moved" is safe to say here.
+    // The server refused the message (too long, too many, not allowed): its own words, and no retry of the same text.
+    // "Can't reach" only when the network failed; a server fault says so and offers a retry.
+    const refused = e.status >= 400 && e.status < 500;
+    const said = refused ? e.message : e.offline ? "I can't reach Star right now. No money has moved."
+      : "Star had a problem with that. No money has moved. Please try again.";
+    push({role:'bot', text: said}); console.warn(e);
+    if(!refused) push({type:'retry', text, endpoint});
   }finally{ state.busy = false; saveChat(); }
 }
 function handleTurn(r){

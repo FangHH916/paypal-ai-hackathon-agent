@@ -976,6 +976,35 @@ def run(browser, base: str, args) -> None:
                 server.terminate()
                 server.wait(10)
 
+    def polish_fixes():
+        """Medium and low findings from the rescore, checked at the widths named there. Its own server: own state."""
+        if args.base:
+            return
+        port = free_port()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data)
+            url = f"http://localhost:{port}"
+            c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+            q = c.new_page()
+            watch(q, "polish")
+            try:
+                q.goto(url + "/")
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".hero h1")).to_be_visible()
+                nav(q, "Talk to Star")
+                q.locator(".choice", has_text="No, standard").click()
+                # Over-long input: the box stops at 500, and the server's own words come back, not "can't reach"
+                check("the text box stops at 500 characters", q.locator("#text").get_attribute("maxlength") == "500",
+                      q.locator("#text").get_attribute("maxlength"))
+                q.evaluate("() => { const t = document.querySelector('#text'); t.removeAttribute('maxlength'); t.value = 'x'.repeat(600); }")
+                q.locator("#composer button[type=submit]").click()
+                expect(q.locator(".msg.bot").last).to_contain_text("500 characters", timeout=10000)
+                check("a too-long message isn't called a lost connection", "can't reach" not in q.locator(".msg.bot").last.inner_text())
+            finally:
+                c.close()
+                server.terminate()
+                server.wait(10)
+
     for name, fn in [("Landing and pages", landing), ("Send money to family", send_money), ("Same payment asked twice", double_payment),
                      ("Agentic purchase, approval, capture, refund", purchase_and_refund), ("Cancel on the approval page", cancel_on_approval),
                      ("Pay a bill by invoice", pay_bill), ("The fake invoice", fake_invoice), ("A spoken scam", spoken_scam),
@@ -984,7 +1013,8 @@ def run(browser, base: str, args) -> None:
                      ("Phone widths and Care mode", phone_and_care), ("Dark theme and focus", dark_and_focus),
                      ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens),
                      ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo),
-                     ("Rescore fixes on a phone", rescore_fixes), ("Rescore: one clock", one_clock)]:
+                     ("Rescore fixes on a phone", rescore_fixes), ("Rescore: one clock", one_clock),
+                     ("Rescore: polish", polish_fixes)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()
