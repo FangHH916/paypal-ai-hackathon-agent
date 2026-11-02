@@ -21,6 +21,11 @@ DUPLICATE_WINDOW = 600
 OUTGOING = ("transfer", "bill", "purchase")
 
 
+try:
+    ZoneInfo("UTC")
+    _HAS_UTC = True
+except Exception:  # noqa: BLE001 - no zone data at all on this server
+    _HAS_UTC = False
 _ZONE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_+\-]*(?:/[A-Za-z0-9_+\-]+){0,2}")
 
 
@@ -36,15 +41,20 @@ def valid_timezone(name) -> str | None:
     return name
 
 
-def local_hour(now: float, timezone: str = "") -> int:
-    """The customer's hour: her browser's zone when it sent a valid one, else CUSTOMER_TIMEZONE, else UTC."""
+def local_time(now: float, timezone: str = "") -> datetime:
+    """The customer's clock: her browser's zone when it sent a valid one, else CUSTOMER_TIMEZONE, else UTC."""
     for name in (valid_timezone(timezone), settings.customer_timezone):
         if name:
             try:
-                return datetime.fromtimestamp(now, ZoneInfo(name)).hour
+                return datetime.fromtimestamp(now, ZoneInfo(name))
             except Exception:  # noqa: BLE001 - no time zone data on the server: try the next, then UTC
                 continue
-    return time.gmtime(now).tm_hour
+    return datetime.fromtimestamp(now, ZoneInfo("UTC")) if _HAS_UTC else datetime.utcfromtimestamp(now)
+
+
+def local_hour(now: float, timezone: str = "") -> int:
+    """The customer's hour (see local_time)."""
+    return local_time(now, timezone).hour
 
 
 @dataclass

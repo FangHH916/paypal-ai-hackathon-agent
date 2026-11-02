@@ -226,18 +226,20 @@ class OfflineLLM:
 
         if intent in ("income", "spending"):
             if "get_recent_transactions" not in results:
-                return self._call("get_recent_transactions", {"limit": 8}, "Need to see recent transactions.")
+                return self._call("get_recent_transactions", {"limit": 8 if intent == "income" else 20}, "Need to see recent transactions.")
             txns = results["get_recent_transactions"]["data"]
             if intent == "income":
                 inc = next((t for t in txns if t["amount"].startswith("+")), None)
                 if not inc:
                     return self._say("I don't see any recent incoming payment.")
                 return self._say(f"Yes — {inc['desc']} of {inc['amount'][1:]} arrived on {inc['date']}.")
-            month = txns[0]["date"][:7] if txns else ""
+            month = self._this_month(messages)        # her month, in her own time zone, never the data's
             outs = [t for t in txns if t["amount"].startswith("-") and t["date"].startswith(month)]
             total = sum(-t["amount_cents"] for t in outs)
-            named = time.strftime("%B %Y", time.strptime(month, "%Y-%m")) if month else "this month"
-            return self._say(f"In {named} you've spent {fmt_money(total)} across {len(outs)} payment{'' if len(outs) == 1 else 's'} so far.")
+            named = time.strftime("%B %Y", time.strptime(month, "%Y-%m"))
+            if not outs:
+                return self._say(f"You haven't spent anything yet this month ({named}).")
+            return self._say(f"This month ({named}) you've spent {fmt_money(total)} across {len(outs)} payment{'' if len(outs) == 1 else 's'} so far.")
 
         if intent == "status":
             if "payment_status" not in results:
@@ -509,6 +511,13 @@ class OfflineLLM:
                 return parse_amount(fixed), slips[0]
         proposal = confirmed_proposal(messages)
         return (parse_amount(proposal) if proposal else None), None
+
+    @staticmethod
+    def _this_month(messages: list[dict]) -> str:
+        """'2026-11' from the state line "Today for the customer: 2026-11-01" (her time zone); the server's month if absent."""
+        sysmsg = messages[0]["content"] if messages and messages[0]["role"] == "system" else ""
+        m = re.search(r"Today for the customer: (\d{4}-\d{2})-\d{2}", sysmsg)
+        return m.group(1) if m else time.strftime("%Y-%m")
 
     @staticmethod
     def _worked_out_amount(messages: list[dict]) -> float | None:

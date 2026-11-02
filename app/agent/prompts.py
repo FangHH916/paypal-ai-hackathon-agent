@@ -1,4 +1,5 @@
 import re
+import time
 
 from app.models import fmt_money
 
@@ -119,6 +120,9 @@ def _unexpected_answer(messages: list[dict]) -> str:
 def state_summary(session, wallet) -> str:
     """Structured state summary injected every turn: replaces the full history so the model doesn't "forget the amount"."""
     lines = [f"[Current session state] Phase: {session.phase.value}"]
+    from app.kernel.rules import local_time
+    today = local_time(time.time(), getattr(session, "timezone", ""))
+    lines.append(f"Today for the customer: {today:%Y-%m-%d} ({today:%B %Y}, her own time zone). \"This month\" means {today:%B %Y}.")
     d = session.current_draft
     if d:
         lines.append(f"Pending transaction: {d.kind} {d.payee_name} {fmt_money(d.amount_cents)}, risk {d.risk.level.value if d.risk else '-'}")
