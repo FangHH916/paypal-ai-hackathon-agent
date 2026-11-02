@@ -254,6 +254,33 @@ class HttpTest(unittest.TestCase):
         for h in ["localhost", "star.onrender.com", "demo.example.com", "star.fly.dev"]:
             self.assertIn(h, hosts)
 
+    def test_the_paired_guardian_clears_a_scam_alert_from_her_device(self):
+        """Her feed says how many conversations are stopped (never their ids); her signed clear frees them, and the
+        customer's conversation says so in plain words."""
+        import base64
+        from app import runtime
+        from app.kernel import p256
+        sid = self.post("/api/reset", {"visitor": "0123456789abcdfe"}).json()["session_id"]
+        uid = runtime.sessions.get(sid).user_id
+        desk = runtime.execution_gateway.guardian
+        key, jwk = p256.generate_keypair()
+        token = self.post("/api/guardian/pair", {"invite_token": desk.invite(uid), "public_key": jwk}).json()["token"]
+        self.post("/api/chat", {"session_id": sid, "text": "The police told me to move my savings to a safe account"})
+        self.assertTrue(self.post("/api/chat", {"session_id": sid, "text": "Send 20 to my daughter"}).json()["ui"].get("locked"))
+        feed = self.post("/api/guardian/feed", {"token": token}).json()
+        self.assertEqual(feed["scam_holds"]["count"], 1)
+        self.assertNotIn(sid, str(feed))
+        payload = self.post("/api/guardian/clear/challenge", {"token": token}).json()["payload"]
+        bad = self.post("/api/guardian/clear", {"token": token, "payload": payload, "signature": "AAAA"})
+        self.assertEqual(bad.status_code, 403, bad.text)
+        sig = base64.b64encode(p256.sign(key, payload.encode())).decode()
+        r = self.post("/api/guardian/clear", {"token": token, "payload": payload, "signature": sig})
+        self.assertEqual((r.status_code, r.json()["cleared"]), (200, 1), r.text)
+        self.assertEqual(self.post("/api/guardian/feed", {"token": token}).json()["scam_holds"]["count"], 0)
+        self.assertIn("family guardian", runtime.sessions.get(sid).messages[-1]["content"])
+        r = self.post("/api/chat", {"session_id": sid, "text": "Send 20 to my daughter"}).json()
+        self.assertEqual(r["ui"]["type"], "confirm", r["reply"])
+
     def test_audit_endpoints(self):
         sid = self.post("/api/reset", {}).json()["session_id"]
         self.post("/api/chat", {"session_id": sid, "text": "What's my balance?"})

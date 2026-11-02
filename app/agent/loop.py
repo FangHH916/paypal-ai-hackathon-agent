@@ -744,16 +744,24 @@ class Agent:
 
     def _locked(self, s: Session, start: int, text: str) -> TurnResult:
         s.plan.clear()
+        g = self.wallet.user(s.user_id)["guardian"]
+        paired = g["status"] == "paired"
         reply = ("Earlier in this conversation there were signs of a scam, so for your safety I can't prepare any "
-                 "payments in this conversation. If this really is your own idea, please check with your family first. "
+                 "payments in this conversation. " +
+                 (f"If this really is your own idea, talk to {g['name']}, your family guardian: only she can clear this "
+                  "alert, from her own device. " if paired else
+                  "No family guardian is paired, so nobody can clear this alert and this conversation stays stopped. "
+                  "Please talk to your family first. ") +
                  f"You can also call {hotline_words()}.")
+        rule = ("Only your paired family guardian can clear a scam alert, from her own device." if paired else
+                "With a family guardian paired, she could clear it from her own device. Demo: Settings → Reset demo starts a clean conversation.")
         s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
         s.add_trace("guard", f"Session is flagged for scams ({s.scam_level.value}); money request answered by the "
                              "harness, remaining plan dropped", {"reasons": s.scam_reasons[:3]})
         self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "blocked", "llm": "guard"})
         return TurnResult(reply=reply, speak=reply, trace=s.trace[start:], llm="guard",
                           ui={"type": "blocked", "reasons": s.scam_reasons[:3], "locked": True,
-                              "hint": "Demo: Settings → Reset demo starts a clean conversation."})
+                              "hint": rule})
 
     def _help(self, s: Session, start: int, text: str) -> TurnResult:
         """She wants her family or the hotline. Star can't phone anyone; it says who to call and how, and lets a paired

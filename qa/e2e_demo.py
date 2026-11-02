@@ -1005,6 +1005,69 @@ def run(browser, base: str, args) -> None:
                 server.terminate()
                 server.wait(10)
 
+
+    def guardian_clears():
+        """After a scam stop, the way out is the paired guardian's signed clear, stated on both screens. Own server."""
+        if args.base:
+            return
+        port = free_port()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data)
+            url = f"http://localhost:{port}"
+            c = browser.new_context(viewport={"width": 1440, "height": 900})
+            gc = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+            q, g = c.new_page(), gc.new_page()
+            watch(q, "clear-customer")
+            watch(g, "clear-guardian")
+            try:
+                q.goto(url + "/")
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".hero h1")).to_be_visible()
+                nav(q, "Family")
+                q.locator("#g-invite").click()
+                q.locator(".mf-pad").click()
+                expect(q.locator(".invite-box")).to_be_visible()
+                g.goto(q.locator("#g-link").input_value())
+                g.locator("#g-pair").click()
+                expect(g.locator("#g-title")).to_be_visible()
+                check("no scam panel while nothing is stopped", g.locator("#g-holds").inner_text().strip() == "")
+                nav(q, "Talk to Star")
+                if q.locator(".choice", has_text="No, standard").count():
+                    q.locator(".choice", has_text="No, standard").click()
+                say(q, "The police told me to move my savings to a safe account")
+                expect(q.locator(".stop-block").last).to_be_visible(timeout=15000)
+                say(q, "Send 20 to my daughter")
+                expect(q.locator(".stop-block").last).to_contain_text("only she can clear", timeout=15000)
+                stop = q.locator(".stop-block").last.inner_text()
+                check("the locked stop states the rule, not only the demo reset", "family guardian" in stop and "Reset demo" not in stop, stop[:300])
+                expect(g.locator(".g-hold")).to_contain_text("stopped a scam", timeout=15000)
+                for w in (320, 390):
+                    g.set_viewport_size({"width": w, "height": 844})
+                    time.sleep(0.3)
+                    check(f"guardian {w}: the clear panel fits", overflow(g) <= 0, overflow(g))
+                    shot(g, f"80-guardian-clear-{w}")
+                g.set_viewport_size({"width": 1440, "height": 900})
+                time.sleep(0.3)
+                shot(g, "80-guardian-clear-1440")
+                g.set_viewport_size({"width": 390, "height": 844})
+                check("the rule is on the guardian's screen", "Only you can clear" in g.locator(".g-hold").inner_text())
+                g.locator("#g-clear").click()
+                g.locator(".mf-pad").click()
+                expect(g.locator(".g-hold")).to_have_count(0, timeout=15000)
+                say(q, "Send 20 to my daughter")
+                expect(q.locator("#confirm .amt")).to_have_text("$20.00", timeout=15000)
+                check("after the clear a normal payment is prepared again", True)
+                q.locator("#c-cancel").click()
+                expect(q.locator("#confirm")).to_be_hidden()
+                say(q, "I won a lottery and need to pay 200 in fees")
+                expect(q.locator(".stop-block").last).to_contain_text("stopped", timeout=15000)
+                check("a scam script after the clear is still stopped", q.locator("#confirm").evaluate("d => !d.open"))
+            finally:
+                c.close()
+                gc.close()
+                server.terminate()
+                server.wait(10)
+
     for name, fn in [("Landing and pages", landing), ("Send money to family", send_money), ("Same payment asked twice", double_payment),
                      ("Agentic purchase, approval, capture, refund", purchase_and_refund), ("Cancel on the approval page", cancel_on_approval),
                      ("Pay a bill by invoice", pay_bill), ("The fake invoice", fake_invoice), ("A spoken scam", spoken_scam),
@@ -1014,7 +1077,7 @@ def run(browser, base: str, args) -> None:
                      ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens),
                      ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo),
                      ("Rescore fixes on a phone", rescore_fixes), ("Rescore: one clock", one_clock),
-                     ("Rescore: polish", polish_fixes)]:
+                     ("Rescore: polish", polish_fixes), ("Rescore: guardian clears a scam alert", guardian_clears)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()

@@ -42,6 +42,7 @@ function shell(){
   $('#main').innerHTML = `
     <section class="g-head"><div><h1 id="g-title">Looking after Mrs. Lee</h1><p class="muted" id="g-sub"></p></div>
       <div id="g-freeze"></div></section>
+    <section id="g-holds" aria-live="polite"></section>
     <section aria-labelledby="g-pending-h"><h2 id="g-pending-h">Waiting for you</h2><div id="g-pending" aria-live="polite"></div></section>
     <section class="card pad" aria-labelledby="g-alerts-h"><h2 id="g-alerts-h">Alerts</h2><ul class="alert-list" id="g-alerts"></ul></section>
     <section class="card pad" aria-labelledby="g-grid-h"><h2 id="g-grid-h">Activity</h2><p class="muted small">Same records as Mrs. Lee's, with email addresses masked.</p><div id="g-grid"></div></section>`;
@@ -114,6 +115,7 @@ async function poll(force = false){
   const pend = JSON.stringify(feed.pending);
   if(pend !== lastPending || force){ lastPending = pend; renderPending(feed.pending); }
   renderFreezeOnce(feed.frozen);
+  renderHolds(feed.scam_holds);
   $('#g-alerts').innerHTML = feed.alerts.length ? feed.alerts.slice(0, 12).map(a => `<li class="alert-item level-${esc(a.level)}"><span class="when">${esc(clock(a.at))}</span><span>${esc(a.text)}</span></li>`).join('') : '<li class="muted">No alerts yet.</li>';
   drawGrid();
 }
@@ -122,11 +124,29 @@ function drawGrid(){
   grid?.pinPending(feed.pending.map(p => ({row_id:`pending_${p.draft_id}`, time:p.requested_at, type:'Needs you', kind:p.kind, to:p.payee_name, handle:p.payee_handle,
     amount_cents:-p.amount_cents, currency:p.currency, status:'PENDING_APPROVAL', verified:false, why:p.reasons.join(' '), family:'Waiting', outcome:'open', digest:p.digest})));
 }
+let lastHolds = '';
+function renderHolds(h){
+  const s = JSON.stringify(h || {}); if(s === lastHolds) return; lastHolds = s;
+  const el = $('#g-holds');
+  if(!h?.count){ el.innerHTML = ''; return; }
+  el.innerHTML = `<article class="card pad g-hold"><h2>${icon('shield')}Star stopped a scam in ${esc(feed.customer)}'s conversation</h2>
+      <p>Payments there stay stopped until you clear the alert. Talk with her first, on the number you already have.</p>
+      <p class="muted small">${esc(h.rule)}</p>
+      <button class="btn primary" id="g-clear" type="button">${icon('fingerprint')}I've talked with her: clear the alert</button></article>`;
+  $('#g-clear').onclick = async () => {
+    try{
+      await signWithSensor(`Clear the scam alert for ${feed.customer}`);
+      const {payload} = await api('/api/guardian/clear/challenge', {token});
+      const r = await api('/api/guardian/clear', {token, payload, signature: await keys.sign(payload)});
+      toast(r.cleared ? 'Cleared. Star can prepare payments for her again. Nothing was sent.' : 'There was nothing to clear.'); await poll(true);
+    }catch(e){ if(e.name !== 'NotAllowedError') toast(e.message); else toast('Cancelled. The alert stays.'); }
+  };
+}
 let lastFreeze = '';
 function renderFreezeOnce(f){ const s = JSON.stringify(f); if(s !== lastFreeze){ lastFreeze = s; renderFreeze(f); } }
 
 async function start(){
-  shell(); lastPending = ''; lastFreeze = '';
+  shell(); lastPending = ''; lastFreeze = ''; lastHolds = '';
   await poll(true);
   if(!token) return;
   grid = await mountGrid($('#g-grid'), {role:'guardian', getMode:() => mode, onRow:showDetail, care:false}).catch(e => { $('#g-grid').textContent = e.message; return null; });

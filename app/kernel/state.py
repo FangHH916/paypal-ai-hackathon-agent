@@ -115,6 +115,18 @@ class Session:
             if r not in self.scam_reasons:
                 self.scam_reasons.append(r)
 
+    def clear_scam_alert(self) -> bool:
+        """The one way the alert goes down: the paired family guardian's signed clear (server.guardian_clear). Only the
+        alert itself goes: any new scam words are scanned and stopped (and raise it again) exactly as before."""
+        if self.scam_level == RiskLevel.LOW:
+            return False
+        self.scam_level = RiskLevel.LOW
+        self.scam_reasons = []
+        if self.phase == Phase.BLOCKED:
+            self.settle()
+        self.add_trace("guard", "The family guardian cleared this conversation's scam alert with her signed device key")
+        return True
+
     def task_utterances(self) -> list[str]:
         """What the user said for the current task only (since the last payment finished): the verifier's transcript."""
         return [m["content"] for m in self.messages[self.task_start:] if m.get("role") == "user"]
@@ -200,6 +212,11 @@ class SessionStore:
                     raise UnknownSession("Session not found. Please start a new demo session.")
                 self._s[session_id] = Session(session_id=session_id, user_id=self._bindings[session_id])
             return self._s[session_id]
+
+    def for_user(self, user_id: str) -> list[Session]:
+        """Her conversations this server still holds (the scam alert lives only in memory)."""
+        with self._lock:
+            return [s for s in self._s.values() if s.user_id == user_id]
 
     def reset(self, session_id: str) -> Session:
         old = self.get(session_id)

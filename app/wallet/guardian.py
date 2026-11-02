@@ -220,6 +220,24 @@ class GuardianDesk:
                 or not verify_device_signature(g["key_jwk"], payload, signature):
             raise GuardianError("That signature isn't from the paired guardian device.", "GUARDIAN_SIGNATURE")
 
+    def clear_challenge(self, user_id: str) -> str:
+        """Clearing a scam alert: her signature over this purpose only (not a lift, not a decision), short-lived."""
+        if self.status(user_id)["status"] != "paired":
+            raise GuardianError("No family guardian is paired.", "GUARDIAN_UNKNOWN")
+        return canonical({"domain": DOMAIN + "-CLEAR", "nonce": secrets.token_hex(12), "expires_at": int(time.time()) + CHALLENGE_TTL})
+
+    def sign_clear(self, user_id: str, payload: str, signature: str) -> None:
+        g = self.wallet.user(user_id)["guardian"]
+        body = _signed_body(payload)
+        if body.get("domain") != DOMAIN + "-CLEAR" or body["expires_at"] < time.time() or g["status"] != "paired"                 or not g["key_jwk"] or not isinstance(signature, str) or not verify_device_signature(g["key_jwk"], payload, signature):
+            raise GuardianError("That signature isn't from the paired guardian device.", "GUARDIAN_SIGNATURE")
+        key = _sha(payload)
+        with self._lock:
+            if key in self._used:
+                raise GuardianError("This clear was already used.", "REPLAY")
+            self._used.add(key)
+        self._log("guardian.alert_cleared", "", {})
+
     @staticmethod
     def lift_challenge() -> str:
         return canonical({"domain": DOMAIN + "-LIFT", "nonce": secrets.token_hex(12), "expires_at": int(time.time()) + CHALLENGE_TTL})

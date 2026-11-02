@@ -92,6 +92,7 @@ Base rules are in `app/kernel/rules.py`: unknown payee, allowance, limits, new p
 | Simulator | A `requests` adapter on the real client's session; a hostname that can't resolve | The real client always runs, and a bug can't reach a network |
 | Speech | Browser recognition by default. Optional `ASR_PROVIDER=openai_compat` keeps signed-recording evidence | No vendor dependence |
 | Replaces a card lock | A freeze: instant for Mrs. Lee or Anna, lifted only by both signatures | Protective actions should be fast, and undoing them slow |
+| Scam alert | One scam stop stops new payments for that conversation. Only the paired guardian clears it, with her device's signature for that purpose; clearing moves nothing, and the next scam script is stopped again. Without a guardian Star says it stays stopped | A way out that isn't "Reset demo", held by the person a scammer isn't talking to |
 
 **Not doing, on purpose:** live PayPal mode, Subscriptions, Vault, JS SDK v6, an MCP server, real email or SMS, purchases with no human approval, accepting or fighting disputes, onboarding merchants.
 

@@ -688,6 +688,9 @@ body.guardian-page{--x:0}
 .g-pair{max-width:720px;margin:6vh 0 0;padding-top:.8em}
 .g-pair h1{margin-bottom:.3em}
 .g-card{margin-top:.5em;padding:clamp(14px,2vw,24px);background:var(--warn-bg);border-top:6px solid var(--warn)}
+#g-holds:empty{display:none}
+.g-hold{padding:clamp(14px,2vw,24px);background:var(--bad-bg);border-top:6px solid var(--bad)}
+.g-hold h2{display:flex;gap:.4em;align-items:center;margin-bottom:.4em}
 .g-amount{font:400 clamp(3.4rem,6vw,5.6rem)/1 var(--head);margin:.1em 0}
 .g-main .page-foot{padding-left:0}
 body.guardian-page .page-foot{max-width:1280px;margin:0 auto}

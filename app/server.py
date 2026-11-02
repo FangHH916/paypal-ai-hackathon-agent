@@ -832,7 +832,41 @@ async def guardian_feed(request: Request):
     feed = _desk().feed(uid)
     feed["activity"] = activity_rows(uid)
     feed["mode_label"] = _pp_status()["label"]
+    feed["scam_holds"] = {"count": len(_scam_holds(uid)),
+                          "rule": "Only you can clear a scam alert, from this paired device, after you've talked with her. "
+                                  "Clearing doesn't send anything, and Star stops the next scam script just the same."}
     return JSONResponse(feed)
+
+
+def _scam_holds(uid: str) -> list:
+    from app.models import RiskLevel
+    return [s for s in runtime.sessions.for_user(uid) if s.scam_level.rank >= RiskLevel.HIGH.rank]
+
+
+async def guardian_clear_challenge(request: Request):
+    body = await _json(request)
+    return JSONResponse({"payload": _desk().clear_challenge(_guardian_user(body))})
+
+
+async def guardian_clear(request: Request):
+    """The paired guardian, after talking with her, clears the scam alert that stopped her conversations. Signed by the
+    guardian's own key for this purpose only; it moves no money and unlocks no card (a stopped card stays dead)."""
+    body = await _json(request, "payload", "signature")
+    uid = _guardian_user(body)
+
+    def work():
+        with _user_lock(uid):
+            _desk().sign_clear(uid, body["payload"], body["signature"])
+            cleared = 0
+            for s in _scam_holds(uid):
+                if s.clear_scam_alert():
+                    cleared += 1
+                    _say(s, "Your family guardian talked with you and cleared the scam alert, so I can prepare payments "
+                            "again. If anyone else asks you to send money, I'll stop it again.")
+                    runtime.audit.append("guardian.alert_cleared", s.session_id, {"by": "the family guardian"})
+            runtime.wallet.add_alert(uid, "info", "guardian", "The family guardian cleared the scam alert after talking with her.")
+            return JSONResponse({"cleared": cleared})
+    return await run_in_threadpool(work)
 
 
 async def guardian_challenge(request: Request):
@@ -1017,6 +1051,8 @@ routes = [
     Route("/api/guardian/freeze", guardian_freeze, methods=["POST"]),
     Route("/api/guardian/lift/challenge", guardian_lift_challenge, methods=["POST"]),
     Route("/api/guardian/lift", guardian_lift, methods=["POST"]),
+    Route("/api/guardian/clear/challenge", guardian_clear_challenge, methods=["POST"]),
+    Route("/api/guardian/clear", guardian_clear, methods=["POST"]),
     Route("/api/guardian/remove/challenge", guardian_remove_challenge, methods=["POST"]),
     Route("/api/guardian/remove", guardian_remove, methods=["POST"]),
     # The simulator's own pages
