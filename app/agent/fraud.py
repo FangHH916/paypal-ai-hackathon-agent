@@ -36,7 +36,12 @@ PATTERNS = [
                       r"\b(?:or|unless|otherwise|if (?:i|you) (?:don'?t|do not|can'?t))\b.{0,40}\b(?:i'?ll|i will|you'?ll|you will|"
                       r"they'?ll|they will|i'?m going to|i am going to)\s+(?:be (?:arrested|jailed|deported|sued)|go to (?:jail|prison))|"
                       r"\b(?:i'?ll|i will|you'?ll|you will|i'?m going to|i am going to)\s+(?:be (?:arrested|jailed|deported|sued)|"
-                      r"go to (?:jail|prison))\b.{0,40}\b(?:unless|if (?:i|you) (?:don'?t|do not|can'?t))\b",
+                      r"go to (?:jail|prison))\b.{0,40}\b(?:unless|if (?:i|you) (?:don'?t|do not|can'?t))\b|"
+                      # Her benefits or pension stopped unless she pays: "if I don't send 250 they'll stop my checks"
+                      r"^(?=.*\b(?:stop|cut|cancel|suspend|end|freeze|take away)\w*\b.{0,20}\b(?:my|your|the|her|his) "
+                      r"(?:benefits|pension|checks|cheques|social security|medicare)\b|.*\b(?:benefits|pension|checks|cheques)\b"
+                      r".{0,30}\b(?:stop|cut|cancel|suspend|end)\w*\b)"
+                      r"(?=.*\b(?:if (?:i|you) (?:don'?t|do not|can'?t|cannot)|unless (?:i|you))\b.{0,30}\b(?:pay|send|wire|transfer)\b)",
      "Government offices, the tax office and the police never threaten you with arrest to make you pay on the phone. That is a scam."),
     ("prize_fee", 5, r"\b(?:won(?!['’])|winner|winnings|prize|lottery|lotto|sweepstakes?|jackpot|lucky draw|raffle)\b.{0,100}"
                      r"\b(?:fees?|tax(?:es)?|charges?|processing|release|unlock|clearance|customs|deposit|to (?:claim|collect))\b|"

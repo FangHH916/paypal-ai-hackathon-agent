@@ -297,6 +297,16 @@ class Agent:
             if open_card:
                 self.gateway.kernel.cancel(s, s.current_draft_id)
                 s.settle()
+            # The scan still runs first: a scam script that also says "don't send" is named, with the hotline
+            c_raw, c_reasons, c_cats = fraud.scan(text)
+            c_level = prot.cap_scam(c_raw, prot.effective(self.wallet, s.user_id))
+            if c_level.rank >= RiskLevel.HIGH.rank and (fraud.script_about_money(text, c_cats) or fraud.wants_money_move(text)):
+                s.escalate_scam(c_level, c_reasons)
+                s.add_trace("guard", f"Phrase scan hit: {', '.join(c_cats)} → {c_level.value} (in a sentence that also cancels)")
+                s.plan.clear()
+                s.plan_references.clear()
+                s.plan_specs.clear()
+                return self._intercept(s, start, text, c_reasons)
             s.plan.clear()
             s.plan_references.clear()
             s.plan_specs.clear()

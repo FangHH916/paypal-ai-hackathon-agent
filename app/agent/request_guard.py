@@ -15,7 +15,11 @@ def cancelled(text):
     # "Stop! I want my money back", "stop that payment": those are requests of their own, not a cancelled draft
     if re.search(r"\bmoney back\b|\brefund\b|\bstop (?:that|the|my) (?:payment|payout|transfer)\b|\bfreeze\b|\b(?:stop|cancel) everything\b", text, re.I):
         return False
-    return bool(_CANCEL.search(text))
+    return any(not _CONDITION.search(text[max(0, m.start() - 30):m.start()]) for m in _CANCEL.finditer(text))
+
+
+# "if I don't pay 300", "unless I don't send it", "or don't pay": a condition someone set, not her cancelling anything
+_CONDITION = re.compile(r"\b(?:if|unless|or|otherwise|until|when)\b[^.,;!?]*$", re.I)
 
 
 _STOPS_CARD = re.compile(r"\b(?:stop|cancel|halt|call off|kill)\b\s+(?:(?:that|the|this|my|it)\b|(?:payment|transfer))|"
