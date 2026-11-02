@@ -993,6 +993,7 @@ def run(browser, base: str, args) -> None:
                 expect(q.locator(".hero h1")).to_be_visible()
                 nav(q, "Talk to Star")
                 q.locator(".choice", has_text="No, standard").click()
+                expect(q.locator(".msg.bot").last).to_contain_text("standard view", timeout=10000)   # answered: not busy any more
                 # Over-long input: the box stops at 500, and the server's own words come back, not "can't reach"
                 check("the text box stops at 500 characters", q.locator("#text").get_attribute("maxlength") == "500",
                       q.locator("#text").get_attribute("maxlength"))
