@@ -134,9 +134,14 @@ async def guardian_page(_: Request):
 STATIC = {"/styles.css": ("styles.css", "text/css"), "/app.js": ("app.js", "text/javascript"), "/common.js": ("common.js", "text/javascript"),
           "/logo.svg": ("logo.svg", "image/svg+xml"), "/favicon.svg": ("favicon.svg", "image/svg+xml"),
           "/activity.js": ("activity.js", "text/javascript"), "/guardian.js": ("guardian.js", "text/javascript"),
-          "/simulator.js": ("simulator.js", "text/javascript"),
+          "/simulator.js": ("simulator.js", "text/javascript"), "/motion.js": ("motion.js", "text/javascript"),
+          "/rosette.svg": ("rosette.svg", "image/svg+xml"), "/band.svg": ("band.svg", "image/svg+xml"),
+          "/fonts/gloock-latin.woff2": ("fonts/gloock-latin.woff2", "font/woff2"),
+          "/fonts/atkinson-next-latin.woff2": ("fonts/atkinson-next-latin.woff2", "font/woff2"),
+          "/fonts/atkinson-mono-latin.woff2": ("fonts/atkinson-mono-latin.woff2", "font/woff2"),
           "/vendor/ag-grid/ag-grid-community.min.js": ("vendor/ag-grid/ag-grid-community.min.js", "text/javascript")}
-_CACHED = {"/vendor/ag-grid/ag-grid-community.min.js"}     # 2 MB: otherwise no-store downloads it on every visit
+# Heavy or binary: otherwise no-store downloads them on every visit
+_CACHED = {"/vendor/ag-grid/ag-grid-community.min.js", "/fonts/gloock-latin.woff2", "/fonts/atkinson-next-latin.woff2", "/fonts/atkinson-mono-latin.woff2"}
 
 
 async def static(request: Request):
@@ -145,7 +150,7 @@ async def static(request: Request):
     if not path.exists():
         return _err("Not found.", "NOT_FOUND", 404)
     headers = {"cache-control": "public, max-age=86400"} if request.url.path in _CACHED else None
-    return Response(path.read_bytes(), media_type=mime + ("; charset=utf-8" if "svg" not in mime else ""), headers=headers)
+    return Response(path.read_bytes(), media_type=mime + ("; charset=utf-8" if mime.startswith("text/") else ""), headers=headers)
 
 
 def _pp_status() -> dict:

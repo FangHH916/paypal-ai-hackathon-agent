@@ -4,6 +4,7 @@
 // No inline script or style anywhere, so the server's strict Content-Security-Policy applies.
 import {$, esc, store, api, download, money, clock, icon, ppBadge, modeTag, statusInfo, b64, deviceKeys, mockFingerprint} from '/common.js';
 import {mountGrid} from '/activity.js';
+import {pageIn, stopFx, verifiedFx, caughtFx, plateFx, cardIn, sealSvg} from '/motion.js';
 
 // Online demo (server PUBLIC_DEMO=1): this browser's own demo customer, so testers never see each other's payments,
 // resets or passkeys. Locally the server doesn't ask for it and everyone is the same Mrs. Lee.
@@ -214,7 +215,7 @@ function go(page, push = true){
   if(state.care && CARE_HIDES.has(page)) page = 'home';
   state.page = page; try{ sessionStorage.setItem('page', page); }catch{}
   if(push && pageFromHash() !== page) history.pushState({page}, '', `#/${page}`);
-  render(); $('#main')?.focus({preventScroll:true}); window.scrollTo(0, 0);
+  render(); $('#main')?.focus({preventScroll:true}); window.scrollTo(0, 0); pageIn($('#main'));
 }
 window.addEventListener('popstate', () => {
   if($('#app').hidden || location.hash === '#main') return;
@@ -251,7 +252,7 @@ function renderPage(){
   state.sig = pageSig();
   ({home: state.care ? careHome : homePage, star: starPage, shop: shopPage, bills: billsPage, family: familyPage, activity: activityPage, lab: labPage, settings: settingsPage}[state.page] || homePage)(m);
 }
-const head = (eyebrow, title, sub) => `<div class="page-head"><p class="eyebrow">${eyebrow}</p><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>`;
+const head = (_section, title, sub) => `<div class="page-head"><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>`;
 
 // ---------------------------------------------------------------- Home
 const openInvoice = i => !['PAID', 'CANCELLED', 'MARKED_AS_PAID', 'REFUNDED'].includes(i.status);
@@ -313,8 +314,8 @@ const paymentRow = p => `<li class="pay-row"><span class="pay-main"><b>${esc(p.w
   <span class="pay-amt">${esc(p.amount)}</span>${ppBadge(p.state, p.mode_label, p.verified)}</li>`;
 function homePage(m){
   m.innerHTML = `
-    <section class="hero"><div><p class="eyebrow">${today()}</p><h1>${greeting()}, ${esc(who())}.</h1>
-      <p>Tell Star what you need. Nothing is paid until you check it and sign.</p></div>
+    <section class="hero engraved"><div><h1>${greeting()}, ${esc(who())}.</h1>
+      <p>${today()}. Tell Star what you need. Nothing is paid until you check it and sign.</p></div>
       <button class="btn primary big" type="button" data-go="${assistantPage()}">${icon('mic')}Talk to Star</button></section>
     <section class="stats" aria-label="Overview">${allowanceHtml()}${familyStat()}${freezeStat()}</section>
     <div class="two-col">
@@ -440,17 +441,17 @@ function stageHtml(m, i){
   if(m.type === 'demo-intro') return `<div class="demo-intro" role="note"><b>${icon('lab')} Safety test: a broken AI model</b>
     For this test we swap in a model with a deliberate bug: it writes <strong>10&times; the amount</strong> you say.
     The checks after it are the real ones. Watch whether the wrong amount can reach you.</div>`;
-  if(m.type === 'caught') return caughtHTML(m);
+  if(m.type === 'caught') return caughtHTML(m, i);
   if(m.type === 'typing') return `<div class="typing"><span class="thinking-dot" aria-hidden="true"></span>I'm working on your request…</div>`;
   if(m.type === 'tracker') return trackerHtml(m, i);
   if(m.type === 'choices') return m.done ? '' : `<div class="choices" role="group" aria-label="Choose one">${m.options.map((o, j) =>
     `<button class="choice" type="button" data-i="${i}" data-j="${j}"><span>${esc(o.label)}</span><small>${esc(o.detail || '')}</small></button>`).join('')}</div>`;
   if(m.type === 'plan') return `<div class="plan" role="note"><b>I'll do this in ${m.items.length} steps. You check and confirm each one.</b>
     <ol>${m.items.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
-  if(m.type === 'frozen') return `<div class="stop-block frozen"><h3>${icon('freeze')}Frozen: this didn't match what you said</h3>
+  if(m.type === 'frozen') return `<div class="stop-block frozen" data-fx="${i}"><h3>${icon('freeze')}Frozen: this didn't match what you said</h3>
     <ul class="why-list">${m.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="muted small">A second reading of your own words caught it. Nothing went to PayPal.</p>
     ${stopCount(m)}<div class="acts"><button class="btn secondary again" type="button">Say it again</button></div></div>`;
-  if(m.type === 'blocked') return `<div class="stop-block"><h3>${icon('shield')}${m.scam === false ? "I can't do this one" : "I've stopped this for you"}</h3>
+  if(m.type === 'blocked') return `<div class="stop-block" data-fx="${i}"><h3>${icon('shield')}${m.scam === false ? "I can't do this one" : "I've stopped this for you"}</h3>
     <p>${esc(m.text)}</p>${state.care || m.reasons?.length ? `<details class="why" ${state.care ? 'open' : ''}><summary>Why I stopped this</summary>${whyHtml(m.reasons?.length ? m.reasons : [m.text])}</details>` : ''}
     ${m.hint ? `<small class="muted">${esc(m.hint)}</small>` : ''}${stopCount(m)}
     <div class="acts">${m.scam === false ? '' : `<a class="btn danger" href="tel:${esc(hotline().number)}">${icon('phone')}Call ${esc(hotline().spoken)}</a>`}
@@ -473,6 +474,7 @@ function renderStage(){
     return;
   }
   st.innerHTML = state.messages.map(stageHtml).join('');
+  playMoments(st);
   st.querySelectorAll('.choice').forEach(b => b.onclick = () => { const m = state.messages[b.dataset.i]; m.done = true; send(m.options[b.dataset.j].send); });
   st.querySelectorAll('.replay').forEach(b => b.onclick = () => toggleMessageSpeech(state.messages[b.dataset.i]));
   syncSpeechButtons();
@@ -489,6 +491,14 @@ function renderStage(){
   // In Care mode and on phones the page itself scrolls. A long stop is read from its first line.
   const last = st.lastElementChild;
   last?.scrollIntoView({block: last.getBoundingClientRect().height > innerHeight * .55 ? 'start' : 'nearest'});
+}
+// Each moment plays once, when it first happens, not on every re-render or reload.
+function playMoments(st){
+  st.querySelectorAll('[data-fx]').forEach(el => {
+    const m = state.messages[el.dataset.fx]; if(!m) return;
+    if(m.type === 'tracker'){ if(m.pay?.verified && !m.sealed){ m.sealed = true; verifiedFx(el); } }
+    else if(!m.played){ m.played = true; (m.type === 'caught' ? caughtFx : stopFx)(el); }
+  });
 }
 function announce(text, urgent = false){ const el = $(urgent ? '#sr-alert' : '#sr-live'); if(el && text){ el.textContent = ''; setTimeout(() => { el.textContent = text; }, 30); } }
 function push(m){
@@ -528,8 +538,8 @@ function trackerHtml(m, i){
   const verified = p.verified ? `<li class="done verified"><span aria-hidden="true">✓</span>Verified by ${esc(isSim() ? verifiedWords(p.verified_by).replace('PayPal', 'simulator') : verifiedWords(p.verified_by))}</li>` : (end ? '' : '<li class="todo"><span aria-hidden="true"></span>Verified<span class="sr"> not yet</span></li>');
   const redirect = p.next_step?.type === 'redirect';
   const canRefund = p.state === 'PAID' && p.verified && p.kind === 'purchase';
-  return `<div class="tracker tone-${statusInfo(s, p.verified).tone}">
-    <header><h3>${esc(p.what)}</h3><span class="tracker-amt">${esc(p.amount)}</span></header>
+  return `<div class="tracker tone-${statusInfo(s, p.verified).tone}" data-fx="${i}">
+    ${p.verified && !BAD_END.has(s) ? sealSvg() : ''}<header><h3>${esc(p.what)}</h3><span class="tracker-amt">${esc(p.amount)}</span></header>
     <p class="tracker-status">${ppBadge(s, p.mode_label, p.verified)}<span class="muted small">${p.what === p.to ? '' : esc(p.to)}${p.handle ? ` ${p.what === p.to ? '' : '· '}${esc(p.handle)}` : ''}</span></p>
     <ol class="steps">${items}${verified}${end ? `<li class="stopped"><span aria-hidden="true">✕</span>${esc(statusInfo(s).word)}</li>` : ''}</ol>
     ${s === 'UNKNOWN' ? '<p class="warn-text">Please don\'t pay again. Star is asking PayPal about this same payment, with the same key, so it can\'t go out twice.</p>' : ''}
@@ -581,9 +591,9 @@ function showCaught(r){
     ['pass', 'PayPal', 'No money-moving call was made']]};
   renderSafety(); refresh(); loadCalls();
 }
-function caughtHTML(m){
+function caughtHTML(m, i){
   const stage = (label, cls, note) => `<li class="${cls}"><span>${label}</span><small>${note}</small></li>`;
-  return `<div class="caught">
+  return `<div class="caught" data-fx="${i}">
     <div class="caught-head"><span class="caught-badge">${m.frozen ? 'Caught and frozen' : 'Caught and stopped'}</span>
       <b>The wrong amount never reached you. Nothing went to PayPal.</b></div>
     <div class="caught-grid">
@@ -595,6 +605,7 @@ function caughtHTML(m){
       ${stage('AI draft', 'x', 'wrong amount')}${stage('Second check', 'ok', 'mismatch found')}
       ${stage('Card', 'skip', 'never shown')}${stage('Signature', 'skip', 'never asked')}${stage('PayPal', 'ok', '0 calls')}
     </ol>
+    <p class="caught-zero"><b>${esc(m.calls ?? 0)}</b><span>money-moving PayPal calls</span> ${modeTag(mode())}</p>
     <small class="muted">An AI can mishear or make things up. Here it can only write a draft, and a
       second reading compares that draft with what you actually said before anything is shown or signed.</small>
   </div>`;
@@ -696,7 +707,7 @@ function handleTurn(r){
 // Same idea as a payment: code builds the card from the request, the device signs exactly this change.
 function openChange(c){
   state.card = null; state.change = c;
-  renderChange(); const dlg = $('#confirm'); if(!dlg.open) dlg.showModal();
+  renderChange(); const dlg = $('#confirm'); if(!dlg.open){ dlg.showModal(); cardIn(dlg); }
   setTimeout(() => $('#c-go')?.focus(), 50);
 }
 function renderChange(){
@@ -747,7 +758,7 @@ function openConfirm(c){
   // She reads first: focus starts on the title, and Confirm only wakes after a moment, so Enter can't run through the card.
   const go1 = $('#c-go:not([disabled])');
   if(go1){ go1.disabled = true; setTimeout(() => { const b = $('#c-go'); if(state.card === c && b && b.disabled && canGoNow(c)) b.disabled = false; }, 1000); }
-  if(!dlg.open) dlg.showModal();
+  if(!dlg.open){ dlg.showModal(); cardIn(dlg); }
   setTimeout(() => $('#c-title')?.focus(), 50);
   if(c.cooldown_left > 0){
     state.coolTimer = setInterval(async () => {
@@ -1659,9 +1670,18 @@ async function enterApp(){
   }
 }
 enter.addEventListener('click', enterApp);
+// "Run this test yourself": the same fault, sent through the same pipeline, in her own chat. Nothing runs before the click.
+$('#welcome-test').addEventListener('click', async () => {
+  await enterApp();
+  if(welcome.hidden) send('Send 50 to my daughter', '/api/demo/model-mistake', false, false, true);
+});
+let plateRun = [];
+const playPlate = () => { plateRun.forEach(a => { try{ a.cancel(); }catch{} }); plateRun = plateFx(welcome); };
+$('#welcome-replay').addEventListener('click', playPlate);
 (() => {
   // Coming back from an approval page, or reloading: go straight in.
   let entered = false; try{ entered = sessionStorage.getItem('entered') === '1'; }catch{}
   const q = new URLSearchParams(location.search);
   if(entered || q.get('pp_return') || q.get('pp_cancel') || store.get('tracking', null)){ welcome.hidden = true; enterApp(); }
+  else playPlate();
 })();

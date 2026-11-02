@@ -1,4 +1,4 @@
-"""Run the whole keyless demo in a real browser and check what a person would see.
+﻿"""Run the whole keyless demo in a real browser and check what a person would see.
 
     python qa/e2e_demo.py                     starts its own keyless server on a free port, with a temporary data folder
     python qa/e2e_demo.py --base http://localhost:8000     uses a server you started
@@ -171,7 +171,7 @@ def run(browser, base: str, args) -> None:
 
     def landing():
         page.goto(base + "/")
-        expect(page.locator("#welcome-title")).to_contain_text("A second check before money moves")
+        expect(page.locator("#welcome-title")).to_contain_text("She said $50")
         check("landing says it isn't affiliated", "not affiliated" in page.locator(".welcome-foot").inner_text())
         shot(page, "01-landing")
         page.locator("#welcome-enter").click()

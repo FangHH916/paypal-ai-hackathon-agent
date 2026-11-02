@@ -3,39 +3,75 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0f5c4d">
+  <meta name="theme-color" content="#0a100e">
   <meta name="style-nonce" content="__STYLE_NONCE__">
   <meta name="description" content="Voice payments for seniors and their families, with fixed checks and a device signature before money can move. A prototype designed for the PayPal sandbox.">
   <title>Star Family Payments</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/gloock-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body class="welcome-active">
   <a class="skip-link" href="#welcome-enter" id="skip">Skip to start</a>
-  <section class="welcome" id="welcome" aria-labelledby="welcome-title">
+  <div class="welcome" id="welcome">
     <header class="welcome-top">
       <span class="brand"><img src="/logo.svg" alt="" width="36" height="36"><span>Star</span></span>
       <span class="mode-chip">Fictional demo</span>
     </header>
-    <main class="welcome-main">
-      <p class="eyebrow">A voice payment agent for seniors and their families</p>
-      <h1 id="welcome-title">Payments in your own words. A second check before money moves.</h1>
-      <p class="welcome-lead">Tell Star what you need in your own words. It finds the bill, the person or the best offer, and prepares the payment. Then you check it, and your own device signs it.</p>
-      <ol class="welcome-rule">
+    <main>
+      <section class="exhibit engraved" aria-labelledby="welcome-title">
+        <h1 id="welcome-title"><span>The model wrote $500.</span> <span class="said-line">She said $50.</span></h1>
+        <p class="welcome-lead">Star is a voice payment agent for seniors and their families. To test it, we plant a 10&times; bug in its AI model. The checks after the model are the real ones, and here is what they do.</p>
+        <ol class="plate" aria-label="The safety test, step by step. Simulated, with fictional people.">
+          <li class="said-step"><span class="k">1. Mrs. Lee says</span><span class="quote">&ldquo;Send 50 to my daughter&rdquo;</span></li>
+          <li class="draft"><span class="k">2. The model tries</span><span class="fig">$500.00</span><span class="seal-stamp" aria-hidden="true">Frozen</span><small>The faulty draft: ten times too much. It has no tool that moves money.</small></li>
+          <li class="reading"><span class="k">3. Code re-reads her words</span><span class="fig">$50.00</span><small>The amounts differ, so the draft is frozen. No card to sign is ever shown.</small></li>
+          <li class="zero"><span class="k">What reached PayPal</span><span class="num">0</span><b>money-moving calls</b><small>This test, in the simulator.</small><span class="mode-tag">SIMULATED</span></li>
+        </ol>
+        <div class="welcome-actions">
+          <button class="btn primary big" id="welcome-enter" type="button">Start as Mrs. Lee</button>
+          <button class="btn secondary big" id="welcome-test" type="button">Run this test yourself</button>
+          <a class="text-btn" href="/guardian">I'm family: guardian page</a>
+          <button class="text-btn replay-plate" id="welcome-replay" type="button">Replay</button>
+          <p class="welcome-status" id="welcome-status" role="status" aria-live="polite"></p>
+        </div>
+        <noscript><p>Please turn on JavaScript and refresh this page to use the demo.</p></noscript>
+      </section>
+
+      <section class="welcome-card" aria-labelledby="card-title">
+        <div>
+          <h2 id="card-title">When it's right, she signs the exact card.</h2>
+          <p>Her device signs these words and this amount. Change anything afterwards and the signature no longer fits, so the payment gateway refuses it.</p>
+        </div>
+        <figure class="cheque paper-plate engraved" aria-label="Example card from a simulated run">
+          <div class="band-rule" aria-hidden="true"></div>
+          <p class="card-mode"><span class="mode-tag">SIMULATED</span></p>
+          <div class="said"><span class="k">Based on what you said</span><q>Send 50 to my daughter</q></div>
+          <div class="crow"><span class="k">To</span><span class="v">Anna Lee (daughter)<small>anna.lee@example.com</small></span></div>
+          <div class="crow amount"><span class="k">Amount</span><div class="amt">$50.00</div><div class="words">fifty dollars</div></div>
+          <span class="cheque-code">Signed with this browser's private key. The sensor is simulated in this demo.</span>
+        </figure>
+      </section>
+
+      <section class="welcome-scam engraved" aria-labelledby="scam-title">
+        <h2 class="sr" id="scam-title">When it's a scam</h2>
+        <blockquote>&ldquo;The police say I must move my savings to a safe account&rdquo;</blockquote>
+        <div class="answer">
+          <h3>For your safety, I've stopped this one.</h3>
+          <p>Real police, government and bank staff will never ask you to move money into a so-called &ldquo;safe account&rdquo;. If someone asked you to do this, please hang up and call the National Elder Fraud Hotline on 833-FRAUD-11, or talk to your family first.</p>
+          <p class="fine">What Star answers in the demo, before any model sees the sentence. Fixed rules catch common scam patterns; they can't catch everything, which is why she also signs every payment. <span class="mode-tag">SIMULATED</span></p>
+        </div>
+      </section>
+
+      <ol class="welcome-rule" aria-label="Who can do what">
         <li><b>The model understands.</b><span>It has no tool that moves money.</span></li>
         <li><b>Code decides.</b><span>Fixed rules catch common scam patterns and mistakes.</span></li>
         <li><b>You authorize.</b><span>Your device signs the exact card.</span></li>
       </ol>
-      <div class="welcome-actions">
-        <button class="btn primary big" id="welcome-enter" type="button">Start as Mrs. Lee</button>
-        <a class="btn secondary big" href="/guardian">I'm family: guardian page</a>
-      </div>
-      <p class="welcome-status" id="welcome-status" role="status" aria-live="polite"></p>
-      <noscript><p>Please turn on JavaScript and refresh this page to use the demo.</p></noscript>
     </main>
     <footer class="welcome-foot">Mrs. Lee and her family are fictional. Designed for the PayPal sandbox; not affiliated with PayPal.</footer>
-  </section>
+  </div>
   <div id="app" hidden></div>
   <aside class="trace" id="trace" aria-label="Agent trace" aria-hidden="true">
     <header><h2>Agent trace</h2><button type="button" class="btn secondary small" id="trace-close">Close</button></header>

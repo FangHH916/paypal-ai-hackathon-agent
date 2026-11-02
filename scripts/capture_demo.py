@@ -1,4 +1,4 @@
-"""Drive the keyless app through the demo in docs/DEMO_VIDEO.md, recording silent footage and screenshots.
+﻿"""Drive the keyless app through the demo in docs/DEMO_VIDEO.md, recording silent footage and screenshots.
 
     python scripts/capture_demo.py                     records to output/ (not committed)
     python scripts/capture_demo.py --publish           also copies the screenshots the README uses to docs/images
@@ -129,7 +129,7 @@ def demo(r: Run) -> None:
 
     r.scene("Hook: landing")
     page.goto(r.base + "/")
-    expect(page.locator("#welcome-title")).to_contain_text("A second check before money moves")
+    expect(page.locator("#welcome-title")).to_contain_text("She said $50")
     time.sleep(0.5)
     r.shot(page, "01-landing")
     time.sleep(9)
