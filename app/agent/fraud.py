@@ -14,10 +14,18 @@ from app.models import RiskLevel
 _GC_DEBT = r"(?:\b(?:the|my|his|her|their|this|that|traffic|parking|court) fine\b|\bpay (?:a )?fine\b|\bbail\b|\btax(?:es)?\b|\bwarrant\b|\bdebt\b|\bpenalty\b|\b(?:traffic|parking|speeding) ticket\b)"
 
 # A prize or inheritance that is said to be hers (or the caller's "you")
-_HER_WIN = (r"(?:\b(?:i|you|we)(?:'ve| have| had)?(?: just| really| actually)? (?:won(?!['’])|inherited)\b|"
+# ("I won my appeal with the insurance company" is not a prize.)
+_WON = (r"won(?!['’])(?! (?:my|the|our|an?|this|that) (?:\w+ )?(?:case|appeal|argument|fight|dispute|bet|game|match|race|"
+        r"election|vote)\b)")
+_HER_WIN = (r"(?:\b(?:i|you|we)(?:'ve| have| had)?(?: just| really| actually)? (?:" + _WON + r"|inherited)\b|"
+            r"\b(?:i|you)(?:'ve| have)? been (?:selected|chosen|picked)\b|\b(?:my|your) name (?:was|got|has been|is) "
+            r"(?:drawn|picked|chosen|selected)\b|\bpicked my name\b|\bmy name came up\b|"
             r"\b(?:i'?m|i am|you'?re|you are|we'?re|we are)\b[^.]{0,40}\bwinners?\b|"
             r"\b(?:my|your|our) (?:winnings|prize|jackpot|lottery|lotto|sweepstakes|inheritance)\b|"
             r"\b(?:winnings|lottery|lotto|sweepstakes?|jackpot|lucky draw|inheritance|unclaimed (?:funds|money)|compensation)\b)")
+_PRIZE_FEE = (r"\b(?:fees?|tax(?:es)?|charges?|processing|release|unlock|clearance|customs|deposit|to (?:claim|collect)|shipping|ship|"
+              r"delivery|deliver|insurance|dut(?:y|ies)|paperwork|handling|(?:send|mail) (?:me )?(?:my|your|the) (?:check|cheque|"
+              r"winnings|prize|money))\b")
 # "he won't go to jail", "she stayed out of prison": a threat said in the negative is no threat
 _NOT_A_THREAT = re.compile(r"\b(?:won'?t|will not|wouldn'?t|didn'?t|did not|doesn'?t|does not|not|never|no longer|avoid(?:ed|s)?|"
                            r"stay(?:ed|s)? out of|kept out of)\s+(?:have to\s+)?(?:go(?:ing)?\s+to\s+|be\s+|get\s+)?"
@@ -51,21 +59,40 @@ PATTERNS = [
                       r"^(?=.*\b(?:stop|cut|cancel|suspend|end|freeze|take away)\w*\b.{0,20}\b(?:my|your|the|her|his) "
                       r"(?:benefits|pension|checks|cheques|social security|medicare)\b|.*\b(?:benefits|pension|checks|cheques)\b"
                       r".{0,30}\b(?:stop|cut|cancel|suspend|end)\w*\b)"
-                      r"(?=.*\b(?:if (?:i|you) (?:don'?t|do not|can'?t|cannot)|unless (?:i|you))\b.{0,30}\b(?:pay|send|wire|transfer)\b)",
+                      r"(?=.*\b(?:if (?:i|you) (?:don'?t|do not|can'?t|cannot)|unless (?:i|you))\b.{0,30}\b(?:pay|send|wire|transfer)\b)|"
+                      # An official who says she owes or must clear something: "Officer Davis says I owe back taxes",
+                      # "a deputy phoned, I missed jury duty and must settle the fine", "my identity was used for fraud"
+                      r"\b(?:officer|agent|deputy|sheriff|marshal|investigator|inspector|detective|clerk|official|treasury|irs)s?\b"
+                      r"(?<!travel agent)(?<!estate agent)(?<!insurance agent)[^.]{0,40}\b(?:says?|said|called|phoned|rang|told|tells|"
+                      r"wants?|claims?|warned)\b.{0,120}\b(?:owe[ds]?|settle|clear (?:it|my name|this|the \w+)|unpaid|back taxes|"
+                      r"(?:the|a|my|this|that) fines?|fined|summons|warrant|jury duty|linked to|tied to|used (?:for|in)|crimes?|"
+                      r"drugs?|launder\w*|fraud)\b|"
+                      r"\bsummons (?:for me|in my name|with my name|against me|on me)\b.{0,100}\b(?:settle|pay|send|wire|make it go away)\b",
      "Government offices, the tax office and the police never threaten you with arrest to make you pay on the phone. That is a scam."),
     # The prize or inheritance is said to be HERS ("I won", "I'm a winner", "my winnings", a lottery or sweepstakes):
     # "my grandson won a prize and the entry fee was 20" or "she inherited a house" is someone else's good news.
-    ("prize_fee", 5, _HER_WIN + r".{0,100}"
-                     r"\b(?:fees?|tax(?:es)?|charges?|processing|release|unlock|clearance|customs|deposit|to (?:claim|collect))\b|"
-                     r"\b(?:fees?|charges?|processing|release|unlock|clearance|customs|to (?:claim|collect))\b.{0,80}"
-                     r"\b(?:(?:my|your) prize|winnings|lottery|lotto|sweepstakes?|jackpot)\b",
+    # The fee can be called shipping, delivery, insurance, duty or paperwork, or be "so they can send my check".
+    ("prize_fee", 5, _HER_WIN + r".{0,100}" + _PRIZE_FEE + r"|" + _PRIZE_FEE + r".{0,80}"
+                     r"\b(?:(?:my|your) prize|winnings|lottery|lotto|sweepstakes?|jackpot|(?:i|you)(?:'ve| have)? " + _WON + r")\b",
      "Real prizes and inheritances never make you pay a fee first. Anyone asking for one is a scammer."),
     ("online_stranger", 5, r"(?=.{0,200}\b(?:needs?|wants?|asked|asking|send|wire|pay|transfer|money|ticket|flight|visa|customs|stuck|"
                            r"hospital|fees?)\b)(?:"
                            r"\b(?:man|woman|lady|guy|gentleman|someone|somebody|person|friend|boyfriend|girlfriend|sweetheart|soldier|"
                            r"fianc[eé]e?|he|she)\b[^.]{0,30}\b(?:i|we)(?:'ve| have)? (?:met|been (?:talking|chatting|writing) (?:to|with)|"
-                           r"know|talk to|chat with|write to)\b[^.]{0,15}\b(?:online|on the internet|on (?:facebook|instagram|whatsapp|"
-                           r"telegram|tiktok|(?:a|the) dating (?:site|app))|through (?:a|the) dating (?:site|app))|"
+                           r"know|talk to|chat with|write to|play \w+ with)\b[^.]{0,15}\b(?:online|on the internet|on (?:facebook|instagram|whatsapp|"
+                           r"telegram|tiktok|words with friends|scrabble|(?:a|the) dating (?:site|website|app))|"
+                           r"(?:through|in|on) (?:a|an|the) (?:online )?(?:dating (?:site|website|app)|chat ?room|game))|"
+                           # Only ever spoken by computer, never seen, a soldier or sweetheart overseas, a pen pal, someone from a
+                           # dating site or chat room, who NEEDS or WANTS the money (her own "send him 25" is not enough)
+                           r"(?=.{0,200}\b(?:needs?|wants?|asked (?:me )?for|asking (?:me )?for|is stuck|stranded)\b)(?:"
+                           r"\b(?:only|never)\b(?: ever| actually| even| really)? (?:spoken|talked|chatted|written|seen|met)\b[^.]{0,40}"
+                           r"\b(?:(?:on|by|over|through|via) (?:the )?(?:computer|internet|video(?: chat| call)?|e-?mail|skype|zoom|chat|"
+                           r"messages|messenger|webcam|online)|face(?: to face)?|in person)\b|"
+                           r"\b(?:boyfriend|girlfriend|fianc[eé]e?|sweetheart|gentleman|soldier|sergeant|widower|engineer)\b[^.]{0,40}"
+                           r"\b(?:in the (?:army|military|navy|marines)|deployed|stationed|on (?:an|the) oil rig|overseas|abroad)\b|"
+                           r"\bpen ?(?:pal|friend)s?\b|"
+                           r"\b\w+ (?:from|on|in) (?:the |a |an )?(?:online )?(?:dating (?:site|website|app)|chat ?room)\b|"
+                           r"\bi (?:play|chat|talk|write)\b[^.]{0,20}\bonline\b)|"
                            r"\b(?:online|internet|facebook|instagram|whatsapp|telegram|dating[- ](?:site|app)) (?:boyfriend|girlfriend|"
                            r"sweetheart|fianc[eé]e?|partner|man|lady|gentleman)\b|"
                            r"\b(?:boyfriend|girlfriend|sweetheart|fianc[eé]e?|partner|man|lady|gentleman|friend) (?:from|on) (?:the |a )?"
@@ -83,6 +110,19 @@ PATTERNS = [
                                 r"\bit'?s me\b.{0,80}\b(?:phone|wallet|purse|cell|mobile)\b.{0,20}\b(?:stolen|lost|gone|died|dead|"
                                 r"broke|broken|smashed|missing)\b|"
                                 r"\bit'?s me\b.{0,100}\b(?:new|this|different|another) (?:account|number)\b|"
+                                # "Mom, it's me, I changed numbers", "Mum, this is Chris on a friend's phone"
+                                r"\b(?:mom|mum|mother|dad|father|mommy|mummy|daddy)\b[,!]?\s*(?:it'?s|its|this is) (?:me|[a-z]+)\b(?!'s)"
+                                r"(?=.{0,120}\b(?:changed|new (?:number|phone)|lost|stolen|trouble|stuck|jail|bail|accident|hospital|"
+                                r"need|send|wire|transfer|friend'?s phone)\b)|"
+                                # "Grandmother, I'm in jail", "Hello Grandma, guess who? I need 400": spoken TO her as grandma
+                                r"^\W*(?:(?:hi|hey|hello|dear|oh)\s+)?(?:grandma|grandpa|granny|grandmother|grandfather|nana|nanna|gran|"
+                                r"gramps|grams|nan)\b[,!.]?\s*(?:i'?m|i am|i|guess who)\b(?=.{0,140}\b(?:jail|bail|arrested|accident|"
+                                r"hospital|stuck|stranded|lawyer|trouble|lost|stolen|need|send|wire|transfer)\b)|"
+                                # A call or message from a strange number that then needs money: "Ben messaged me from an unknown number"
+                                r"\b(?:called|texted|messaged|rang|wrote|emailed|contacted|phoned)\b(?: me)? (?:from|on|using|with) "
+                                r"(?:a |an |the )?(?:new|different|friend'?s|borrowed|unknown|strange|private|blocked|foreign|"
+                                r"someone else'?s) (?:phone |cell )?(?:number|phone|cell|mobile)\b"
+                                r"(?=.{0,120}\b(?:needs?|wants?|send|wire|transfer|account|money)\b)|"
                                 r"\b(?:it'?s me|this is (?:your|ur) (?:grand(?:son|daughter|child|kid)|son|daughter|nephew|niece))\b.{0,80}"
                                 r"\b(?:lost|broke|broken|smashed|dropped|new|different|friend'?s|borrowed|someone else'?s)\b.{0,15}"
                                 r"\b(?:phone|number|cell|mobile)\b|"
