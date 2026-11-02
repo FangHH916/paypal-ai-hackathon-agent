@@ -93,7 +93,9 @@ class ToolGateway:
             tiers = {"read", "control"}            # high-risk session: no more drafting of any transaction
         if s.phase not in (Phase.IDLE,):
             tiers.discard("draft")                 # a transaction is already pending: no new drafts
-        return [t for t in self.tools.values() if t.tier in tiers]
+        # Stopping an unclaimed payout only brings her money back: a scam alert never takes that away (still signed)
+        keep = {"draft_stop_payout"} if s.phase == Phase.IDLE else set()
+        return [t for t in self.tools.values() if t.tier in tiers or t.name in keep]
 
     # Tools in a group are only offered when the conversation is about that topic: a 27B model picks tools more
     # reliably from a short list. (Calling one anyway still works: call() checks the tier, not the group.)

@@ -99,6 +99,14 @@ LOST_PHONE_ASK = ("I'm sorry about your {what}. Would you like me to freeze all 
 FREEZE_DONE = "Done. All payments are frozen. Nothing can be sent until you and your family lift the freeze."
 FREEZE_DECLINED = "OK, I haven't frozen anything, and nothing has been sent. If you'd still like to pay someone, tell me who and how much."
 
+_KIN = (r"(family|daughter|son|grandson|granddaughter|grandchildren|kids|children|husband|wife|sister|brother|niece|nephew|"
+        r"guardian)")
+_FAMILY_WORD = re.compile(rf"\b{_KIN}\b", re.I)
+# "Call my daughter", "please tell my family", "what's the scam hotline?", "who can I call about a scam?"
+_HELP = re.compile(rf"\bhotline\b|\b(?:call|ring|phone|talk to|speak to|speak with|talk with|tell|contact|reach|get hold of|let)\b"
+                   rf"(?:\s+\w+){{0,2}}?\s+(?:my|our)\s+{_KIN}\b|"
+                   r"\bwho (?:can|should|do) i (?:call|tell|talk to|ring)\b|\breport (?:a |the |this )?scam\b", re.I)
+
 _NOTE = re.compile(r"\s*\[system note:[^\]]*\]", re.I)
 NUDGE = ("[Harness check] No draft exists: you did not call any draft tool in this turn, so nothing has been prepared. "
          "Do not say it is prepared. If you know who/what and how much, call list_payees, search_catalogue or list_invoices and then "
@@ -276,14 +284,18 @@ class Agent:
             self.audit.append("plan.reference_resolved", s.session_id,
                               {"original": raw_text, "resolved": text, "parent_draft_id": parent_id})
 
-        if request_guard.cancelled(text):
-            if s.current_draft and s.phase in (Phase.AWAITING_AUTH, Phase.COOLING, Phase.FROZEN):
+        # Cancelling only makes her safer, so it comes before every gate (a scam alert in this session included):
+        # with a card open, "stop that payment" / "call it off" cancel THAT card.
+        open_card = s.current_draft if s.current_draft and s.phase in (Phase.AWAITING_AUTH, Phase.COOLING, Phase.FROZEN) else None
+        if request_guard.cancelled(text) or (open_card and request_guard.stops_open_card(text)):
+            if open_card:
                 self.gateway.kernel.cancel(s, s.current_draft_id)
                 s.settle()
             s.plan.clear()
             s.plan_references.clear()
             s.plan_specs.clear()
-            reply = "OK, no payment will be sent from that request."
+            reply = (f"OK, I've cancelled {fmt_money(open_card.amount_cents)} to {open_card.payee_name}. Nothing was sent."
+                     if open_card else "OK, no payment will be sent from that request.")
             s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
             s.start_task()
             return TurnResult(reply, {"type": "text"}, reply, s.trace[start:], "request guard")
@@ -337,6 +349,10 @@ class Agent:
         if level.rank >= RiskLevel.HIGH.rank and (fraud.wants_money_move(text) or detect_intent(text) in _MONEY_INTENTS or fraud.gift_card_script(cats)):
             return self._intercept(s, start, text, reasons)
 
+        # Calling her family or the scam hotline: always answered, scam alert or not, and never mistaken for a payment
+        if _HELP.search(text) and not parse_amount(text) and detect_intent(text) not in ("freeze", "handoff"):
+            return self._help(s, start, text)
+
         # A lost or stolen phone / wallet: offer the freeze once, and don't act on anything else in the same sentence
         # ("I lost my phone, can you send 20 to my son"). "Freeze my payments" said outright still freezes at once.
         lost = LOST_DEVICE.search(text)
@@ -388,7 +404,8 @@ class Agent:
 
         # 1a. Scam signs earlier in this conversation removed the draft tools. Say so plainly (deterministic) instead of
         #     letting the model improvise, and drop the remaining steps of any plan.
-        if s.scam_level.rank >= RiskLevel.HIGH.rank and detect_intent(text_now) in _MONEY_INTENTS:
+        #     Stopping a payment that was already sent (money coming back to her) is not a new payment: it stays allowed.
+        if s.scam_level.rank >= RiskLevel.HIGH.rank and detect_intent(text_now) in _MONEY_INTENTS and detect_intent(text_now) != "stop_payout":
             return self._locked(s, start, text)
 
         # 1b. A payment is still waiting for the user's fingerprint: never let a new request get lost or be confused
@@ -711,6 +728,21 @@ class Agent:
         return TurnResult(reply=reply, speak=reply, trace=s.trace[start:], llm="guard",
                           ui={"type": "blocked", "reasons": s.scam_reasons[:3], "locked": True,
                               "hint": "Demo: Settings → Reset demo starts a clean conversation."})
+
+    def _help(self, s: Session, start: int, text: str) -> TurnResult:
+        """She wants her family or the hotline. Star can't phone anyone; it says who to call and how, and lets a paired
+        guardian know. Nothing about payments changes."""
+        who = _FAMILY_WORD.search(text)
+        person = f"your {who.group(1).lower()}" if who and who.group(1).lower() not in ("family", "guardian") else "your family"
+        reply = (f"I can't make phone calls, but please call {person} yourself on the number you already have, not one "
+                 f"someone gave you. If you think this may be a scam, call {hotline_words()}. Nothing has been sent.")
+        if self.wallet.user(s.user_id)["guardian"]["status"] == "paired" and re.search(r"\btell\b|\blet\b.{0,20}\bknow\b", text, re.I):
+            self.gateway.kernel.alert(s, "warn", "help", "Mrs. Lee asked Star to let her family know she wants to talk.")
+            reply += " I've also let your family guardian know you'd like to talk."
+        s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
+        s.add_trace("guard", "She asked for her family or the hotline: answered by code, nothing about payments changed")
+        self.audit.append("agent.reply", s.session_id, {"reply": reply, "ui": "text", "llm": "help"})
+        return TurnResult(reply, {"type": "text", "hotline": hotline()["spoken"]}, reply, s.trace[start:], "help")
 
     # ------------------------------------------------------------------ Intercept
     def _intercept(self, s: Session, start: int, text: str, reasons: list[str] | None = None) -> TurnResult:

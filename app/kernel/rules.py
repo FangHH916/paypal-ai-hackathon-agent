@@ -15,7 +15,7 @@ from app.kernel import contract, protection as prot, trust
 from app.models import Draft, RiskDecision, RiskLevel, fmt_money
 from app.wallet.ledger import Wallet
 
-RULESET_VERSION = "rules-2026.11.01-v7"
+RULESET_VERSION = "rules-2026.11.02-v8"
 DUPLICATE_WINDOW = 600
 OUTGOING = ("transfer", "bill", "purchase")
 
@@ -154,7 +154,12 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
         raise_to(RiskLevel.MEDIUM, "R30_TAINTED", "Some details came from a picture or a text message. Please check each one.")
 
     # ---- Scam assessment: one-way escalation, can only get stricter ----
-    if ctx.scam_level.rank > RiskLevel.LOW.rank:
+    if ctx.scam_level.rank > RiskLevel.LOW.rank and draft.rail == "payout_cancel":
+        # Stopping her own unclaimed payout only brings the money back to her: the alert is shown, it doesn't stop it
+        level = RiskLevel.max(level, RiskLevel.MEDIUM)
+        hits.append(f"R40_SCAM_{ctx.scam_level.value}_STOP_ONLY")
+        reasons.append("There were signs of a scam earlier, so please check this. Stopping it only brings your money back.")
+    elif ctx.scam_level.rank > RiskLevel.LOW.rank:
         level = RiskLevel.max(level, ctx.scam_level)
         hits.append(f"R40_SCAM_{ctx.scam_level.value}")
         reasons.extend(ctx.scam_reasons or ["Earlier in this conversation there were signs of a scam, so this needs extra care."])

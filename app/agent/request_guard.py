@@ -18,6 +18,19 @@ def cancelled(text):
     return bool(_CANCEL.search(text))
 
 
+_STOPS_CARD = re.compile(r"\b(?:stop|cancel|halt|call off|kill)\b\s+(?:(?:that|the|this|my|it)\b|(?:payment|transfer))|"
+                         r"\bcall (?:it|that|this) off\b|\b(?:don'?t|do not|never)\s+(?:send|pay|transfer)\s+(?:it|that|this|the money)\b|"
+                         r"^\W*(?:please\s+)?(?:stop|cancel)\b", re.I)
+
+
+def stops_open_card(text):
+    """With a card open, "stop that payment", "please stop it", "call it off" mean THAT card. Cancelling is always allowed:
+    it only makes her safer (it is never refused by a scam alert). "Stop everything" / "freeze" is the freeze instead."""
+    if re.search(r"\bfreeze\b|\b(?:stop|cancel|block) (?:everything|all)\b|\bmoney back\b|\brefund\b", text, re.I):
+        return False
+    return cancelled(text) or bool(_STOPS_CARD.search(text))
+
+
 def correction(text):
     return bool(re.search(r"\b(?:change|correct|revise)\s+(?:the\s+)?amount\s+to\b|\bmake\s+(?:it|that)\b", text, re.I))
 
