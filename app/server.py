@@ -141,7 +141,7 @@ STATIC = {"/styles.css": ("styles.css", "text/css"), "/app.js": ("app.js", "text
           "/fonts/atkinson-mono-latin.woff2": ("fonts/atkinson-mono-latin.woff2", "font/woff2"),
           "/vendor/ag-grid/ag-grid-community.min.js": ("vendor/ag-grid/ag-grid-community.min.js", "text/javascript")}
 # Heavy or binary: otherwise no-store downloads them on every visit
-_CACHED = {"/vendor/ag-grid/ag-grid-community.min.js", "/fonts/gloock-latin.woff2", "/fonts/atkinson-next-latin.woff2", "/fonts/atkinson-mono-latin.woff2"}
+_CACHED = {"/vendor/ag-grid/ag-grid-community.min.js", "/rosette.svg", "/fonts/gloock-latin.woff2", "/fonts/atkinson-next-latin.woff2", "/fonts/atkinson-mono-latin.woff2"}
 
 
 async def static(request: Request):

@@ -1,4 +1,4 @@
-﻿"""Drive the keyless app through the demo in docs/DEMO_VIDEO.md, recording silent footage and screenshots.
+"""Drive the keyless app through the demo in docs/DEMO_VIDEO.md, recording silent footage and screenshots.
 
     python scripts/capture_demo.py                     records to output/ (not committed)
     python scripts/capture_demo.py --publish           also copies the screenshots the README uses to docs/images

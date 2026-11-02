@@ -27,12 +27,16 @@ function loadLibrary(){
 }
 
 function theme(agGrid, care){
-  // App tokens, so it follows the light and dark palettes. Larger rows and text in Care mode.
+  // App tokens, so it follows the light and dark palettes: a ledger page, rules and no box. Sized from the root, so browser font size is obeyed.
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   return agGrid.themeQuartz.withParams({
-    backgroundColor:'var(--surface)', foregroundColor:'var(--ink)', headerBackgroundColor:'var(--surface-2)', headerTextColor:'var(--ink)',
-    borderColor:'var(--line)', accentColor:'var(--brand)', oddRowBackgroundColor:'var(--surface)', chromeBackgroundColor:'var(--surface-2)',
-    inputBackgroundColor:'var(--surface)', inputTextColor:'var(--ink)', inputBorder:{color:'var(--line)', width:1},
-    fontFamily:'inherit', fontSize: care ? 19 : 14, headerFontSize: care ? 18 : 13, rowHeight: care ? 72 : 46, headerHeight: care ? 58 : 42,
+    backgroundColor:'var(--bg)', foregroundColor:'var(--ink)', headerBackgroundColor:'var(--bg)', headerTextColor:'var(--ink)',
+    borderColor:'var(--line)', accentColor:'var(--ink)', oddRowBackgroundColor:'var(--bg)', chromeBackgroundColor:'var(--bg)',
+    rowHoverColor:'var(--surface-2)', selectedRowBackgroundColor:'var(--surface-2)',
+    inputBackgroundColor:'var(--surface)', inputTextColor:'var(--ink)', inputBorder:{color:'var(--ink)', width:1},
+    wrapperBorder:false, wrapperBorderRadius:0, borderRadius:0, columnBorder:false, headerColumnBorder:false,
+    fontFamily:'inherit', fontSize: Math.round(rem * (care ? 1.2 : 1)), headerFontSize: Math.round(rem * (care ? 1.1 : .95)),
+    rowHeight: Math.round(rem * (care ? 4.5 : 3.25)), headerHeight: Math.round(rem * (care ? 3.6 : 3)),
   });
 }
 

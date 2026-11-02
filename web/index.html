@@ -22,18 +22,21 @@
     <main>
       <section class="exhibit engraved" aria-labelledby="welcome-title">
         <h1 id="welcome-title"><span>The model wrote $500.</span> <span class="said-line">She said $50.</span></h1>
-        <p class="welcome-lead">Star is a voice payment agent for seniors and their families. To test it, we plant a 10&times; bug in its AI model. The checks after the model are the real ones, and here is what they do.</p>
+        <p class="welcome-lead">Star is a voice payment agent for seniors and their families. To test it, we plant a 10&times; bug in its AI model. The checks after it are the real ones.</p>
         <ol class="plate" aria-label="The safety test, step by step. Simulated, with fictional people.">
           <li class="said-step"><span class="k">1. Mrs. Lee says</span><span class="quote">&ldquo;Send 50 to my daughter&rdquo;</span></li>
           <li class="draft"><span class="k">2. The model tries</span><span class="fig">$500.00</span><span class="seal-stamp" aria-hidden="true">Frozen</span><small>The faulty draft: ten times too much. It has no tool that moves money.</small></li>
           <li class="reading"><span class="k">3. Code re-reads her words</span><span class="fig">$50.00</span><small>The amounts differ, so the draft is frozen. No card to sign is ever shown.</small></li>
           <li class="zero"><span class="k">What reached PayPal</span><span class="num">0</span><b>money-moving calls</b><small>This test, in the simulator.</small><span class="mode-tag">SIMULATED</span></li>
         </ol>
-        <div class="welcome-actions">
-          <button class="btn primary big" id="welcome-enter" type="button">Start as Mrs. Lee</button>
-          <button class="btn secondary big" id="welcome-test" type="button">Run this test yourself</button>
-          <a class="text-btn" href="/guardian">I'm family: guardian page</a>
-          <button class="text-btn replay-plate" id="welcome-replay" type="button">Replay</button>
+        <p class="plate-scam"><span class="k">And when the words are a scam</span><q>The police say I must move my savings to a safe account</q><b class="scam-seal">Stopped</b><span class="scam-note">Before any model sees the sentence. 0 money-moving calls. <span class="mode-tag">SIMULATED</span></span></p>
+        <div class="welcome-cta">
+          <div class="welcome-actions">
+            <button class="btn primary big" id="welcome-enter" type="button">Start as Mrs. Lee</button>
+            <button class="btn secondary big" id="welcome-test" type="button">Run this test yourself</button>
+          </div>
+          <p class="welcome-links"><a class="text-btn" href="/guardian">I'm family: guardian page</a>
+            <button class="text-btn replay-plate" id="welcome-replay" type="button">Replay</button></p>
           <p class="welcome-status" id="welcome-status" role="status" aria-live="polite"></p>
         </div>
         <noscript><p>Please turn on JavaScript and refresh this page to use the demo.</p></noscript>

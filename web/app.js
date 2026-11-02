@@ -601,11 +601,11 @@ function caughtHTML(m, i){
       <div class="cg bad"><small>2. The faulty model drafted</small><strong>${esc(m.drafted)}</strong><span>10&times; too much (the planted bug)</span></div>
       <div class="cg good"><small>3. The second reading heard</small><strong>${esc(m.heard)}</strong><span>it re-read your own words only</span></div>
     </div>
+    <p class="caught-zero"><b>${esc(m.calls ?? 0)}</b><span>money-moving PayPal calls</span> ${modeTag(mode())}</p>
     <ol class="caught-path">
       ${stage('AI draft', 'x', 'wrong amount')}${stage('Second check', 'ok', 'mismatch found')}
       ${stage('Card', 'skip', 'never shown')}${stage('Signature', 'skip', 'never asked')}${stage('PayPal', 'ok', '0 calls')}
     </ol>
-    <p class="caught-zero"><b>${esc(m.calls ?? 0)}</b><span>money-moving PayPal calls</span> ${modeTag(mode())}</p>
     <small class="muted">An AI can mishear or make things up. Here it can only write a draft, and a
       second reading compares that draft with what you actually said before anything is shown or signed.</small>
   </div>`;

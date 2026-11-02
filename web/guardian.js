@@ -40,7 +40,7 @@ function showPair(invite, note = ''){
 // ---------------------------------------------------------------- The dashboard
 function shell(){
   $('#main').innerHTML = `
-    <section class="g-head"><div><p class="eyebrow">Family guardian</p><h1 id="g-title">Looking after Mrs. Lee</h1><p class="muted" id="g-sub"></p></div>
+    <section class="g-head"><div><h1 id="g-title">Looking after Mrs. Lee</h1><p class="muted" id="g-sub"></p></div>
       <div id="g-freeze"></div></section>
     <section aria-labelledby="g-pending-h"><h2 id="g-pending-h">Waiting for you</h2><div id="g-pending" aria-live="polite"></div></section>
     <section class="card pad" aria-labelledby="g-alerts-h"><h2 id="g-alerts-h">Alerts</h2><ul class="alert-list" id="g-alerts"></ul></section>
