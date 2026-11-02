@@ -44,10 +44,10 @@ export function caughtFx(el){
   if(!el || calm()) return;
   const bad = el.querySelector('.cg.bad'), good = el.querySelector('.cg.good'), zero = el.querySelector('.caught-zero');
   run(el.querySelector('.cg.said'), [{opacity:.01, transform:'translateY(10px)'}, {opacity:1, transform:'none'}], {duration:280});
-  run(bad, [{opacity:.01, transform:'translateY(10px)'}, {opacity:1, transform:'none'}], {duration:280, delay:220});
-  run(good, [{opacity:.01, transform:'translateY(10px)'}, {opacity:1, transform:'none'}], {duration:280, delay:520});
-  run(el.querySelector('.caught-badge'), STAMP(-3), {duration:280, delay:760, easing:'cubic-bezier(.5,0,.8,.4)'});
-  if(zero){ run(zero, [{clipPath:'inset(0 100% 0 0)'}, {clipPath:'inset(0 0 0 0)'}], {duration:320, delay:880}); landZero(zero.querySelector('b'), 1000); }
+  run(bad, [{opacity:.01, transform:'translateY(10px)'}, {opacity:1, transform:'none'}], {duration:240, delay:110});
+  run(good, [{opacity:.01, transform:'translateY(10px)'}, {opacity:1, transform:'none'}], {duration:240, delay:240});
+  run(el.querySelector('.caught-badge'), STAMP(-3), {duration:240, delay:340, easing:'cubic-bezier(.5,0,.8,.4)'});
+  if(zero){ run(zero, [{clipPath:'inset(0 100% 0 0)'}, {clipPath:'inset(0 0 0 0)'}], {duration:280, delay:420}); landZero(zero.querySelector('b'), 520); }
 }
 
 export function plateFx(root){

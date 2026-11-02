@@ -3,6 +3,7 @@
     python scripts/capture_demo.py                     records to output/ (not committed)
     python scripts/capture_demo.py --publish           also copies the screenshots the README uses to docs/images
     python scripts/capture_demo.py --headed            watch it
+    python scripts/capture_demo.py --no-video          screenshots only, for a machine without Playwright's ffmpeg
     python scripts/capture_demo.py --base URL          uses a keyless server you started, instead of its own
 
 Needs Playwright and Edge (channel="msedge"), or set E2E_CHANNEL (e.g. "chrome"), or E2E_CHANNEL=bundled. It starts a server in
@@ -130,9 +131,9 @@ def demo(r: Run) -> None:
     r.scene("Hook: landing")
     page.goto(r.base + "/")
     expect(page.locator("#welcome-title")).to_contain_text("She said $50")
-    time.sleep(0.5)
+    time.sleep(3)                                   # the safety test plays out on the first screen
     r.shot(page, "01-landing")
-    time.sleep(9)
+    time.sleep(7)
     page.locator("#welcome-enter").click()
     expect(page.locator(".hero h1")).to_contain_text("Mrs. Lee")
     time.sleep(1.5)
@@ -265,7 +266,7 @@ def demo(r: Run) -> None:
     expect(page.locator(".caught-grid .cg.bad strong")).to_have_text("$500.00")
     expect(page.locator(".caught-grid .cg.good strong")).to_have_text("$50.00")
     page.locator(".caught").scroll_into_view_if_needed()
-    time.sleep(0.5)
+    time.sleep(1.5)
     r.shot(page, "16-model-mistake")
     time.sleep(5)
     if page.locator("#confirm").evaluate("d => d.open"):       # the frozen card can't be signed: close it to get back to the lab
@@ -322,6 +323,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", help="a keyless server you started; default is to start one")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--no-video", action="store_true", help="screenshots only")
     ap.add_argument("--publish", action="store_true", help="copy the README's screenshots to docs/images")
     args = ap.parse_args()
     shutil.rmtree(VIDEO, ignore_errors=True)
@@ -345,8 +347,9 @@ def main() -> int:
                 return ctx
             browser.new_context = silent_context
             size = {"width": 1280, "height": 800}
-            ctx = browser.new_context(viewport=size, record_video_dir=str(VIDEO / "c"), record_video_size=size, accept_downloads=True)
-            gctx = browser.new_context(viewport=size, record_video_dir=str(VIDEO / "g"), record_video_size=size)
+            rec = (lambda d: {}) if args.no_video else (lambda d: {"record_video_dir": str(VIDEO / d), "record_video_size": size})
+            ctx = browser.new_context(viewport=size, accept_downloads=True, **rec("c"))
+            gctx = browser.new_context(viewport=size, **rec("g"))
             page, gp = ctx.new_page(), gctx.new_page()
             run = Run(page, gp, base)
             try:
@@ -359,8 +362,9 @@ def main() -> int:
             ctx.close()
             gctx.close()
             browser.close()
-            shutil.move(customer.path(), VIDEO / "customer.webm")
-            shutil.move(guardian.path(), VIDEO / "guardian.webm")
+            if not args.no_video:
+                shutil.move(customer.path(), VIDEO / "customer.webm")
+                shutil.move(guardian.path(), VIDEO / "guardian.webm")
     finally:
         if proc:
             proc.terminate()
