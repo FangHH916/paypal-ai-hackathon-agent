@@ -933,6 +933,50 @@ def run(browser, base: str, args) -> None:
                 server.terminate()
                 server.wait(10)
 
+    def one_clock():
+        """No pinned hour: the server's configured zone is somewhere it is night right now, the browser somewhere it is
+        day. The card must follow the browser's clock, like the greeting does. Its own server: own state."""
+        if args.base:
+            return
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        night_start, night_end = 23, 6       # app/config.py: the late-night window
+        zones = ["Pacific/Kiritimati", "Asia/Tokyo", "Asia/Shanghai", "Asia/Kolkata", "Europe/Berlin", "Europe/London",
+                 "America/Sao_Paulo", "America/New_York", "America/Los_Angeles", "Pacific/Honolulu"]
+
+        def at_night(z, ahead=0):
+            h = (datetime.now(ZoneInfo(z)).hour + ahead) % 24
+            return h >= night_start or h < night_end
+        steady = [z for z in zones if at_night(z) == at_night(z, 1) and datetime.now(ZoneInfo(z)).minute < 55]
+        day_zone = next(z for z in steady if not at_night(z) and 7 <= datetime.now(ZoneInfo(z)).hour < 21)
+        night_zone = next(z for z in steady if at_night(z))
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data, {"RULE_FIXED_HOUR": "", "CUSTOMER_TIMEZONE": night_zone})
+            c = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True, timezone_id=day_zone)
+            q = c.new_page()
+            watch(q, "one-clock")
+            try:
+                q.goto(f"http://localhost:{port}/")
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".hero h1")).to_be_visible()
+                hello = q.locator(".hero h1").inner_text()
+                h = datetime.now(ZoneInfo(day_zone)).hour
+                want = "Good morning" if h < 12 else "Good afternoon" if h < 18 else "Good evening"
+                check(f"the greeting follows the browser's clock ({day_zone}, {h}h)", hello.startswith(want), hello)
+                nav(q, "Talk to Star")
+                q.locator(".choice", has_text="No, standard").click()
+                say(q, "Send 20 to my son")
+                expect(q.locator("#confirm .amt")).to_have_text("$20.00", timeout=15000)
+                body = q.locator("#confirm").inner_text()
+                check(f"the card follows the same clock, not the server's zone ({night_zone})", "late at night" not in body, body[:200])
+            finally:
+                c.close()
+                server.terminate()
+                server.wait(10)
+
     for name, fn in [("Landing and pages", landing), ("Send money to family", send_money), ("Same payment asked twice", double_payment),
                      ("Agentic purchase, approval, capture, refund", purchase_and_refund), ("Cancel on the approval page", cancel_on_approval),
                      ("Pay a bill by invoice", pay_bill), ("The fake invoice", fake_invoice), ("A spoken scam", spoken_scam),
@@ -941,7 +985,7 @@ def run(browser, base: str, args) -> None:
                      ("Phone widths and Care mode", phone_and_care), ("Dark theme and focus", dark_and_focus),
                      ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens),
                      ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo),
-                     ("Rescore fixes on a phone", rescore_fixes)]:
+                     ("Rescore fixes on a phone", rescore_fixes), ("Rescore: one clock", one_clock)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()

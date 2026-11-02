@@ -233,6 +233,10 @@ async def chat(request: Request):
     if isinstance(body.get("care"), bool):
         # the screen the customer is looking at decides how Star talks (survives a server restart)
         s.care_mode = body["care"]
+    from app.kernel.rules import valid_timezone
+    if valid_timezone(body.get("tz")):
+        # her browser's zone name, so the late-night rule and the screen's greeting read one clock (never a client hour)
+        s.timezone = body["tz"]
     if s.phase.value == "IDLE":
         s.task_started_at = time.time()       # the ticker's "this request": it stays readable after the payment settles
     from app.kernel.voice import bind_utterance

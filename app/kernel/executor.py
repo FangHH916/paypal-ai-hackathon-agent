@@ -249,7 +249,7 @@ class Kernel:
         draft.trust = trust.check(draft, self.wallet, protection=level, scam_level=s.scam_level.value, said=said)
         draft.digest = compute_digest(draft)
         ctx = rules.RuleContext(now=now, scam_level=s.scam_level, scam_reasons=list(s.scam_reasons), said=said,
-                                local_hour=local_hour if local_hour is not None else self.risk_hour, grounding=g, protection=level,
+                                local_hour=local_hour if local_hour is not None else self.risk_hour, timezone=s.timezone, grounding=g, protection=level,
                                 rail_error=self.gateway.rail_error())
         draft.risk = rules.evaluate(draft, self.wallet, ctx)
 
@@ -506,7 +506,7 @@ class Kernel:
 
     def _recheck_risk(self, s: Session, draft: Draft) -> None:
         current = rules.evaluate(draft, self.wallet, rules.RuleContext(
-            scam_level=s.scam_level, scam_reasons=list(s.scam_reasons), local_hour=self.risk_hour,
+            scam_level=s.scam_level, scam_reasons=list(s.scam_reasons), local_hour=self.risk_hour, timezone=s.timezone,
             protection=prot.effective(self.wallet, s.user_id), rail_error=self.gateway.rail_error(),
             said=" ".join(s.task_utterances()[-6:])))
         old_hits = set(draft.risk.rule_hits if draft.risk else [])

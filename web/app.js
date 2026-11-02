@@ -39,7 +39,11 @@ const cash = cents => money(cents, state.data?.currency || 'USD');
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3200); }
 const dueDate = iso => { const d = new Date(`${iso}T12:00:00`); return isNaN(d) ? String(iso) : d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}); };
 const today = () => new Date().toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
-const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
+// One clock for the greeting and the late-night rule: this browser's zone. Only its name is sent; the server checks it
+// and works the hour out itself.
+const TZ = (() => { try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }catch{ return ''; } })();
+const hourHere = () => { try{ return Number(new Intl.DateTimeFormat('en-US', {hour: 'numeric', hourCycle: 'h23', ...(TZ ? {timeZone: TZ} : {})}).format(new Date())) % 24; }catch{ return new Date().getHours(); } };
+const greeting = () => { const h = hourHere(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
 const who = () => state.data?.user || 'Mrs. Lee';
 const readAloudOn = () => state.readAloud === null ? state.care : state.readAloud;
 const SPEECH_RATES = [0.65, 0.82, 1, 1.2, 1.5];
@@ -679,11 +683,11 @@ async function send(text, endpoint = '/api/chat', voice = false, auto = false, d
   try{
     const audio = voice ? state.nextAudio : null; state.nextAudio = null;   // the recording these words came from
     let r;
-    try{ r = await api(endpoint, {session_id: state.sid, text, care: !!state.care, ...(audio ? {audio_sha256: audio} : {})}); }
+    try{ r = await api(endpoint, {session_id: state.sid, text, care: !!state.care, tz: TZ, ...(audio ? {audio_sha256: audio} : {})}); }
     catch(e){
       if(e.data?.code !== 'SESSION_NOT_FOUND') throw e;
       await newSession(); await refresh();               // the server was restarted: carry on in a fresh session
-      r = await api(endpoint, {session_id: state.sid, text, care: !!state.care});
+      r = await api(endpoint, {session_id: state.sid, text, care: !!state.care, tz: TZ});
     }
     state.sid = r.session_id; store.set('sid', r.session_id);
     state.messages = state.messages.filter(m => m.type !== 'typing');

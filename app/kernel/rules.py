@@ -5,6 +5,7 @@ Merchant and invoice checks live in kernel/trust.py; this engine turns their hit
 """
 from __future__ import annotations
 
+import re
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -15,9 +16,35 @@ from app.kernel import contract, protection as prot, trust
 from app.models import Draft, RiskDecision, RiskLevel, fmt_money
 from app.wallet.ledger import Wallet
 
-RULESET_VERSION = "rules-2026.11.02-v8"
+RULESET_VERSION = "rules-2026.11.02-v9"
 DUPLICATE_WINDOW = 600
 OUTGOING = ("transfer", "bill", "purchase")
+
+
+_ZONE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_+\-]*(?:/[A-Za-z0-9_+\-]+){0,2}")
+
+
+def valid_timezone(name) -> str | None:
+    """An IANA zone name the browser reported ("Asia/Singapore"), or None. Only a name is ever taken from the client,
+    never an hour: the hour is worked out here, from the server's clock."""
+    if not isinstance(name, str) or len(name) > 64 or not _ZONE_NAME.fullmatch(name):
+        return None
+    try:
+        ZoneInfo(name)
+    except Exception:  # noqa: BLE001 - unknown zone, or no zone data on this server
+        return None
+    return name
+
+
+def local_hour(now: float, timezone: str = "") -> int:
+    """The customer's hour: her browser's zone when it sent a valid one, else CUSTOMER_TIMEZONE, else UTC."""
+    for name in (valid_timezone(timezone), settings.customer_timezone):
+        if name:
+            try:
+                return datetime.fromtimestamp(now, ZoneInfo(name)).hour
+            except Exception:  # noqa: BLE001 - no time zone data on the server: try the next, then UTC
+                continue
+    return time.gmtime(now).tm_hour
 
 
 @dataclass
@@ -26,6 +53,7 @@ class RuleContext:
     scam_level: RiskLevel = RiskLevel.LOW          # from the scam assessment (can only go up)
     scam_reasons: list[str] = field(default_factory=list)
     local_hour: int | None = None                  # can be injected in tests
+    timezone: str = ""                             # the zone her browser reported (validated); "" = CUSTOMER_TIMEZONE
     grounding: object | None = None                # evidence.Grounding: is the draft backed by the user's words
     protection: str = "enhanced"                   # account protection level (kernel/protection.py)
     rail_error: str = ""                           # why PayPal can't be reached at all (missing keys, unsupported mode)
@@ -137,11 +165,8 @@ def evaluate(draft: Draft, wallet: Wallet, ctx: RuleContext | None = None) -> Ri
     elif settings.fixed_hour is not None:
         hour = settings.fixed_hour
     else:
-        # the customer's local time, not the server's clock (Render runs in UTC)
-        try:
-            hour = datetime.fromtimestamp(ctx.now, ZoneInfo(settings.customer_timezone)).hour
-        except Exception:  # noqa: BLE001 - no time zone data on the server: use UTC rather than failing a payment
-            hour = time.gmtime(ctx.now).tm_hour
+        # the customer's local time, on the same clock as her screen's greeting; not the server's (Render runs in UTC)
+        hour = local_hour(ctx.now, ctx.timezone)
     if enhanced and spends and (hour >= settings.night_start or hour < settings.night_end):
         raise_to(RiskLevel.MEDIUM, "R20_NIGHT", "It's late at night, so let's double-check.")
     # Earlier steps of the same request (one sentence, each step signed on its own) don't count against the limit

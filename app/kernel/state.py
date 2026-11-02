@@ -70,7 +70,8 @@ class Session:
     pending_change: dict | None = None                       # signed account change waiting for the fingerprint
     care_mode: bool = False                                  # easier "care" mode: bigger text, simpler words, read aloud
     care_offer_pending: bool = False                         # Star just asked "would you like the easier version?"
-    freeze_offer_pending: bool = False                       # Star asked "shall I freeze payments?" after a lost phone
+    timezone: str = ""                                       # her browser's IANA zone (validated): her clock for the night rule
+    freeze_offer_pending: bool = False                      # Star asked "shall I freeze payments?" after a lost phone
     care_changed: bool | None = None                         # set this turn (by the user's answer or set_care_mode)
     amount_hint: tuple | None = None                         # (cents, "half of $200.00") this turn
     last_offers: list[dict] = field(default_factory=list)    # what search_catalogue checked this turn (shown on the card)
