@@ -10,10 +10,20 @@ export const store = {
 
 export async function api(path, body){
   const opt = body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {};
-  const r = await fetch(path, opt);
+  let r;
+  try{ r = await fetch(path, opt); }
+  catch(cause){ throw Object.assign(new Error(NO_LINK), {offline:true, cause}); }   // what went wrong in her words, not the browser's
   const data = await r.json().catch(() => ({}));
-  if(!r.ok) throw Object.assign(new Error(data.error || r.statusText), {data, status: r.status});
+  if(!r.ok) throw Object.assign(new Error(data.error || "Star had a problem with that. Please try again."), {data, status: r.status});
   return data;
+}
+// Says nothing about money, because this message can follow any request. Whoever knows no money call was possible says so themselves.
+export const NO_LINK = "I can't reach Star right now. Please try again.";
+// A page section that couldn't load: one sentence, and a way to try again. Never the browser's error, never a spinner left turning.
+export function loadFailed(el, what, retry){
+  if(!el) return;
+  el.innerHTML = `<div class="load-fail" role="alert"><p>I can't reach Star right now, so I can't show ${esc(what)}. Nothing was paid from this screen.</p><button class="btn secondary small" type="button">Try again</button></div>`;
+  el.querySelector('button').onclick = retry;
 }
 
 export function download(name, obj){

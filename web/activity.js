@@ -3,7 +3,7 @@
 // The same module draws the guardian's view (role "guardian"): masked handles and pending approvals pinned at the top.
 import {$, esc, store, money, ppBadge, statusInfo} from '/common.js';
 
-const STATE_KEY = 'star-grid-columns-v1';
+const STATE_KEY = 'star-grid-columns-v2';
 const STOP_STATES = new Set(['STOPPED', 'FROZEN', 'BLOCKED', 'DENIED']);
 const NEEDS = new Set(['UNKNOWN', 'AWAITING_APPROVAL', 'AWAITING_PAYMENT', 'HELD', 'ANOMALY', 'UNCLAIMED', 'PENDING_APPROVAL']);
 const CHIPS = [
@@ -55,11 +55,12 @@ export async function mountGrid(host, opts){
       <div class="chips" role="group" aria-label="Show">${CHIPS.map(([id, label], i) =>
         `<button type="button" class="chip" data-chip="${id}" aria-pressed="${i === 0}">${label}</button>`).join('')}</div>
       <label class="grid-search"><span class="sr">Search all activity</span><input type="search" placeholder="Search names, reasons, references"></label>
+      <button type="button" class="btn secondary small grid-more" data-act="more" aria-pressed="false">All columns and filters</button>
       <button type="button" class="btn secondary small" data-act="csv">Export CSV</button>
     </div>
     <p class="muted small grid-count" role="status" aria-live="polite"></p>
     <div class="grid-host" role="region" aria-label="Activity table"></div>`;
-  let chip = 'all', rows = [], api = null;
+  let chip = 'all', rows = [], api = null, showAll = false;
   const moneyCell = p => {
     if(p.value == null) return '';
     const m = money(Math.abs(p.value), p.data.currency || currency);
@@ -75,9 +76,9 @@ export async function mountGrid(host, opts){
   };
   const columns = [
     // Phones: one card-like column, so the table never needs sideways scrolling. Keyboard and sorting work as usual.
-    {colId:'card', headerName:'Activity', flex:1, minWidth:200, hide:true, sortable:false, floatingFilter:false, filter:false, cardMoney:moneyCell, cellRenderer:cardCell,
+    {colId:'card', headerName:'Activity', flex:1, minWidth:200, hide:true, sortable:false, floatingFilter:false, filter:false, autoHeight:true, wrapText:true, cardMoney:moneyCell, cellRenderer:cardCell,
      valueGetter:p => `${p.data.to || ''} ${p.data.type || ''} ${p.data.pinnedTotal ? '' : statusInfo(p.data.status, p.data.verified).word}`},
-    {field:'time', headerName:'Time', colId:'time', sort:'desc', minWidth:190, flex:1, filter:'agDateColumnFilter', filterParams:{comparator:dateMatches},
+    {field:'time', headerName:'Time', colId:'time', sort:'desc', minWidth:230, flex:1, filter:'agDateColumnFilter', filterParams:{comparator:dateMatches},
      valueGetter:p => p.data.time ? new Date(p.data.time * 1000) : null,
      valueFormatter:p => p.value ? p.value.toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : ''},
     {field:'type', headerName:'Type', minWidth:140, flex:1, filter:'agTextColumnFilter'},
@@ -85,11 +86,12 @@ export async function mountGrid(host, opts){
      tooltipValueGetter:p => p.data.handle || ''},
     {field:'amount_cents', headerName:'Amount', type:'rightAligned', minWidth:210, flex:1, filter:'agNumberColumnFilter',
      filterValueGetter:p => Math.abs(p.data.amount_cents || 0) / 100, valueFormatter:moneyCell},
-    {field:'status', headerName:'Status', minWidth:270, flex:1.6, filter:'agTextColumnFilter', enableCellChangeFlash:true,
-     valueGetter:p => p.data.pinnedTotal ? '' : `${p.data.status}|${p.data.verified ? 1 : 0}`,
-     filterValueGetter:p => p.data.pinnedTotal ? '' : statusInfo(p.data.status, p.data.verified).word,
+    // Status and its reason read as one sentence, so the story of a stop needs no sideways scrolling.
+    {field:'status', colId:'status', headerName:'Status and why', minWidth:300, flex:3, filter:'agTextColumnFilter', enableCellChangeFlash:true, autoHeight:true,
+     valueGetter:p => p.data.pinnedTotal ? '' : `${p.data.status}|${p.data.verified ? 1 : 0}|${p.data.why || ''}`,
+     filterValueGetter:p => p.data.pinnedTotal ? '' : `${statusInfo(p.data.status, p.data.verified).word} ${p.data.why || ''}`,
      valueFormatter:p => p.data.pinnedTotal ? '' : `${statusInfo(p.data.status, p.data.verified).word} (${getMode()})`,
-     cellRenderer:p => p.data.pinnedTotal ? '' : ppBadge(p.data.status, getMode(), p.data.verified)},
+     cellRenderer:p => p.data.pinnedTotal ? '' : `${ppBadge(p.data.status, getMode(), p.data.verified)}${p.data.why ? `<span class="grid-why">${p.data.stopped_by ? `${esc(p.data.stopped_by)}: ` : ''}${esc(p.data.why)}</span>` : ''}`},
     {field:'stopped_by', headerName:'Stopped by', minWidth:220, flex:1.2, filter:'agTextColumnFilter'},
     {field:'why', headerName:'Why', minWidth:260, flex:2, filter:'agTextColumnFilter', tooltipField:'why'},
     {field:'reference', headerName:'PayPal reference', minWidth:170, filter:'agTextColumnFilter'},
@@ -102,15 +104,18 @@ export async function mountGrid(host, opts){
   const sets = () => {
     if(isNarrow()) return ['card'];
     if(care) return ['time', 'to', 'amount_cents', 'status'];
-    if((host.clientWidth || window.innerWidth) < 1000) return ['time', 'type', 'to', 'amount_cents', 'status', 'why'];
-    return columns.map(c => c.colId || c.field).filter(c => c !== 'card');
+    if(showAll) return columns.map(c => c.colId || c.field).filter(c => c !== 'card');
+    return ['time', 'to', 'amount_cents', 'status'];
   };
   const applyColumns = () => {
     if(!api) return;
     const show = sets();
     api.setColumnsVisible(columns.map(c => c.colId || c.field), false);
     api.setColumnsVisible(show, true);
-    api.setGridOption('floatingFiltersHeight', isNarrow() ? 0 : undefined);
+    const filters = showAll && !isNarrow() && !care;
+    $('.grid-host', host).classList.toggle('filters-on', filters);
+    api.setGridOption('floatingFiltersHeight', filters ? 52 : 0);
+    const more = $('[data-act="more"]', host); more.hidden = isNarrow() || care;
     api.resetRowHeights();
   };
   const totals = () => {
@@ -122,16 +127,16 @@ export async function mountGrid(host, opts){
       else if(r.outcome === 'moved' && r.amount_cents < 0) sent += Math.abs(r.amount_cents);
     });
     const line = (id, to, cents) => ({row_id:`total_${id}`, pinnedTotal:true, to, type:'This demo', amount_cents:cents, currency});
-    api.setGridOption('pinnedBottomRowData', [line('sent', 'Total sent', sent), line('back', 'Total refunded', back), line('stops', `Stops in this demo: ${stops}`, null)]);
     const count = api.getDisplayedRowCount() + (api.getPinnedTopRowCount?.() || 0);
+    api.setGridOption('pinnedBottomRowData', count ? [line('sent', 'Total sent', sent), line('back', 'Total refunded', back), line('stops', `Stops in this demo: ${stops}`, null)] : []);
     $('.grid-count', host).textContent = `${count} row${count === 1 ? '' : 's'} shown. Totals are this demo's numbers, from the rows shown.`;
   };
   api = agGrid.createGrid($('.grid-host', host), {
-    theme: theme(agGrid, care), styleNonce: nonce,
+    theme: theme(agGrid, care), styleNonce: nonce, domLayout:'autoHeight', includeHiddenColumnsInQuickFilter:true,
     columnDefs: columns, rowData: [],
     defaultColDef:{sortable:true, resizable:true, floatingFilter:!care, filter:true, minWidth:90, wrapText:false},
     getRowId: p => p.data.row_id,
-    getRowHeight: p => !isNarrow() ? undefined : p.data.pinnedTotal ? (care ? 52 : 40) : (care ? 142 : 104),
+    getRowHeight: p => !isNarrow() || !p.data.pinnedTotal ? undefined : (care ? 56 : 48),
     getRowClass: p => p.data.pinnedTotal ? 'row-total' : p.data.outcome === 'stopped' ? 'row-stopped' : NEEDS.has(p.data.status) ? 'row-attention' : '',
     isExternalFilterPresent: () => chip !== 'all',
     doesExternalFilterPass: n => CHIPS.find(c => c[0] === chip)[2](n.data),
@@ -156,6 +161,7 @@ export async function mountGrid(host, opts){
     api.onFilterChanged();
   });
   $('.grid-search input', host).oninput = e => api.setGridOption('quickFilterText', e.target.value);
+  $('[data-act="more"]', host).onclick = e => { showAll = !showAll; e.currentTarget.setAttribute('aria-pressed', String(showAll)); applyColumns(); };
   $('[data-act="csv"]', host).onclick = () => api.exportDataAsCsv({
     fileName:'star-activity.csv', columnKeys:columns.map(c => c.colId || c.field), skipPinnedBottom:false,
     processCellCallback:p => {

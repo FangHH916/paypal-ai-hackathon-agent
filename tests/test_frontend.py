@@ -46,6 +46,19 @@ class TestStaticFiles(unittest.TestCase):
         self.assertIn("prefers-reduced-motion: reduce", motion)
         self.assertIn("prefers-reduced-motion:reduce", (WEB / "styles.css").read_text(encoding="utf-8"))
 
+    def test_motion_never_hides_content_while_it_plays(self):
+        """Emphasis only. The one fade left is the line work behind a stop, which carries no words."""
+        motion = (WEB / "motion.js").read_text(encoding="utf-8")
+        self.assertNotIn("clipPath", motion)
+        self.assertEqual(re.findall(r"opacity:[^,}]+", motion), ["opacity:0", "opacity:.14"])
+        self.assertIn("IntersectionObserver", motion)
+
+    def test_a_failed_request_never_shows_the_browser_error(self):
+        common = (WEB / "common.js").read_text(encoding="utf-8")
+        self.assertIn("offline:true", common)
+        self.assertNotIn("r.statusText", common)
+        self.assertNotIn("No money", common[common.index("export const NO_LINK"):common.index("export function loadFailed")])   # that claim belongs to callers that know
+
     def test_no_third_party_code_or_inline_code(self):
         for path in WEB.glob("*.html"):
             html = path.read_text(encoding="utf-8")
@@ -110,6 +123,17 @@ class TestContrast(unittest.TestCase):
         for palette in self.tokens():
             for bg in ("bg", "surface"):
                 self.assertGreaterEqual(contrast(palette["ink"], palette[bg]), 7, bg)
+
+    def test_the_stop_and_every_status_reach_seven_to_one_on_the_tint_they_are_printed_on(self):
+        """The words that matter most sit on a tint, not on the page: check the pair as it is drawn, in every palette block."""
+        css = (WEB / "styles.css").read_text(encoding="utf-8")
+        blocks = [dict(re.findall(r"--([\w-]+):(#[0-9a-f]{6})", b)) for b in re.findall(r"\{[^{}]*--bad:[^{}]*\}", css)]
+        self.assertEqual(len(blocks), 5)     # light, dark by preference, dark by choice, ink plate, paper plate
+        pairs = [("bad", "bad-bg"), ("bad", "bg"), ("bad", "surface"), ("accent", "bg"), ("accent", "surface"), ("accent-ink", "accent"), ("accent-ink", "bad"),
+                 ("ink", "bad-bg"), ("ok", "ok-bg"), ("warn", "warn-bg"), ("pend", "pend-bg"), ("neutral", "neutral-bg")]
+        for block in blocks:
+            for fg, bg in pairs:
+                self.assertGreaterEqual(contrast(block[fg], block[bg]), 7, f"{fg} on {bg}")
 
 
 class TestPublishedClaims(unittest.TestCase):

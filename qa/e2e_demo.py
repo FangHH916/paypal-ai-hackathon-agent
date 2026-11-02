@@ -63,7 +63,7 @@ def watch(page: Page, label: str) -> None:
     LAST.append(page)
 
     def on_console(m):
-        if m.type == "error" and not re.search(r"Failed to load resource.*(400|403|404|409)|ERR_CONNECTION_RESET", m.text):   # the lost-reply story resets a connection on purpose
+        if m.type == "error" and not re.search(r"Failed to load resource.*(400|403|404|409)|ERR_CONNECTION_RESET|ERR_FAILED", m.text):   # the lost-reply and no-network stories cut connections on purpose
             PROBLEMS.append(f"{label} console: {m.text[:600]}")
 
     page.on("console", on_console)
@@ -86,6 +86,8 @@ def nav(page: Page, label: str) -> None:
 
 
 def say(page: Page, text: str) -> None:
+    if page.locator("#type-open").is_visible() and not page.locator("#text").is_visible():   # Care mode on a phone: typing opens on request
+        page.locator("#type-open").click()
     page.locator("#text").fill(text)
     page.locator("#composer button[type=submit]").click()
 
@@ -414,8 +416,13 @@ def run(browser, base: str, args) -> None:
         time.sleep(0.5)
         check("search filters rows", "Tom Reed" in grid.inner_text())
         page.locator(".grid-search input").fill("")
-        grid.locator(".ag-header-cell", has_text="Amount").first.click()   # sort, then a real filter from the floating row
+        check("the story of a stop reads without opening more columns", grid.locator(".row-stopped .grid-why").count() >= 1)
+        grid.locator(".ag-header-cell", has_text="Amount").first.click()   # sort, then a real filter from the floating row, which opens on request
         time.sleep(0.3)
+        page.locator("[data-act=more]").click()
+        time.sleep(0.3)
+        small = page.evaluate("[...document.querySelectorAll('.grid-host .ag-floating-filter-button-button')].filter(b => b.offsetParent).map(b => b.getBoundingClientRect().height).filter(h => h < 44)")
+        check("column filter buttons are real targets", not small, small)
         grid.get_by_label("To / from Filter Input").fill("Tom")
         time.sleep(0.8)
         check("text column filter works", "Tom Reed" in grid.inner_text())
@@ -756,6 +763,90 @@ def run(browser, base: str, args) -> None:
                 server.terminate()
                 server.wait(10)
 
+    def narrow_and_failing():
+        """What a design review found at 320 px, at 200% text and with the network gone. Its own server: own state."""
+        if args.base:
+            return
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data)
+            url = f"http://localhost:{port}"
+            c = browser.new_context(viewport={"width": 320, "height": 640}, has_touch=True, is_mobile=True)
+            q = c.new_page()
+            watch(q, "narrow")
+            try:
+                def fits(label):
+                    check(f"320: {label} has no sideways scroll", overflow(q) <= 0, overflow(q))
+                # The first frame already carries the facts, and the phone's first screen ends in the zero
+                q.goto(url + "/")
+                state = q.evaluate("""() => { const z = getComputedStyle(document.querySelector('.plate .zero')), l = getComputedStyle(document.querySelector('.said-line'));
+                  return [z.clipPath, z.opacity, l.opacity]; }""")
+                check("the landing's facts are readable from the first frame", state == ["none", "1", "1"], state)
+                zero, cta = q.locator(".plate .zero").bounding_box(), q.locator(".welcome-actions").bounding_box()
+                check("320x640: the zero is on the first screen, above the buttons", zero["y"] + zero["height"] <= cta["y"], (zero, cta))
+                check("320x640: SIMULATED is on the first screen", q.locator(".plate .zero .mode-tag").bounding_box()["y"] < cta["y"])
+                fits("landing")
+                q.locator("#welcome-enter").click()
+                expect(q.locator(".hero h1")).to_be_visible()
+                # Larger text from the browser
+                q.evaluate("document.documentElement.style.fontSize = '200%'")
+                time.sleep(0.3)
+                fits("Home at 200% text")
+                labels = q.evaluate("[...document.querySelectorAll('.nav-btn:not(.nav-extra .nav-btn) .nav-text')].filter(e => e.offsetParent).every(e => e.scrollWidth <= e.parentElement.clientWidth)")
+                check("320: navigation labels fit at 200% text", labels)
+                q.evaluate("document.documentElement.style.fontSize = ''")
+                # The drill's long references wrap
+                nav(q, "Security lab")
+                expect(q.locator(".lab-score").first).to_contain_text("attacks blocked", timeout=60000)
+                q.locator("#drill-run").click()
+                expect(q.locator("#drill-out .lab-score")).to_contain_text("1 payout exists", timeout=60000)
+                fits("failure drill result")
+                # Care mode: the button she signs with, the dock, the stop
+                nav(q, "Settings")
+                q.locator("#care-toggle").click()
+                expect(q.locator(".care-hello h1")).to_be_visible()
+                time.sleep(0.4)
+                dock, bar = q.locator(".composer-wrap").bounding_box(), q.locator(".sidebar").bounding_box()
+                check("Care: the dock rests on the navigation with no gap", abs(dock["y"] + dock["height"] - bar["y"]) <= 1, (dock, bar))
+                check("Care: the dock is opaque", q.evaluate("getComputedStyle(document.querySelector('.composer-wrap')).backgroundColor") not in ("rgba(0, 0, 0, 0)", "transparent"))
+                check("Care: the dock takes under a sixth of a small screen", dock["height"] <= 640 / 6, dock["height"])
+                say(q, "Send 50 to my daughter")
+                expect(q.locator("#confirm .amt")).to_have_text("$50.00")
+                go, card = q.locator("#c-go").bounding_box(), q.locator("#confirm").bounding_box()
+                check("Care, 320: the signing button is inside the card", go["x"] + go["width"] <= card["x"] + card["width"], (go, card))
+                q.locator("#c-cancel").click()
+                expect(q.locator("#confirm")).to_be_hidden()
+                say(q, "Get me a blood pressure monitor")
+                expect(q.locator("#confirm .amt")).to_be_visible()
+                go, card = q.locator("#c-go").bounding_box(), q.locator("#confirm").bounding_box()
+                check("Care, 320: the signing button fits a purchase card too", go["x"] + go["width"] <= card["x"] + card["width"], (go, card))
+                q.locator("#c-cancel").click()
+                expect(q.locator("#confirm")).to_be_hidden()
+                say(q, "The police say I must move my savings to a safe account")
+                expect(q.locator(".stop-block").last).to_be_visible()
+                fits("Care stop")
+                # The network goes: plain words and a way to retry
+                c.route("**/api/**", lambda route: route.abort())
+                say(q, "hello")
+                expect(q.locator(".msg.bot").last).to_contain_text("No money has moved")
+                expect(q.locator(".re-send")).to_be_visible()
+                box, dock = q.locator(".re-send").bounding_box(), q.locator(".composer-wrap").bounding_box()
+                check("offline: the retry isn't under the dock", box["y"] + box["height"] <= dock["y"] + 1, (box, dock))
+                nav(q, "Bills")
+                expect(q.locator("#inv-list .load-fail")).to_contain_text("can't reach Star")
+                expect(q.locator("#dis-list .load-fail")).to_contain_text("can't reach Star")
+                check("offline: no browser error on screen", "Failed to fetch" not in q.locator("#main").inner_text())
+                c.unroute("**/api/**")
+                q.locator("#inv-list .load-fail button").click()
+                expect(q.locator(".inv").first).to_be_visible()
+                check("Try again brings the bills back", True)
+            finally:
+                c.close()
+                server.terminate()
+                server.wait(10)
+
     def public_demo():
         if args.base:
             return
@@ -791,7 +882,7 @@ def run(browser, base: str, args) -> None:
                      ("The reply gets lost", lost_reply), ("Sandbox without keys", misconfigured),
                      ("Phone widths and Care mode", phone_and_care), ("Dark theme and focus", dark_and_focus),
                      ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens),
-                     ("Review fixes on a phone", review_fixes), ("Public demo", public_demo)]:
+                     ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()

@@ -2,7 +2,7 @@
 // The agent, the kernel, the gateway and PayPal are all on the server. This page shows their state and holds the signing key.
 // Success is only ever shown from verified state read back from the server, never from a redirect.
 // No inline script or style anywhere, so the server's strict Content-Security-Policy applies.
-import {$, esc, store, api, download, money, clock, icon, ppBadge, modeTag, statusInfo, b64, deviceKeys, mockFingerprint} from '/common.js';
+import {$, esc, store, api, download, money, clock, icon, ppBadge, modeTag, statusInfo, b64, deviceKeys, mockFingerprint, loadFailed} from '/common.js';
 import {mountGrid} from '/activity.js';
 import {pageIn, stopFx, verifiedFx, caughtFx, plateFx, cardIn, sealSvg} from '/motion.js';
 
@@ -78,7 +78,7 @@ async function refresh(){
     renderBand(); protCountdown();
   }catch(e){
     if(e.data?.code === 'SESSION_NOT_FOUND'){ await newSession(); return refresh(); }
-    console.error(e);
+    console.warn(e);
   }
 }
 async function loadCalls(){
@@ -86,9 +86,22 @@ async function loadCalls(){
   try{ state.calls = await api(`/api/paypal/calls?session_id=${encodeURIComponent(state.sid)}`); renderTicker(); }catch{}
 }
 async function loadPayments(){
-  try{ state.payments = (await api(`/api/payments?session_id=${encodeURIComponent(state.sid)}`)).payments; }catch{}
+  try{ state.payments = (await api(`/api/payments?session_id=${encodeURIComponent(state.sid)}`)).payments; state.paymentsFailed = false; }catch{ state.paymentsFailed = true; }
   return state.payments;
 }
+// On a phone the voice dock and the navigation are fixed to the bottom. Their real heights, at any font size, decide how far content must clear them.
+function measureBars(){
+  const narrow = matchMedia('(max-width:900px)').matches, root = document.documentElement.style;
+  root.setProperty('--nav-h', `${narrow ? $('.sidebar')?.offsetHeight || 0 : 0}px`);
+  root.setProperty('--dock-h', `${$('.composer-wrap')?.offsetHeight || 0}px`);
+}
+const barWatch = 'ResizeObserver' in window ? new ResizeObserver(measureBars) : null;
+function watchBars(){
+  barWatch?.disconnect();
+  document.querySelectorAll('.sidebar,.composer-wrap').forEach(el => barWatch?.observe(el));
+  measureBars();
+}
+window.addEventListener('resize', measureBars);
 
 // ---------------------------------------------------------------- Read aloud (browser speech; slower in Care mode)
 const VOICE_PREFS = ['Samantha','Google US English','Microsoft Aria','Microsoft Jenny','Karen','Moira','Tessa','Serena','Google UK English Female','Victoria'];
@@ -170,7 +183,6 @@ function render(){
     <button class="nav-btn nav-more" id="nav-more" type="button" aria-expanded="false" aria-controls="nav-extra" ${extra.some(([id]) => id === state.page) ? 'aria-current="page"' : ''}>${icon('settings')}<span class="nav-text">More</span></button>
     <div class="nav-extra" id="nav-extra">${extra.filter(([id]) => id !== 'lab').map(navBtn).join('')}
       ${extra.some(([id]) => id === 'lab') ? `<p class="nav-label">For judges</p>${extra.filter(([id]) => id === 'lab').map(navBtn).join('')}` : ''}</div>`;
-  const current = NAV.find(n => n[0] === state.page)?.[1] || 'Home';
   $('#app').innerHTML = `
   <div class="layout">
     <nav class="sidebar" aria-label="Main">
@@ -184,9 +196,9 @@ function render(){
     <div class="workspace">
       <div id="band">${bandHtml()}</div>
       <header class="topbar">
-        <div class="top-title"><span class="brand mobile-brand"><img src="/logo.svg" alt="" width="28" height="28"></span><strong>${state.care && state.page === 'home' ? 'Care mode' : esc(current)}</strong></div>
+        <div class="top-title"><span class="brand mobile-brand"><img src="/logo.svg" alt="" width="28" height="28"><span>Star</span></span>
+          <span class="pill model-pill" title="The model behind Star"><span class="dot ${live() ? 'on' : ''}"></span>${esc(state.health.engine || (live() ? 'Live model' : 'Offline rules'))}</span></div>
         <div class="top-actions">
-          <span class="pill model-pill" title="The model behind Star"><span class="dot ${live() ? 'on' : ''}"></span>${esc(state.health.engine || (live() ? 'Live model' : 'Offline rules'))}</span>
           <button class="pill prot ${protLevel()}${protPending() ? ' queued' : ''}" id="prot-pill" type="button" aria-label="Account protection: ${protLevel()}. Open settings">${icon('shield')}${protLabel()}</button>
           <button class="icon-btn" id="trace-toggle" type="button" aria-pressed="${$('#trace').classList.contains('open')}">${icon('trace')}<span class="label">Agent trace</span></button>
           <button class="care-toggle" id="care-toggle" type="button" aria-pressed="${state.care}">${icon('care')}<span>${state.care ? 'Standard<span class="care-more"> view</span>' : 'Care mode'}</span></button>
@@ -251,6 +263,7 @@ function renderPage(){
   if(state.grid && state.page !== 'activity'){ clearInterval(state.gridTimer); state.grid.destroy(); state.grid = null; }
   state.sig = pageSig();
   ({home: state.care ? careHome : homePage, star: starPage, shop: shopPage, bills: billsPage, family: familyPage, activity: activityPage, lab: labPage, settings: settingsPage}[state.page] || homePage)(m);
+  watchBars();
 }
 const head = (_section, title, sub) => `<div class="page-head"><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>`;
 
@@ -325,11 +338,13 @@ function homePage(m){
     </div>`;
   m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
   bindAttention(m); bindFreeze(m);
-  loadPayments().then(rows => {
+  const lastPay = () => loadPayments().then(rows => {
     const el = $('#last-pay'); if(!el) return;
+    if(state.paymentsFailed) return loadFailed(el, 'your last payments', lastPay);
     el.innerHTML = rows.length ? `<ul class="pay-list">${rows.slice(0, 5).map(paymentRow).join('')}</ul>` : '<p class="muted">No payments yet in this demo.</p>';
     const a = $('#attention'); if(a){ a.innerHTML = attentionHtml(); bindAttention(a); }
   });
+  lastPay();
 }
 function careHome(m){
   const a = state.data?.allowance || {};
@@ -348,7 +363,7 @@ function careHome(m){
 
 // ---------------------------------------------------------------- Star page: the assistant, what's behind it, the PayPal ticker
 function starPage(m){
-  m.innerHTML = `<div class="star-grid">${assistantHtml()}
+  m.innerHTML = `<h1 class="sr">Talk to Star</h1><div class="star-grid">${assistantHtml()}
     <div class="star-side">
       <section class="card pad ticker-card" aria-labelledby="tick-h"><h2 id="tick-h">PayPal calls</h2><div class="ticker-host"></div></section>
       <section class="card pad safety" id="safety" aria-live="polite"></section>
@@ -406,13 +421,12 @@ function checksFromCard(card){
 
 // ---------------------------------------------------------------- Assistant
 function assistantHtml(){
-  const engine = state.health.engine || 'Offline rules';
   return `<section class="card assistant" aria-label="Star assistant">
-    <div class="section-top"><h2>${icon('spark')}Star</h2><span class="tiny-badge ${live() ? 'live' : ''}">${esc(engine)}</span></div>
     <div class="stage" id="stage"></div>
     <div class="composer-wrap">
-      <form class="composer" id="composer">
+      <form class="composer ${state.typing ? 'typing-open' : ''}" id="composer">
         <button type="button" class="mic" id="mic" aria-label="Tap to speak, tap again to stop">${icon('mic')}<span>${state.care ? 'Tap to speak' : 'Speak'}</span></button>
+        <button type="button" class="type-open" id="type-open" aria-expanded="${!!state.typing}" aria-controls="text">${state.typing ? 'Close' : 'Type'}</button>
         <label class="sr" for="text">Type your request</label>
         <textarea id="text" rows="1" placeholder="${state.care ? 'Or type here' : 'Send 50 to Anna'}"></textarea>
         <button class="send" type="submit" aria-label="Send">${icon('send')}<span class="label">Send</span></button>
@@ -427,8 +441,19 @@ function bindAssistant(){
   $('#composer').onsubmit = e => { e.preventDefault(); send(ta.value); };
   ta.onkeydown = e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(ta.value); } };
   $('#mic').onclick = micToggle;
+  $('#type-open').onclick = () => setTyping(!state.typing);
   renderStage();
 }
+// Care mode on a phone: one big button to speak. Typing is one tap away, so the dock doesn't take a third of a small screen.
+function setTyping(on){
+  state.typing = on;
+  $('#composer')?.classList.toggle('typing-open', on);
+  const b = $('#type-open'); if(b){ b.textContent = on ? 'Close' : 'Type'; b.setAttribute('aria-expanded', String(on)); }
+  if(on) $('#text')?.focus();
+  measureBars();
+}
+const clockNow = at => at ? new Date(at).toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}) : '';
+const msgSide = (m, name, i) => `<div class="msg-side"><span class="who">${name}</span>${m.at ? `<time>${esc(clockNow(m.at))}</time>` : ''}${i === undefined ? '' : `<button class="replay" type="button" data-i="${i}" aria-label="Read this aloud">${icon('speaker')}</button>`}</div>`;
 const SUGGEST = [
   ['family', 'Send 50 to my daughter'], ['cart', 'Get me a blood pressure monitor'], ['bolt', 'Pay the Riverside Power bill'],
   ['coin', 'Ask David to pay me back 20'], ['refresh', 'I want my money back'], ['audit', 'What have I paid recently?'],
@@ -437,7 +462,8 @@ const SUGGEST = [
 const SUGGEST_CARE = [['family', 'Send money to my daughter'], ['bolt', 'Pay my bills'], ['cart', 'Get me a blood pressure monitor'], ['refresh', 'I want my money back'], ['phone', 'Talk to a real person']];
 function whyHtml(reasons){ return reasons?.length ? `<ul class="why-list">${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''; }
 function stageHtml(m, i){
-  if(m.role === 'user') return `<div class="msg user">${m.demo ? '<small class="demo-tag">Demo input</small>' : ''}${esc(m.text)}</div>`;
+  if(m.role === 'user') return `<div class="msg user">${msgSide(m, 'You')}<div class="msg-body">${m.demo ? '<small class="demo-tag">Demo input</small>' : ''}${esc(m.text)}</div></div>`;
+  if(m.type === 'retry') return m.done ? '' : `<div class="next-chips"><button class="btn primary small re-send" type="button" data-i="${i}">Try again</button></div>`;
   if(m.type === 'demo-intro') return `<div class="demo-intro" role="note"><b>${icon('lab')} Safety test: a broken AI model</b>
     For this test we swap in a model with a deliberate bug: it writes <strong>10&times; the amount</strong> you say.
     The checks after it are the real ones. Watch whether the wrong amount can reach you.</div>`;
@@ -459,7 +485,7 @@ function stageHtml(m, i){
       <button class="replay btn secondary small" type="button" data-i="${i}" aria-label="Read this aloud">${icon('speaker')}</button></div>
     ${m.scam === false ? '' : `<p class="muted small">${esc(hotline().name[0].toUpperCase() + hotline().name.slice(1))}, ${esc(hotline().number)}.</p>`}</div>`;
   if(m.type === 'next') return m.done ? '' : `<div class="next-chips"><button class="btn primary small nx-go" type="button" data-i="${i}">Continue: ${esc(m.task)}</button><button class="btn secondary small nx-no" type="button" data-i="${i}">Not now</button></div>`;
-  return `<div class="msg bot"><span class="who">Star</span>${esc(m.text)}<button class="replay" type="button" data-i="${i}" aria-label="Read this aloud">${icon('speaker')}</button></div>`;
+  return `<div class="msg bot">${msgSide(m, 'Star', i)}<div class="msg-body">${esc(m.text)}</div></div>`;
 }
 const stopCount = m => m.calls === undefined ? '' : `<p class="stop-count"><b>${esc(m.calls)}</b> money-moving PayPal calls for this request ${modeTag(mode())}</p>`;
 function renderStage(){
@@ -478,7 +504,8 @@ function renderStage(){
   st.querySelectorAll('.choice').forEach(b => b.onclick = () => { const m = state.messages[b.dataset.i]; m.done = true; send(m.options[b.dataset.j].send); });
   st.querySelectorAll('.replay').forEach(b => b.onclick = () => toggleMessageSpeech(state.messages[b.dataset.i]));
   syncSpeechButtons();
-  st.querySelectorAll('.again').forEach(b => b.onclick = () => { $('#text')?.focus(); if(state.care) micToggle(); });
+  st.querySelectorAll('.again').forEach(b => b.onclick = () => { if(state.care) micToggle(); else $('#text')?.focus(); });
+  st.querySelectorAll('.re-send').forEach(b => b.onclick = () => { const m = state.messages[b.dataset.i]; m.done = true; send(m.text, m.endpoint); });
   st.querySelectorAll('.notify').forEach(b => b.onclick = () => push({role:'bot', text: guardianPaired()
     ? `${guardianName()} can see this on her guardian page. This demo doesn't send real texts or emails, so please call her too.`
     : `${guardianName()} isn't paired yet, so she can't see this. This demo doesn't send real texts. Please call her, or invite her from the Family page.`}));
@@ -502,6 +529,7 @@ function playMoments(st){
 }
 function announce(text, urgent = false){ const el = $(urgent ? '#sr-alert' : '#sr-live'); if(el && text){ el.textContent = ''; setTimeout(() => { el.textContent = text; }, 30); } }
 function push(m){
+  m.at ??= Date.now();
   state.messages.push(m); renderStage(); saveChat();
   if(m.role === 'bot' && m.type === 'blocked') announce(`Stopped. ${m.text}`, true);
   else if(m.role === 'bot') announce(m.text);
@@ -663,8 +691,11 @@ async function send(text, endpoint = '/api/chat', voice = false, auto = false, d
     await loadCalls();
     handleTurn(r);
   }catch(e){
-    state.messages = state.messages.filter(m => m.type !== 'typing');
-    push({role:'bot', text: e.status === 403 ? e.message : e.status === 429 ? e.message : 'There was a connection problem. Please try again.'}); console.error(e);
+    state.messages = state.messages.filter(m => m.type !== 'typing' && m.type !== 'retry');
+    // A chat turn can only read and draft: no tool it can reach moves money, so this one sentence is safe to say here and only here.
+    const known = e.status === 403 || e.status === 429;
+    push({role:'bot', text: known ? e.message : "I can't reach Star right now. No money has moved."}); console.warn(e);
+    if(!known) push({type:'retry', text, endpoint});
   }finally{ state.busy = false; saveChat(); }
 }
 function handleTurn(r){
@@ -1045,20 +1076,25 @@ function addTrace(items){
 const SHOP_SAY = {bp_monitor:'Get me a blood pressure monitor', groceries:'Order the weekly groceries box', gift_card:'Buy a $500 gift card'};
 async function shopPage(m){
   m.innerHTML = head('Agentic shopping', 'Shop', 'Star looks through this small demo catalogue, checks each seller with fixed rules, and prepares the purchase. All the sellers are fictional.') + '<div id="shop" aria-live="polite"><p class="muted">Loading…</p></div>';
-  try{
-    const {offers} = await api(`/api/catalogue?session_id=${encodeURIComponent(state.sid)}`);
-    $('#shop').innerHTML = `<div class="offer-grid">${offers.map(o => `
-      <article class="card pad offer verdict-${esc(o.verdict)}">
-        <header><h2>${esc(o.name)}</h2><span class="verdict">${esc(verdictWord(o.verdict))}</span></header>
-        <p class="offer-merchant">${esc(o.merchant)}</p>
-        <p class="offer-price">${esc(o.price)} <small>usually about ${esc(o.usual_price)}</small></p>
-        <p class="muted small">${esc(o.listing)}</p>
-        ${o.suspicious_removed ? `<p class="flag-line">${icon('alert')}This listing tried to give Star instructions. They were removed: seller text is data, never commands.</p>` : ''}
-        ${o.reasons.length ? `<ul class="why-list">${o.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
-        ${o.verdict === 'stop' ? `<p class="stop-line">${icon('shield')}Star won't buy this.</p>` : `<button class="btn secondary" type="button" data-say="${esc(sayFor(o))}">${icon('spark')}Ask Star to get this</button>`}
-      </article>`).join('')}</div>`;
-    m.querySelectorAll('[data-say]').forEach(b => b.onclick = () => send(b.dataset.say));
-  }catch(e){ $('#shop').textContent = e.message; }
+  const draw = async () => {
+    try{
+      const {offers} = await api(`/api/catalogue?session_id=${encodeURIComponent(state.sid)}`);
+      const el = $('#shop'); if(!el) return;
+      el.innerHTML = `<div class="offer-grid">${offers.map(o => `
+        <article class="offer verdict-${esc(o.verdict)}">
+          <div class="offer-what"><header><h2>${esc(o.name)}</h2><span class="verdict">${esc(verdictWord(o.verdict))}</span></header>
+            <p class="offer-merchant">${esc(o.merchant)}</p>
+            <p class="muted small offer-listing">${esc(o.listing)}</p></div>
+          <p class="offer-price">${esc(o.price)} <small>usually about ${esc(o.usual_price)}</small></p>
+          ${o.verdict === 'stop' ? '' : `<button class="btn secondary" type="button" data-say="${esc(sayFor(o))}">${icon('spark')}Ask Star to get this</button>`}
+          ${o.suspicious_removed ? `<p class="flag-line">${icon('alert')}This listing tried to give Star instructions. They were removed: seller text is data, never commands.</p>` : ''}
+          ${o.reasons.length ? `<ul class="why-list">${o.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+          ${o.verdict === 'stop' ? `<p class="stop-line"><b class="scam-seal">Stopped</b><span>Star won't buy this.</span></p>` : ''}
+        </article>`).join('')}</div>`;
+      el.querySelectorAll('[data-say]').forEach(b => b.onclick = () => send(b.dataset.say));
+    }catch(e){ loadFailed($('#shop'), 'the shop', draw); }
+  };
+  draw();
 }
 function sayFor(o){
   if(o.category === 'groceries') return SHOP_SAY.groceries;
@@ -1077,29 +1113,36 @@ async function billsPage(m){
         <p class="muted small">You can say these in your own words too. Each one still needs your signature.</p></section>
       <section class="card pad" aria-labelledby="dis-h"><h2 id="dis-h">Disputes</h2><div id="dis-list"><p class="muted">Loading…</p></div></section>
     </div>`;
-  const draw = async () => {
+  const draw = async (fresh = null) => {
     const {invoices, mode_label} = await api(`/api/invoices?session_id=${encodeURIComponent(state.sid)}`);
     const el = $('#inv-list'); if(!el) return;
-    el.innerHTML = invoices.length ? `<ul class="inv-list">${invoices.map(i => `<li class="inv ${i.known_biller ? '' : 'inv-unknown'}">
-        <div class="inv-main"><b>${esc(i.title)}</b><small>${esc(i.from)} · ${esc(i.number)} · due ${esc(dueDate(i.due))}</small>
+    el.innerHTML = invoices.length ? `<ul class="inv-list">${invoices.map(i => `<li class="inv ${i.known_biller ? '' : 'inv-unknown'} ${fresh && fresh === i.number ? 'inv-new' : ''}">
+        <div class="inv-due"><small>Due</small><b>${esc(dueDate(i.due))}</b></div>
+        <div class="inv-main">${fresh && fresh === i.number ? '<span class="flag inv-fresh">Just arrived</span>' : ''}<b>${esc(i.title)}</b><small>${esc(i.from)} · ${esc(i.number)}</small>
           ${i.known_biller ? '' : `<span class="flag">${icon('alert')}Someone you've never paid</span>`}</div>
-        <div class="inv-amt">${esc(i.amount)}</div>${ppBadge(i.status === 'SENT' ? 'UNPAID' : i.status, mode_label, i.status === 'PAID')}
+        <div class="inv-amt">${esc(i.amount)}</div><div class="inv-state">${ppBadge(i.status === 'SENT' ? 'UNPAID' : i.status, mode_label, i.status === 'PAID')}</div>
         ${openInvoice(i) ? `<div class="inv-acts"><button class="btn secondary small" type="button" data-say="What's this bill?">What's this?</button>
           <button class="btn primary small" type="button" data-say="Pay the ${esc(i.from)} bill">Pay with Star</button></div>` : ''}</li>`).join('')}</ul>` : '<p class="muted">No invoices.</p>';
     el.querySelectorAll('[data-say]').forEach(b => b.onclick = () => send(b.dataset.say));
   };
   m.querySelectorAll('.stack [data-say]').forEach(b => b.onclick = () => send(b.dataset.say));
   $('#inv-arrive') && ($('#inv-arrive').onclick = async () => {
-    try{ const r = await api('/api/demo/invoice-arrives', {session_id: state.sid}); toast(`New invoice from ${r.invoice.from}.`); await draw(); await refresh(); }
-    catch(e){ toast(e.message); }
+    try{
+      const r = await api('/api/demo/invoice-arrives', {session_id: state.sid});
+      await draw(r.invoice.number); await refresh();                   // the row itself says it just arrived; nothing floats over it
+      $('.inv-new')?.scrollIntoView({block:'nearest'});
+      announce(`New invoice from ${r.invoice.from}.`);
+    }catch(e){ toast(e.message); }
   });
-  draw().catch(e => { $('#inv-list').textContent = e.message; });
-  api(`/api/disputes?session_id=${encodeURIComponent(state.sid)}`).then(r => {
+  const bills = () => draw().catch(() => loadFailed($('#inv-list'), 'your bills', bills));
+  bills();
+  const disputes = () => api(`/api/disputes?session_id=${encodeURIComponent(state.sid)}`).then(r => {
     const el = $('#dis-list'); if(!el) return;
     el.innerHTML = !r.available ? '<p class="muted">PayPal did not answer this time, so disputes can\'t be shown. That doesn\'t mean there are none.</p>'
       : r.disputes.length ? `<ul class="pay-list">${r.disputes.map(x => `<li class="pay-row"><span class="pay-main"><b>${esc((s => s[0].toUpperCase() + s.slice(1))(String(x.reason || 'Dispute').replaceAll('_', ' ').toLowerCase()))}</b><small><code>${esc(x.dispute_id)}</code></small></span>${ppBadge(x.status, r.mode_label)}</li>`).join('')}</ul><p class="muted small">${esc(r.note || '')}</p>`
       : `<p class="muted">No open disputes. ${modeTag(r.mode_label)}</p><p class="muted small">${esc(r.note || '')}</p>`;
-  }).catch(() => {});
+  }).catch(() => loadFailed($('#dis-list'), 'your disputes', disputes));
+  disputes();
 }
 
 // ---------------------------------------------------------------- Family
@@ -1209,16 +1252,23 @@ async function activityPage(m){
       <details class="audit-all"><summary>Show the newest ${Math.min(newest.length, 40)} records, with every model and tool step</summary>${newest.slice(0, 40).map(entry).join('')}</details>` : '<p class="muted small">No activity in this session yet.</p>';
     $('#a-export').onclick = () => download(`audit-${state.sid}.json`, a);
   };
-  $('#a-refresh').onclick = load; load().catch(e => toast(e.message));
-  try{
-    const mount = $('#grid-mount');
-    const grid = await mountGrid(mount, {role:'owner', care:state.care, currency:state.data?.currency, getMode:mode, onRow:showRowDetail});
-    if(state.page !== 'activity' || !$('#grid-mount')){ grid.destroy(); return; }
-    state.grid = grid;
-    const poll = async () => { try{ const r = await api(`/api/activity?session_id=${encodeURIComponent(state.sid)}`); state.grid?.update(r.rows); }catch{} };
-    await poll();
-    clearInterval(state.gridTimer); state.gridTimer = setInterval(poll, 3000);
-  }catch(e){ const g = $('#grid-mount'); if(g) g.textContent = e.message; }
+  const audit = () => load().catch(() => { const el = $('#integrity'); if(el){ el.className = 'status-line'; el.textContent = "Can't check the chain right now"; } loadFailed($('#entries'), 'the audit records', audit); });
+  $('#a-refresh').onclick = audit; audit();
+  const open = async () => {
+    try{
+      const mount = $('#grid-mount');
+      const grid = await mountGrid(mount, {role:'owner', care:state.care, currency:state.data?.currency, getMode:mode, onRow:showRowDetail});
+      if(state.page !== 'activity' || !$('#grid-mount')){ grid.destroy(); return; }
+      state.grid = grid;
+      grid.update((await api(`/api/activity?session_id=${encodeURIComponent(state.sid)}`)).rows);
+      const poll = async () => { try{ const r = await api(`/api/activity?session_id=${encodeURIComponent(state.sid)}`); state.grid?.update(r.rows); }catch{} };
+      clearInterval(state.gridTimer); state.gridTimer = setInterval(poll, 3000);
+    }catch(e){
+      if(state.grid){ state.grid.destroy(); state.grid = null; }
+      loadFailed($('#grid-mount'), 'your activity', open);
+    }
+  };
+  await open();
 }
 async function showRowDetail(row){
   const d = $('#detail');
@@ -1249,12 +1299,16 @@ async function showRowDetail(row){
 function labPage(m){
   m.innerHTML = head('Trust and transparency', 'Security lab', 'Real attacks against the real kernel, each in a fresh isolated copy. Your session is never touched.') + `
     <section class="card pad">
-      <div class="arch"><span>You speak</span><i>→</i><span>Agent drafts</span><i>→</i><span class="edge">Verifier re-reads your words</span><i>→</i><span class="edge">Evidence + rules</span><i>→</i><span>You check the card</span><i>→</i><span class="edge">Your device signs</span><i>→</i><span class="edge">Kernel verifies</span><i>→</i><span class="edge">Gateway re-verifies</span><i>→</i><span>PayPal</span></div>
-      <p class="muted small">The model lives left of the marked boxes. It has no tool that can sign, authorize or pay, and the only code path to a PayPal money call requires your device's signature.</p>
-      <div class="row-actions"><button class="btn primary" id="lab-run" type="button">${icon('lab')}Run all attacks</button>
+      <div id="lab-out" class="lab-hero" aria-live="polite"><p class="muted">Running the attacks now…</p></div>
+      <div class="row-actions"><button class="btn primary" id="lab-run" type="button">${icon('lab')}Run all attacks again</button>
         <button class="btn secondary" id="lab-mistake" type="button">${icon('alert')}Simulate a model mistake</button></div>
       <p class="muted small">"Simulate a model mistake" happens live in your chat: "Send 50 to my daughter" goes to a deliberately faulty model that drafts $500, and you watch the real verifier, kernel and gateway stop it.</p>
-      <div id="lab-out" aria-live="polite"></div></section>
+      <h2 class="sub-head">The way to PayPal</h2>
+      <ol class="rail" aria-label="Every step between her words and PayPal. Stamped steps are fixed code or her own device; the model can't reach them.">
+        ${[['You speak'], ['Agent drafts'], ['Verifier re-reads your words', 1], ['Evidence and rules', 1], ['You check the card'], ['Your device signs', 1], ['Kernel verifies', 1], ['Gateway re-verifies', 1], ['PayPal']]
+          .map(([t, edge]) => `<li class="${edge ? 'edge' : ''}"><span>${t}</span>${edge ? '<small>Checked</small>' : ''}</li>`).join('')}
+      </ol>
+      <p class="muted small">The model works only before the first step marked Checked. It has no tool that can sign, authorize or pay, and the only code path to a PayPal money call requires your device's signature.</p></section>
     <div class="two-col page-gap">
       <section class="card pad"><h2>Failure drill</h2><p>The network dies just after PayPal processed a payout, and she clicks again. Runs the real gateway on an isolated simulator.</p>
         <button class="btn primary" id="drill-run" type="button" ${isSim() ? '' : 'disabled'}>Run the drill</button>
@@ -1272,22 +1326,31 @@ function labPage(m){
       <div id="contract-out" aria-live="polite"></div>
     </section>`;
   $('#lab-mistake').onclick = () => send('Send 50 to my daughter', '/api/demo/model-mistake', false, false, true);
-  $('#lab-run').onclick = async () => {
-    $('#lab-out').innerHTML = '<p class="muted small">Running…</p>';
+  // The headline of this page is a result, so it is produced here, on this server, when the page opens. Nothing on it is a stored number.
+  const showLab = results => {
+    const el = $('#lab-out'); if(!el) return;
+    const ok = results.filter(r => r.blocked).length;
+    el.innerHTML = `<div class="lab-score ${ok === results.length ? '' : 'bad'}"><b>${ok} of ${results.length}</b> attacks blocked</div>
+      <p class="muted">Run just now on this server, each in a fresh isolated copy. A fixed set of checks, not a penetration test. See docs/SECURITY.md for what is simulated.</p>
+      <details class="lab-more" ${ok === results.length ? '' : 'open'}><summary>Show each attack</summary><div class="lab-list">${results.map(r =>
+      `<div class="lab-item ${r.blocked ? 'pass' : 'fail'}"><span class="s" aria-hidden="true">${r.blocked ? '✓' : '✕'}</span><div><b>${esc(r.name)}</b> <code>${esc(r.code)}</code><small>${esc(r.detail)}</small></div></div>`).join('')}</div></details>`;
+  };
+  const runLab = async () => {
+    const el = $('#lab-out'); if(el && !state.labResults) el.innerHTML = '<p class="muted">Running the attacks now…</p>';
     try{
       const {results} = await api('/api/lab', {});
+      state.labResults = results; showLab(results);
       const ok = results.filter(r => r.blocked).length;
-      $('#lab-out').innerHTML = `<div class="lab-score">${ok} of ${results.length} attacks blocked</div><details class="lab-more" ${ok === results.length ? '' : 'open'}><summary>Show each attack</summary><div class="lab-list">${results.map(r =>
-        `<div class="lab-item ${r.blocked ? 'pass' : 'fail'}"><span class="s" aria-hidden="true">${r.blocked ? '✓' : '✕'}</span><div><b>${esc(r.name)}</b> <code>${esc(r.code)}</code><small>${esc(r.detail)}</small></div></div>`).join('')}</div></details>
-        <p class="muted small">A fixed set of checks, not a penetration test. See docs/SECURITY.md for what is simulated.</p>`;
       addTrace([{kind:'guard', label:`Security lab: ${ok} of ${results.length} attacks blocked`, detail: results}]);
-    }catch(e){ $('#lab-out').innerHTML = `<p class="muted small">Could not run the lab: ${esc(e.message)}</p>`; }
+    }catch(e){ const out = $('#lab-out'); if(out) out.innerHTML = `<p class="muted">Could not run the lab: ${esc(e.message)}</p>`; }
   };
+  $('#lab-run').onclick = runLab;
+  if(state.labResults) showLab(state.labResults); else runLab();
   $('#drill-run').onclick = async () => {
     const out = $('#drill-out'); out.innerHTML = '<p class="muted small">Running…</p>';
     try{
       const r = await api('/api/lab/drill', {});
-      out.innerHTML = `<div class="lab-score ${r.passed ? '' : 'bad'}">${esc(r.payouts_that_exist)} payout exists ${modeTag('SIMULATED')}</div>
+      out.innerHTML = `<div class="lab-score ${r.passed ? '' : 'bad'}">${esc(r.payouts_that_exist)} payout exists</div><p class="lab-tag">${modeTag('SIMULATED')}</p>
         <ol class="timeline plain">${r.timeline.map(t => `<li><div><b>${esc(t.step)}</b><small>${esc(t.detail)}</small></div></li>`).join('')}</ol>
         <p class="muted small">${esc(r.payout_requests_sent)} requests sent, ${r.same_key_every_time ? 'all with the same key' : 'with different keys'}. ${esc(r.note)}</p>`;
     }catch(e){ out.textContent = e.message; }
@@ -1327,7 +1390,7 @@ function labPage(m){
 
 // ---------------------------------------------------------------- Settings
 function settingsPage(m){
-  const sw = (id, on, title, sub) => `<div class="setting"><div>${title}<small>${sub}</small></div><button class="switch" type="button" role="switch" id="${id}" aria-checked="${on}" aria-label="${esc(title)}"></button></div>`;
+  const sw = (id, on, title, sub) => `<div class="setting"><div>${title}<small>${sub}</small></div><button class="switch" type="button" role="switch" id="${id}" aria-checked="${on}" aria-label="${esc(title)}"><span aria-hidden="true">${on ? 'On' : 'Off'}</span></button></div>`;
   const pr = state.data?.protection || {level: 'enhanced'}, pk = state.data?.passkey || {}, pp = state.data?.paypal || {};
   const when = t => new Date(t * 1000).toLocaleString('en-US', {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
   const wait = pr.delay_words || '2 minutes';
@@ -1675,8 +1738,8 @@ $('#welcome-test').addEventListener('click', async () => {
   await enterApp();
   if(welcome.hidden) send('Send 50 to my daughter', '/api/demo/model-mistake', false, false, true);
 });
-let plateRun = [];
-const playPlate = () => { plateRun.forEach(a => { try{ a.cancel(); }catch{} }); plateRun = plateFx(welcome); };
+let stopPlate = () => {};
+const playPlate = () => { stopPlate(); stopPlate = plateFx(welcome); };
 $('#welcome-replay').addEventListener('click', playPlate);
 (() => {
   // Coming back from an approval page, or reloading: go straight in.

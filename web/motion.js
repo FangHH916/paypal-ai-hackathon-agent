@@ -1,76 +1,77 @@
-// Star: choreography. Every element is already in its final place and readable before any of this runs, so a safety message or a
-// call button is never waited for: motion only explains what just happened. Web Animations only, so the strict policy is unchanged.
+// Star: choreography. Every element is in its final place and readable from the first frame: nothing here fades in or wipes in, so a
+// safety message or a call button is never waited for. Motion only adds emphasis (a scale, a stamp coming down, a line being struck),
+// and all of it is over within a second. Web Animations only, so the strict policy is unchanged.
 // With prefers-reduced-motion nothing here runs, and the page is the same, complete, still.
 export const calm = () => !window.matchMedia || matchMedia('(prefers-reduced-motion: reduce)').matches || !Element.prototype.animate;
-const EASE = 'cubic-bezier(.2,.7,.2,1)', SLAM = 'cubic-bezier(.3,1.4,.5,1)';
+const EASE = 'cubic-bezier(.2,.7,.2,1)', SLAM = 'cubic-bezier(.3,1.4,.5,1)', DROP = 'cubic-bezier(.5,0,.8,.4)';
 
 function run(el, frames, opts){ if(!el || calm()) return null; return el.animate(frames, {easing:EASE, fill:'backwards', ...opts}); }
-const STAMP = rotate => [{transform:`rotate(${rotate}deg) scale(2.3)`, opacity:0}, {transform:`rotate(${rotate}deg) scale(.96)`, opacity:1, offset:.72}, {transform:`rotate(${rotate}deg) scale(1)`, opacity:1}];
+const STAMP = rotate => [{transform:`rotate(${rotate}deg) scale(1.8)`}, {transform:`rotate(${rotate}deg) scale(.96)`, offset:.72}, {transform:`rotate(${rotate}deg) scale(1)`}];
 const JOLT = [{transform:'translate(0,0)'}, {transform:'translate(-3px,2px)', offset:.3}, {transform:'translate(2px,-1px)', offset:.6}, {transform:'translate(0,0)'}];
+const RISE = [{transform:'translateY(8px)'}, {transform:'none'}];
 
 // A page change: the new content settles in. Short, so it never holds up a click.
 export function pageIn(root){
   if(!root || calm()) return;
-  [...root.children].slice(0, 6).forEach((el, i) => run(el, [{opacity:.01, transform:'translateY(14px)'}, {opacity:1, transform:'none'}], {duration:300, delay:i * 35}));
+  [...root.children].slice(0, 6).forEach((el, i) => run(el, RISE, {duration:260, delay:i * 30}));
 }
 
 // A number struck down to zero. The text is already 0; this is only the count landing.
 function landZero(el, delay = 0){
-  run(el, [{transform:'translateY(.14em) scale(1.5)', opacity:0}, {transform:'scale(1)', opacity:1}], {duration:420, delay, easing:SLAM});
+  run(el, [{transform:'translateY(.1em) scale(1.3)'}, {transform:'scale(1)'}], {duration:360, delay, easing:SLAM});
 }
 
 // A scam or a mismatch is stopped: the seal comes down on the block, and the block takes the hit.
 export function stopFx(block){
   if(!block || calm()) return;
-  const frozen = block.classList.contains('frozen');
-  run(block, [{opacity:.2}, {opacity:1}], {duration:120});
-  run(block, STAMP(-7), {duration:300, delay:60, pseudoElement:'::after', easing:'cubic-bezier(.5,0,.8,.4)'});
-  run(block, [{opacity:0, transform:'scale(1.08) rotate(-6deg)'}, {opacity:.14, transform:'none'}], {duration:900, pseudoElement:'::before'});
-  setTimeout(() => run(block, JOLT, {duration:180, fill:'none'}), 310);
-  const zero = block.querySelector('.stop-count b');
-  landZero(zero, frozen ? 180 : 240);
+  run(block, STAMP(-7), {duration:280, delay:40, pseudoElement:'::after', easing:DROP});
+  run(block, [{opacity:0, transform:'scale(1.08) rotate(-6deg)'}, {opacity:.14, transform:'none'}], {duration:700, pseudoElement:'::before'});   // the line work behind, not a word of the message
+  setTimeout(() => run(block, JOLT, {duration:180, fill:'none'}), 290);
+  landZero(block.querySelector('.stop-count b'), 200);
 }
 
 // Money verified: the line work closes around a tick. The word "verified" was on screen before this started.
 export function verifiedFx(tracker){
   if(!tracker || calm()) return;
   const seal = tracker.querySelector('.vseal'); if(!seal) return;
-  seal.querySelectorAll('path').forEach((p, i) => run(p, [{strokeDashoffset:1}, {strokeDashoffset:0}], {duration:p.classList.contains('tickmark') ? 260 : 900, delay:p.classList.contains('tickmark') ? 780 : i * 60}));
-  run(seal, [{transform:'rotate(-24deg)'}, {transform:'none'}], {duration:1100});
+  seal.querySelectorAll('path').forEach((p, i) => run(p, [{strokeDashoffset:1}, {strokeDashoffset:0}], {duration:p.classList.contains('tickmark') ? 260 : 700, delay:p.classList.contains('tickmark') ? 640 : i * 40}));
+  run(seal, [{transform:'rotate(-24deg)'}, {transform:'none'}], {duration:900});
 }
 
 // "The model tried, code stopped it, 0 money-moving calls": the same three beats on the landing and in her chat.
 export function caughtFx(el){
   if(!el || calm()) return;
-  const bad = el.querySelector('.cg.bad'), good = el.querySelector('.cg.good'), zero = el.querySelector('.caught-zero');
-  run(el.querySelector('.cg.said'), [{opacity:.01, transform:'translateY(10px)'}, {opacity:1, transform:'none'}], {duration:280});
-  run(bad, [{opacity:.01, transform:'translateY(10px)'}, {opacity:1, transform:'none'}], {duration:240, delay:110});
-  run(good, [{opacity:.01, transform:'translateY(10px)'}, {opacity:1, transform:'none'}], {duration:240, delay:240});
-  run(el.querySelector('.caught-badge'), STAMP(-3), {duration:240, delay:340, easing:'cubic-bezier(.5,0,.8,.4)'});
-  if(zero){ run(zero, [{clipPath:'inset(0 100% 0 0)'}, {clipPath:'inset(0 0 0 0)'}], {duration:280, delay:420}); landZero(zero.querySelector('b'), 520); }
+  run(el.querySelector('.cg.bad'), RISE, {duration:240, delay:60});
+  run(el.querySelector('.cg.good'), RISE, {duration:240, delay:180});
+  run(el.querySelector('.caught-badge'), STAMP(-3), {duration:240, delay:280, easing:DROP});
+  landZero(el.querySelector('.caught-zero b'), 420);
 }
 
+// The landing. Each beat plays when its own element comes into view, so a phone reader sees what a desktop reader sees.
+// Returns a function that cancels whatever is playing or still waiting.
 export function plateFx(root){
-  if(!root || calm()) return [];
-  const plate = root.querySelector('.plate'), out = [];
-  const add = a => { if(a) out.push(a); };
-  root.querySelectorAll('h1 span').forEach((s, i) => add(run(s, [{opacity:.01, transform:'translateY(.18em)'}, {opacity:1, transform:'none'}], {duration:520, delay:i ? 1250 : 80})));
-  const [said, draft, reading, zero] = plate.children;
-  add(run(said, [{opacity:.01}, {opacity:1}], {duration:360, delay:200}));
-  add(run(draft, [{opacity:.01}, {opacity:1}], {duration:360, delay:640}));
-  add(run(reading, [{opacity:.01}, {opacity:1}], {duration:360, delay:1220}));
-  add(run(draft.querySelector('.fig'), [{transform:'scale(1)'}, {transform:'translate(-2px,1px) scale(1.02)', offset:.5}, {transform:'scale(1)'}], {duration:170, delay:1730, fill:'none'}));
-  add(run(draft.querySelector('.fig'), [{transform:'scaleX(1)'}], {duration:1}));
-  add(draft.querySelector('.fig').animate([{transform:'scaleX(0)'}, {transform:'scaleX(1)'}], {duration:340, delay:1460, easing:'cubic-bezier(.7,0,.3,1)', pseudoElement:'::after', fill:'backwards'}));
-  add(run(draft.querySelector('.seal-stamp'), STAMP(-8), {duration:300, delay:1640, easing:'cubic-bezier(.5,0,.8,.4)'}));
-  add(run(zero, [{clipPath:'inset(100% 0 0 0)'}, {clipPath:'inset(0 0 0 0)'}], {duration:420, delay:1960}));
-  add(run(zero.querySelector('.num'), [{transform:'translateY(.2em) scale(1.45)', opacity:0}, {transform:'none', opacity:1}], {duration:460, delay:2240, easing:SLAM}));
-  return out;
+  if(!root || calm()) return () => {};
+  const draft = root.querySelector('.plate .draft'), fig = draft.querySelector('.fig'), played = [];
+  const add = a => { if(a) played.push(a); };
+  const beats = new Map([
+    [fig, () => {
+      add(fig.animate([{transform:'scaleX(0)'}, {transform:'scaleX(1)'}], {duration:260, delay:80, easing:'cubic-bezier(.7,0,.3,1)', pseudoElement:'::after', fill:'backwards'}));
+      add(run(draft.querySelector('.seal-stamp'), STAMP(-8), {duration:260, delay:300, easing:DROP}));
+    }],
+    [root.querySelector('.plate .zero .num'), () => add(run(root.querySelector('.plate .zero .num'), [{transform:'translateY(.14em) scale(1.3)'}, {transform:'none'}], {duration:400, delay:460, easing:SLAM}))],
+    [root.querySelector('.scam-seal'), () => add(run(root.querySelector('.scam-seal'), STAMP(-4), {duration:260, delay:120, easing:DROP}))],
+  ]);
+  const seen = new IntersectionObserver(entries => entries.forEach(e => {
+    if(!e.isIntersecting) return;
+    seen.unobserve(e.target); beats.get(e.target)?.();
+  }), {threshold:.6});
+  beats.forEach((_, el) => el && seen.observe(el));
+  return () => { seen.disconnect(); played.forEach(a => { try{ a.cancel(); }catch{} }); };
 }
 
 // The dialog is printed up from the bottom of the page.
 export function cardIn(dialog){
-  run(dialog, [{transform:'translateY(36px) rotate(.8deg)', opacity:.01}, {transform:'none', opacity:1}], {duration:320});
+  run(dialog, [{transform:'translateY(24px) rotate(.6deg)'}, {transform:'none'}], {duration:260});
 }
 
 // An engraved seal: closed wavy lines, computed, not drawn. pathLength lets it plot itself in.
