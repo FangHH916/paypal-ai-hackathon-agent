@@ -173,7 +173,8 @@ def _payment_view(rec: dict) -> dict:
             "what": items[0]["name"] if items else rec["counterparty_name"], "created_at": rec["created_at"], "updated_at": rec["updated_at"],
             "refunded_cents": rec.get("refunded_cents", 0), "parent_payment_id": rec.get("parent_payment_id"),
             "paypal": {k: v for k, v in rec["paypal"].items() if v and k not in ("debug_ids", "stage", "return_base", "approve_url")},
-            "evidence": rec["evidence"], "event_ids": rec["event_ids"], "next_step": gw.next_step(rec), "mode_label": gw.mode_status()["label"],
+            "evidence": [{**e, "note": presenter.source_words(e.get("note", ""), gw.mode_status()["label"])} for e in rec["evidence"]],
+            "event_ids": rec["event_ids"], "next_step": gw.next_step(rec), "mode_label": gw.mode_status()["label"],
             "digest": rec["digest"], "idempotency_key": rec["idempotency_key"], "receipt": payments.receipt_body(rec, gw.mode_status()["mode"])}
 
 
@@ -754,6 +755,9 @@ def activity_rows(user_id: str) -> list[dict]:
                      "currency": settings.wallet_currency, "status": x["status"], "verified": False, "verified_by": "", "stopped_by": x["stopped_by"], "why": x["why"],
                      "reference": "", "signed_with": "", "family": "Denied" if x["status"] == "DENIED" else "", "audit_hash": hashes.get(x["draft_id"], "")[:16],
                      "outcome": "stopped", "digest": x["digest"], "codes": x["codes"]})
+    label = _pp_status()["label"]
+    for r in rows:              # in the simulator, the reasons never say PayPal did it
+        r["why"] = presenter.source_words(r.get("why") or "", label)
     rows.sort(key=lambda r: r["time"], reverse=True)
     return rows
 

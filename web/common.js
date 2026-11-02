@@ -82,17 +82,20 @@ const WORDS = {
 };
 const SUCCESS_WORDS = {SENT:'Sent', PAID:'Paid', REFUNDED:'Refunded'};
 
-export function statusInfo(status, verified = false){
-  if(SUCCESS_WORDS[status]) return verified ? {word:`${SUCCESS_WORDS[status]}, verified`, tone:'ok'} : {word:'Checking with PayPal', tone:'pending'};
+// In the simulator nothing came from PayPal, so no status says it did (the same rule as the server's source_words).
+export const sourceWords = (text, label) => !String(label || '').toUpperCase().startsWith('SIM') ? text
+  : text.replace(/(^|[.!?]\s+)PayPal/g, (m, lead) => `${lead}The simulator`).replaceAll('PayPal', 'the simulator');
+export function statusInfo(status, verified = false, label = ''){
+  if(SUCCESS_WORDS[status]) return verified ? {word:`${SUCCESS_WORDS[status]}, verified`, tone:'ok'} : {word:sourceWords('Checking with PayPal', label), tone:'pending'};
   const hit = WORDS[status];
-  return hit ? {word:hit[0], tone:hit[1]} : {word:String(status || 'Unknown').replaceAll('_', ' ').toLowerCase(), tone:'neutral'};
+  return hit ? {word:sourceWords(hit[0], label), tone:hit[1]} : {word:String(status || 'Unknown').replaceAll('_', ' ').toLowerCase(), tone:'neutral'};
 }
 export function modeTag(label){
   const text = label || 'SIMULATED';
   return `<span class="mode-tag mode-${esc(text.toLowerCase())}">${esc(text)}</span>`;
 }
 export function ppBadge(status, label, verified = false){
-  const {word, tone} = statusInfo(status, verified);
+  const {word, tone} = statusInfo(status, verified, label);
   return `<span class="pp-badge"><span class="pill-status tone-${tone}">${esc(word)}</span>${modeTag(label)}</span>`;
 }
 

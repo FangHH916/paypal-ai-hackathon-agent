@@ -2,7 +2,7 @@
 // The agent, the kernel, the gateway and PayPal are all on the server. This page shows their state and holds the signing key.
 // Success is only ever shown from verified state read back from the server, never from a redirect.
 // No inline script or style anywhere, so the server's strict Content-Security-Policy applies.
-import {$, esc, store, api, download, money, clock, icon, ppBadge, modeTag, statusInfo, b64, deviceKeys, mockFingerprint, loadFailed} from '/common.js';
+import {$, esc, store, api, download, money, clock, icon, ppBadge, modeTag, statusInfo, sourceWords, b64, deviceKeys, mockFingerprint, loadFailed} from '/common.js';
 import {mountGrid} from '/activity.js';
 import {pageIn, stopFx, verifiedFx, caughtFx, plateFx, cardIn, sealSvg} from '/motion.js';
 
@@ -280,7 +280,7 @@ function attentionItems(){
   if(['AWAITING_AUTH', 'COOLING'].includes(d.phase)) out.push({tone:'warn', ic:'fingerprint', text:'A payment is waiting for you to check it and sign.', act:'Open it', page:assistantPage()});
   state.payments.filter(p => WAITING.has(p.state)).forEach(p => out.push(p.next_step?.type === 'redirect'
     ? {tone:'warn', ic:'transfer', text:`${p.amount} to ${p.to} is waiting for you on the approval page.`, act:'Continue', href:p.next_step.url, track:p.payment_id}
-    : {tone:'warn', ic:'alert', text:`${p.amount} to ${p.to}: ${statusInfo(p.state, p.verified).word}.`, act:'Open Activity', page:'activity'}));
+    : {tone:'warn', ic:'alert', text:`${p.amount} to ${p.to}: ${statusInfo(p.state, p.verified, mode()).word}.`, act:'Open Activity', page:'activity'}));
   d.invoices.filter(i => openInvoice(i) && !i.known_biller).forEach(i => out.push({tone:'bad', ic:'alert', text:`${i.amount} invoice from ${i.from}, someone you've never paid. Check it with Star before doing anything.`, act:"What's this?", say:`What's this bill?`}));
   d.invoices.filter(i => openInvoice(i) && i.known_biller).forEach(i => out.push({tone:'info', ic:'bolt', text:`${i.title}: ${i.amount}, due ${dueDate(i.due)}.`, act:'Pay with Star', say:`Pay the ${i.from} bill`}));
   return out;
@@ -571,7 +571,7 @@ function verifiedWords(by){
 }
 function trackerHtml(m, i){
   const p = m.pay;
-  if(!p) return `<div class="tracker"><h3>Checking with PayPal…</h3><p class="muted small">Coming back from an approval page proves nothing, so Star is asking PayPal itself.</p></div>`;
+  if(!p) return `<div class="tracker"><h3>${esc(sourceWords('Checking with PayPal…', mode()))}</h3><p class="muted small">${esc(sourceWords('Coming back from an approval page proves nothing, so Star is asking PayPal itself.', mode()))}</p></div>`;
   const flow = FLOW[p.kind] || FLOW.transfer, end = BAD_END.has(p.state), s = p.state;
   const steps = [['Signed by you', true], ...flow.map(([label, states]) => [isSim() ? label.replace('PayPal', 'the simulator') : label, states.includes(s)])];
   let currentSet = false;
@@ -583,10 +583,10 @@ function trackerHtml(m, i){
   const verified = p.verified ? `<li class="done verified"><span aria-hidden="true">✓</span>Verified by ${esc(isSim() ? verifiedWords(p.verified_by).replace('PayPal', 'simulator') : verifiedWords(p.verified_by))}</li>` : (end ? '' : '<li class="todo"><span aria-hidden="true"></span>Verified<span class="sr"> not yet</span></li>');
   const redirect = p.next_step?.type === 'redirect';
   const canRefund = p.state === 'PAID' && p.verified && p.kind === 'purchase';
-  return `<div class="tracker tone-${statusInfo(s, p.verified).tone}" data-fx="${i}">
+  return `<div class="tracker tone-${statusInfo(s, p.verified, mode()).tone}" data-fx="${i}">
     ${p.verified && !BAD_END.has(s) ? sealSvg() : ''}<header><h3>${esc(p.what)}</h3><span class="tracker-amt">${esc(p.amount)}</span></header>
     <p class="tracker-status">${ppBadge(s, p.mode_label, p.verified)}<span class="muted small">${p.what === p.to ? '' : esc(p.to)}${p.handle ? ` ${p.what === p.to ? '' : '· '}${esc(p.handle)}` : ''}</span></p>
-    <ol class="steps">${items}${verified}${end ? `<li class="stopped"><span aria-hidden="true">✕</span>${esc(statusInfo(s).word)}</li>` : ''}</ol>
+    <ol class="steps">${items}${verified}${end ? `<li class="stopped"><span aria-hidden="true">✕</span>${esc(statusInfo(s, false, mode()).word)}</li>` : ''}</ol>
     ${s === 'UNKNOWN' ? '<p class="warn-text">Please don\'t pay again. Star is asking PayPal about this same payment, with the same key, so it can\'t go out twice.</p>' : ''}
     <div class="acts">
       ${redirect ? `<button class="btn primary tr-go" type="button" data-i="${i}">${icon('transfer')}${isSim() ? 'Open the simulated approval page' : 'Continue on PayPal'}</button>` : ''}
@@ -603,7 +603,7 @@ function liveTracker(m){
     try{
       const r = await api(`/api/payments/${encodeURIComponent(state.sid)}/${encodeURIComponent(m.pay.payment_id)}`);
       const was = `${m.pay.state}|${m.pay.verified}`; m.pay = r.payment;
-      if(`${m.pay.state}|${m.pay.verified}` !== was){ renderStage(); saveChat(); refresh(); announce(`${m.pay.what}: ${statusInfo(m.pay.state, m.pay.verified).word}`); }
+      if(`${m.pay.state}|${m.pay.verified}` !== was){ renderStage(); saveChat(); refresh(); announce(`${m.pay.what}: ${statusInfo(m.pay.state, m.pay.verified, mode()).word}`); }
       loadCalls();
     }catch{}
     const done = SETTLED.has(m.pay.state) && (m.pay.verified || BAD_END.has(m.pay.state));

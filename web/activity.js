@@ -77,7 +77,7 @@ export async function mountGrid(host, opts){
   const columns = [
     // Phones: one card-like column, so the table never needs sideways scrolling. Keyboard and sorting work as usual.
     {colId:'card', headerName:'Activity', flex:1, minWidth:200, hide:true, sortable:false, floatingFilter:false, filter:false, autoHeight:true, wrapText:true, cardMoney:moneyCell, cellRenderer:cardCell,
-     valueGetter:p => `${p.data.to || ''} ${p.data.type || ''} ${p.data.pinnedTotal ? '' : statusInfo(p.data.status, p.data.verified).word}`},
+     valueGetter:p => `${p.data.to || ''} ${p.data.type || ''} ${p.data.pinnedTotal ? '' : statusInfo(p.data.status, p.data.verified, getMode()).word}`},
     {field:'time', headerName:'Time', colId:'time', sort:'desc', minWidth:230, flex:1, filter:'agDateColumnFilter', filterParams:{comparator:dateMatches},
      valueGetter:p => p.data.time ? new Date(p.data.time * 1000) : null,
      valueFormatter:p => p.value ? p.value.toLocaleString('en-US', {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : ''},
@@ -89,8 +89,8 @@ export async function mountGrid(host, opts){
     // Status and its reason read as one sentence, so the story of a stop needs no sideways scrolling.
     {field:'status', colId:'status', headerName:'Status and why', minWidth:300, flex:3, filter:'agTextColumnFilter', enableCellChangeFlash:true, autoHeight:true,
      valueGetter:p => p.data.pinnedTotal ? '' : `${p.data.status}|${p.data.verified ? 1 : 0}|${p.data.why || ''}`,
-     filterValueGetter:p => p.data.pinnedTotal ? '' : `${statusInfo(p.data.status, p.data.verified).word} ${p.data.why || ''}`,
-     valueFormatter:p => p.data.pinnedTotal ? '' : `${statusInfo(p.data.status, p.data.verified).word} (${getMode()})`,
+     filterValueGetter:p => p.data.pinnedTotal ? '' : `${statusInfo(p.data.status, p.data.verified, getMode()).word} ${p.data.why || ''}`,
+     valueFormatter:p => p.data.pinnedTotal ? '' : `${statusInfo(p.data.status, p.data.verified, getMode()).word} (${getMode()})`,
      cellRenderer:p => p.data.pinnedTotal ? '' : `${ppBadge(p.data.status, getMode(), p.data.verified)}${p.data.why ? `<span class="grid-why">${p.data.stopped_by ? `${esc(p.data.stopped_by)}: ` : ''}${esc(p.data.why)}</span>` : ''}`},
     {field:'stopped_by', headerName:'Stopped by', minWidth:220, flex:1.2, filter:'agTextColumnFilter'},
     {field:'why', headerName:'Why', minWidth:260, flex:2, filter:'agTextColumnFilter', tooltipField:'why'},

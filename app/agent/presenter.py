@@ -81,7 +81,7 @@ def build_card(d: Draft, wallet: Wallet, phase: Phase, care: bool = True, offers
         "merchant": d.merchant_name,
         "trust": {k: d.trust.get(k) for k in ("level", "codes", "reasons", "guardian")} if d.trust else {},
         "offers_checked": offers or [],
-        "next_step_words": _next_step_words(d),
+        "next_step_words": source_words(_next_step_words(d), mode_label),
         "verification": {"status": v.get("status", "missing"), "fields": v.get("fields", {}),
                          "mismatches": v.get("mismatches", []), "engine": v.get("engine", ""),
                          "independent": "offline" not in v.get("engine", "").lower()},
