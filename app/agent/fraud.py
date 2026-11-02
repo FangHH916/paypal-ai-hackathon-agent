@@ -13,6 +13,16 @@ from app.models import RiskLevel
 
 _GC_DEBT = r"(?:\b(?:the|my|his|her|their|this|that|traffic|parking|court) fine\b|\bpay (?:a )?fine\b|\bbail\b|\btax(?:es)?\b|\bwarrant\b|\bdebt\b|\bpenalty\b|\b(?:traffic|parking|speeding) ticket\b)"
 
+# A prize or inheritance that is said to be hers (or the caller's "you")
+_HER_WIN = (r"(?:\b(?:i|you|we)(?:'ve| have| had)?(?: just| really| actually)? (?:won(?!['’])|inherited)\b|"
+            r"\b(?:i'?m|i am|you'?re|you are|we'?re|we are)\b[^.]{0,40}\bwinners?\b|"
+            r"\b(?:my|your|our) (?:winnings|prize|jackpot|lottery|lotto|sweepstakes|inheritance)\b|"
+            r"\b(?:winnings|lottery|lotto|sweepstakes?|jackpot|lucky draw|inheritance|unclaimed (?:funds|money)|compensation)\b)")
+# "he won't go to jail", "she stayed out of prison": a threat said in the negative is no threat
+_NOT_A_THREAT = re.compile(r"\b(?:won'?t|will not|wouldn'?t|didn'?t|did not|doesn'?t|does not|not|never|no longer|avoid(?:ed|s)?|"
+                           r"stay(?:ed|s)? out of|kept out of)\s+(?:have to\s+)?(?:go(?:ing)?\s+to\s+|be\s+|get\s+)?"
+                           r"(?:jail|prison|arrested|deported|sued)\b")
+
 # (category, weight, regex, plain-language explanation for the elderly user)
 PATTERNS = [
     ("bank_impersonation", 3, r"(?:from|claims?.{0,15}) the wallet.{0,20}(?:fraud|security) team|bank's (?:fraud|security) team",
@@ -43,12 +53,12 @@ PATTERNS = [
                       r".{0,30}\b(?:stop|cut|cancel|suspend|end)\w*\b)"
                       r"(?=.*\b(?:if (?:i|you) (?:don'?t|do not|can'?t|cannot)|unless (?:i|you))\b.{0,30}\b(?:pay|send|wire|transfer)\b)",
      "Government offices, the tax office and the police never threaten you with arrest to make you pay on the phone. That is a scam."),
-    ("prize_fee", 5, r"\b(?:won(?!['’])|winner|winnings|prize|lottery|lotto|sweepstakes?|jackpot|lucky draw|raffle)\b.{0,100}"
+    # The prize or inheritance is said to be HERS ("I won", "I'm a winner", "my winnings", a lottery or sweepstakes):
+    # "my grandson won a prize and the entry fee was 20" or "she inherited a house" is someone else's good news.
+    ("prize_fee", 5, _HER_WIN + r".{0,100}"
                      r"\b(?:fees?|tax(?:es)?|charges?|processing|release|unlock|clearance|customs|deposit|to (?:claim|collect))\b|"
                      r"\b(?:fees?|charges?|processing|release|unlock|clearance|customs|to (?:claim|collect))\b.{0,80}"
-                     r"\b(?:winnings|prize|lottery|lotto|sweepstakes?|jackpot)\b|"
-                     r"\b(?:inheritance|inherited|unclaimed (?:funds|money)|compensation)\b.{0,100}"
-                     r"\b(?:fees?|charges?|processing|release|unlock|clearance|customs|deposit)\b",
+                     r"\b(?:(?:my|your) prize|winnings|lottery|lotto|sweepstakes?|jackpot)\b",
      "Real prizes and inheritances never make you pay a fee first. Anyone asking for one is a scammer."),
     ("online_stranger", 5, r"(?=.{0,200}\b(?:needs?|wants?|asked|asking|send|wire|pay|transfer|money|ticket|flight|visa|customs|stuck|"
                            r"hospital|fees?)\b)(?:"
@@ -82,8 +92,15 @@ PATTERNS = [
                                 r"(?:number|phone|cell|mobile)\b",
      "Someone saying they are your grandchild or family, on a new or borrowed phone, and asking for money, is a common "
      "scam. Hang up and call them on the number you already have."),
-    ("authority", 3, r"police|\birs\b|medicare|social security|the treasury|\bfbi\b|bank (officer|staff)|"
-                     r"(someone|people|man|woman|lady) from the bank|government (officer|official)|embassy|customs officer",
+    # The authority is the one asking her: "the police called", "a man from Medicare told me", "the IRS says I owe".
+    # "My son is a police officer", "he covered my Medicare co-pay", "call the IRS about my refund" are not this.
+    ("authority", 3, r"\b(?:police|irs|medicare|social security|the treasury|fbi|bank (?:officer|staff)|government (?:officer|official)|"
+                     r"embassy|customs officer)\b(?:\s+(?:office|department|officer|agent|administration))?[,]?\s+"
+                     r"(?:\w+\s+)?(?:called|calls|phoned|rang|says?|said|told|tells|wants?|asked|asks|demand(?:s|ed)?|claims?|"
+                     r"warned|emailed|texted|wrote|sent me|is calling|are calling|on the (?:phone|line))\b|"
+                     r"\b(?:someone|somebody|people|man|woman|lady|guy|caller|agent|officer|he|she|they)\b[^.]{0,20}"
+                     r"\b(?:from|claiming to be|claims to be|said (?:he|she|they) (?:was|were|is|are)|saying (?:he|she|they)'?(?:s|re)?)"
+                     r"\s+(?:the |a )?(?:police|irs|medicare|social security|treasury|fbi|bank|government|embassy|customs)\b",
      "Someone claiming to be the police, government or bank and asking you to send money is the most common scam."),
     ("freeze", 2, r"arrest|(account|money|funds?) (is |are |was |will be |has been )?(frozen|suspended)|money laundering|investigat|suspect|warrant",
      "Saying your account will be frozen or that you're involved in a crime is a common scare tactic."),
@@ -165,6 +182,7 @@ def scan(text: str) -> tuple[RiskLevel, list[str], list[str]]:
     """Returns (risk level, plain-language reasons, matched categories)."""
     text = text.lower().replace("p0lice", "police")
     text = re.sub(r"\bs[\s-]*a[\s-]*f[\s-]*e\b", "safe", text)
+    text = _NOT_A_THREAT.sub(" ", text.replace("’", "'"))
     score, reasons, cats = 0, [], []
     for cat, w, rx, why in _COMPILED:
         if rx.search(_present_removed(text) if cat == "giftcard_told" else text):
