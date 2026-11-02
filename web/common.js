@@ -84,7 +84,7 @@ const SUCCESS_WORDS = {SENT:'Sent', PAID:'Paid', REFUNDED:'Refunded'};
 
 // In the simulator nothing came from PayPal, so no status says it did (the same rule as the server's source_words).
 export const sourceWords = (text, label) => !String(label || '').toUpperCase().startsWith('SIM') ? text
-  : text.replace(/(^|[.!?]\s+)PayPal/g, (m, lead) => `${lead}The simulator`).replaceAll('PayPal', 'the simulator');
+  : text.replace(/(^|[.!?]\s+)PayPal\b/g, (m, lead) => `${lead}The simulator`).replaceAll('PayPal', 'the simulator');
 export function statusInfo(status, verified = false, label = ''){
   if(SUCCESS_WORDS[status]) return verified ? {word:`${SUCCESS_WORDS[status]}, verified`, tone:'ok'} : {word:sourceWords('Checking with PayPal', label), tone:'pending'};
   const hit = WORDS[status];

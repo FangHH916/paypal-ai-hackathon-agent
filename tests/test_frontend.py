@@ -216,6 +216,19 @@ class TestAuditWords(unittest.TestCase):
         self.assertFalse("AUDIT_WORDS[e.event] || e.event" in js, "the raw name is the fallback")
 
 
+class TestNoControlCharacters(unittest.TestCase):
+    """A stray control character in a pattern (a backspace where \b was meant) silently stops it matching."""
+
+    def test_source_files_hold_no_control_characters(self):
+        bad = []
+        for folder, pattern in (("web", "*.js"), ("web", "*.css"), ("web", "*.html"), ("app", "**/*.py")):
+            for path in (ROOT / folder).glob(pattern):
+                text = path.read_text(encoding="utf-8")
+                if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", text):
+                    bad.append(str(path.relative_to(ROOT)))
+        self.assertEqual(bad, [])
+
+
 class TestPlainZero(unittest.TestCase):
     """Seen in a rescore: amounts and times in body text showed a slashed zero (the vendored Atkinson faces have no plain
     zero). Figures in body text and amounts come from a face with a plain zero; the slashed-zero mono is kept only for
