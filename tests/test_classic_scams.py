@@ -105,6 +105,42 @@ class TestClassicScamScriptsStop(Base):
                 self.assertFalse({"gov_threat", "prize_fee", "online_stranger", "family_impersonation"} & set(cats), (text, cats))
 
 
+# Found while re-checking with new phrasings: a script that only says what the money is "needed" for, with no "send" or
+# "pay" in it, got the generic menu instead of the stop.
+NO_VERB = [
+    "Granny it's me Tom, I'm in trouble and need 700 for bail, don't tell mom",
+    "Grandpa it's me, I had an accident and I need 1200 for the hospital",
+    "The sheriff says I owe 800 in back taxes or I'll be arrested",
+    "A man I met on a dating site needs 2000 for his customs fees",
+    "I won the lottery and there's a 300 release fee",
+]
+NO_VERB_BENIGN = [
+    "I owe my daughter 40 for the groceries",
+    "My grandson needs 50 for his school trip",
+    "Anna needs 30 for the bus",
+    "The tax office sent my refund of 300",
+    "Our church raffle prize was a cake",
+]
+
+
+class TestScriptsWithoutASendWord(Base):
+    def test_they_stop_with_the_hotline(self):
+        for text in NO_VERB:
+            with self.subTest(text=text):
+                self.setUp()
+                r = self.turn(text)
+                self.assertEqual(r.ui["type"], "blocked", f"{text!r} -> {r.reply}")
+                self.assertIn(hotline()["spoken"], r.reply, text)
+
+    def test_ordinary_needs_are_not_stopped(self):
+        for text in NO_VERB_BENIGN:
+            with self.subTest(text=text):
+                self.setUp()
+                r = self.turn(text)
+                self.assertNotEqual(r.ui["type"], "blocked", f"{text!r} -> {r.reply}")
+                self.assertLess(self.s.scam_level.rank, RiskLevel.HIGH.rank, text)
+
+
 class TestOneAmountIsNotTwo(Base):
     def test_or_before_a_word_is_not_a_second_amount(self):
         for text in ("I owe 1500 or I'll be arrested", "Send 50 or else he gets upset"):

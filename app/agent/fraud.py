@@ -176,6 +176,15 @@ def gift_card_script(cats: list[str]) -> bool:
     return bool({"giftcard_demand", "giftcard_told"} & set(cats))
 
 
+# A named scam script that talks about money stops even without a "send" or "pay" in it ("need 700 for bail").
+_SCRIPTS = {"gov_threat", "prize_fee", "online_stranger", "family_impersonation", "grandchild", "safe_account"}
+_MONEY_CUE = re.compile(r"\$\s?\d|\b\d[\d,.]*\b|\b(?:needs?|needed|owes?|owed|fees?|bail|money|cash|dollars?|bucks|costs?)\b", re.I)
+
+
+def script_about_money(text: str, cats: list[str]) -> bool:
+    return bool(_SCRIPTS & set(cats)) and bool(_MONEY_CUE.search(text))
+
+
 def wants_money_move(text: str) -> bool:
     return bool(MONEY_MOVE.search(text))
 

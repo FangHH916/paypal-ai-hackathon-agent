@@ -352,7 +352,8 @@ class Agent:
         # This message itself hits high-risk phrases and involves moving money: block it without reaching the model.
         # If the session was flagged earlier, later requests go to the model, but the tool gateway has already
         # shrunk the tool set (no more drafting transactions).
-        if level.rank >= RiskLevel.HIGH.rank and (fraud.wants_money_move(text) or detect_intent(text) in _MONEY_INTENTS or fraud.gift_card_script(cats)):
+        if level.rank >= RiskLevel.HIGH.rank and (fraud.wants_money_move(text) or detect_intent(text) in _MONEY_INTENTS or fraud.gift_card_script(cats)
+                                                  or fraud.script_about_money(text, cats)):
             return self._intercept(s, start, text, reasons)
 
         # Calling her family or the scam hotline: always answered, scam alert or not, and never mistaken for a payment
