@@ -75,7 +75,9 @@ _RX = {
     "stop_payout": r"\b(stop|cancel|take back|call back)\b.{0,25}\b(that|the|my)\s+(payment|payout|transfer)\b",
     "refund": r"\bmoney back\b|\brefund\b|\breturn (it|this|the)\b|\bsend (it|this) back\b",
     "money_request": r"\b(ask|request)\b.{0,40}\b(pay me|pay back|paying me|money|to pay)\b|\bowes? me\b|\bpay me back\b",
-    "disputes": r"\bdisputes?\b|\b(paypal )?cases?\b|\bcomplaints?\b",
+    # "a phone case", "a new case for his glasses": a thing bought, not one of her PayPal cases
+    "disputes": r"\bdisputes?\b|\b(?<!\ba )(?<!\bnew )(?<!phone )(?<!glasses )(paypal )?cases?\b"
+                r"(?! for (?:a|my|his|her|the|their)\b)|\bcomplaints?\b",
     "status": r"\b(go|gone|went) through\b|\bdid (it|that|my|the)\b.{0,25}\b(arrive|work|send|sent|pay|paid)\b|\bstatus\b|"
               r"\bwhere is my (payment|money|refund)\b",
     "invoice_ask": r"\bwhat('?s| is| are)\b.{0,25}\b(bill|bills|invoice|invoices)\b|\b(new|strange|funny|odd) (bill|invoice)\b|"
