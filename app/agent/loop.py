@@ -94,6 +94,26 @@ def plain_yes_no(text: str, extra: set[str] = frozenset()) -> bool | None:
     return True if words[0] in _YES_WORDS else None
 
 
+_DEVICE = r"(?:phone|cell ?phone|mobile|device|tablet|ipad|wallet|purse|handbag)"
+# "his phone", "her purse", "my granddaughter's phone": someone else's, so her own money is not at risk
+_SOMEONE_ELSES = re.compile(rf"\b(?:his|her|their|\w+'s)\s+(?:\w+\s+)?{_DEVICE}\b", re.I)
+# "but the neighbour found it", "it turned up", "my old phone", "ever since I lost": not lost now
+_NOT_LOST_NOW = re.compile(r"\b(?:found|turned up|got (?:it|them) back|have (?:it|them) back|back now)\b|\bold "
+                           + _DEVICE + r"\b|\bsince\b", re.I)
+
+
+def her_lost_device(text: str):
+    """The words saying HER phone or wallet is lost or stolen now, or None. Someone else's lost phone, or one already
+    found, is not a reason to offer the freeze."""
+    t = text.replace("’", "'")
+    if _NOT_LOST_NOW.search(t):
+        return None
+    for m in LOST_DEVICE.finditer(t):
+        if not _SOMEONE_ELSES.search(t[max(0, m.start() - 25):m.end()]):
+            return m
+    return None
+
+
 LOST_PHONE_ASK = ("I'm sorry about your {what}. Would you like me to freeze all payments now, so nobody else can send your money? "
                   "Nothing has been sent. Please say yes or no.")
 FREEZE_DONE = "Done. All payments are frozen. Nothing can be sent until you and your family lift the freeze."
@@ -381,7 +401,7 @@ class Agent:
 
         # A lost or stolen phone / wallet: offer the freeze once, and don't act on anything else in the same sentence
         # ("I lost my phone, can you send 20 to my son"). "Freeze my payments" said outright still freezes at once.
-        lost = LOST_DEVICE.search(text)
+        lost = her_lost_device(text)
         if lost and detect_intent(text) != "freeze":
             what = next((w for w in ("wallet", "purse", "handbag", "tablet", "ipad") if w in lost.group(0).lower()), "phone")
             reply = LOST_PHONE_ASK.format(what=what)
