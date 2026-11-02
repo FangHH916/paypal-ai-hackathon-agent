@@ -494,6 +494,7 @@ function stageHtml(m, i){
 const stopCount = m => m.calls === undefined ? '' : `<p class="stop-count"><b>${esc(m.calls)}</b> money-moving PayPal calls for this request ${modeTag(mode())}</p>`;
 function renderStage(){
   const st = $('#stage'); if(!st) return;
+  st.classList.toggle('empty', !state.messages.length);
   if(!state.messages.length){
     const list = state.care ? SUGGEST_CARE : SUGGEST;
     st.innerHTML = `<div class="welcome-msg"><span class="spark" aria-hidden="true">${icon('spark')}</span><div>

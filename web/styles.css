@@ -273,6 +273,15 @@ main#main{flex:1;padding:clamp(20px,3.4vw,52px) clamp(16px,4vw,56px);outline:non
 .stage>*{scroll-margin:12px}
 /* The record sits on the input, like the last lines on a sheet: a short conversation stays near where she speaks. */
 .stage{flex:1;padding:8px 0 16px;display:flex;flex-direction:column;justify-content:flex-end;gap:16px;min-height:220px}
+/* Care home before anything is said: the options follow her balance directly, not pushed down under the dock */
+body.care .assistant:has(.stage.empty){min-height:0}
+body.care .stage.empty{justify-content:flex-start;min-height:0;padding-top:0}
+body.care .stage.empty .welcome-msg{margin-top:0}
+@media (max-width:360px){
+  body.care .care-hello{gap:12px;margin-bottom:14px}
+  body.care .care-hello h1{font-size:11vw}
+  body.care .stage.empty .spark{display:none}
+}
 .welcome-msg{display:flex;gap:.8em;align-items:flex-start;margin:8px 0}
 .welcome-msg h3{font:400 clamp(1.8rem,3vw,2.8rem)/1.08 var(--head)}
 .welcome-msg p{margin:.4em 0 0;color:var(--muted)}

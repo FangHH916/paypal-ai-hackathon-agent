@@ -1068,6 +1068,42 @@ def run(browser, base: str, args) -> None:
                 server.terminate()
                 server.wait(10)
 
+
+    def care_phone_layout():
+        """Care on a phone: the home's first options sit above the dock with no empty band. Own server, 390 and 320 wide."""
+        if args.base:
+            return
+        port = free_port()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
+            server = start_server(port, data)
+            url = f"http://localhost:{port}"
+            for w in (390, 320):
+                c = browser.new_context(viewport={"width": w, "height": 844}, has_touch=True, is_mobile=True)
+                q = c.new_page()
+                watch(q, f"care-phone-{w}")
+                try:
+                    q.goto(url + "/")
+                    q.locator("#welcome-enter").click()
+                    expect(q.locator(".hero h1")).to_be_visible()
+                    nav(q, "Talk to Star")
+                    q.locator(".choice", has_text="Yes, make it easier").click()
+                    expect(q.locator("body.care")).to_be_visible(timeout=15000)
+                    q.evaluate("sessionStorage.removeItem('chat'); sessionStorage.setItem('page', 'home')")
+                    q.reload()
+                    expect(q.locator(".care-hello h1")).to_be_visible()
+                    expect(q.locator(".welcome-msg")).to_be_visible()
+                    time.sleep(0.5)
+                    m = q.evaluate("""() => { const r = s => document.querySelector(s).getBoundingClientRect();
+                      const sug = [...document.querySelectorAll('.suggestion')].map(e => e.getBoundingClientRect().bottom);
+                      return {gap: r('.welcome-msg').top - r('.care-left').bottom, dock: r('.composer-wrap').top, sug}; }""")
+                    check(f"Care home {w}: no empty band above 'What can I say?'", m["gap"] <= 60, m["gap"])
+                    check(f"Care home {w}: the first options are above the dock", all(b <= m["dock"] for b in m["sug"][:2]), m)
+                    shot(q, f"81-care-home-{w}")
+                finally:
+                    c.close()
+            server.terminate()
+            server.wait(10)
+
     for name, fn in [("Landing and pages", landing), ("Send money to family", send_money), ("Same payment asked twice", double_payment),
                      ("Agentic purchase, approval, capture, refund", purchase_and_refund), ("Cancel on the approval page", cancel_on_approval),
                      ("Pay a bill by invoice", pay_bill), ("The fake invoice", fake_invoice), ("A spoken scam", spoken_scam),
@@ -1077,7 +1113,8 @@ def run(browser, base: str, args) -> None:
                      ("Guardian page without pairing", unpaired_guardian), ("Removed screens", no_stale_screens),
                      ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo),
                      ("Rescore fixes on a phone", rescore_fixes), ("Rescore: one clock", one_clock),
-                     ("Rescore: polish", polish_fixes), ("Rescore: guardian clears a scam alert", guardian_clears)]:
+                     ("Rescore: polish", polish_fixes), ("Rescore: guardian clears a scam alert", guardian_clears),
+                     ("Rescore: Care on a phone", care_phone_layout)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()
