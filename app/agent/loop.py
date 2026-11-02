@@ -98,7 +98,8 @@ _DEVICE = r"(?:phone|cell ?phone|mobile|device|tablet|ipad|wallet|purse|handbag)
 # "his phone", "her purse", "my granddaughter's phone": someone else's, so her own money is not at risk
 _SOMEONE_ELSES = re.compile(rf"\b(?:his|her|their|\w+'s)\s+(?:\w+\s+)?{_DEVICE}\b", re.I)
 # "but the neighbour found it", "it turned up", "my old phone", "ever since I lost": not lost now
-_NOT_LOST_NOW = re.compile(r"\b(?:found|turned up|got (?:it|them) back|have (?:it|them) back|back now)\b|\bold "
+_NOT_LOST_NOW = re.compile(r"\b(?:found|turned up|got (?:it|them) back|have (?:it|them) back|back now|returned (?:it|them|my|the|her)|handed (?:it )?in|"
+                           r"(?:brought|gave|handed|sent) (?:it |them |\w+ |my \w+ )?back)\b|\bold "
                            + _DEVICE + r"\b|\bsince\b", re.I)
 
 

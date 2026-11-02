@@ -20,6 +20,9 @@ FOUND_OR_OLD = [
     "I lost my wallet yesterday but the neighbour found it, send 20 to Ben",
     "I thought I lost my phone but it turned up in my coat, send 30 to Anna",
     "Ever since I lost my old phone I use the tablet. Send 10 to Sam.",
+    # Given back already (seen while re-checking the red-team look-alikes)
+    "The police returned my lost purse, send 25 to Ben as thanks for driving me",
+    "A neighbour brought my wallet back that I lost, send Anna 20",
 ]
 STILL_ASKS = [
     "Someone took my handbag at the market, send 20 to Anna",
