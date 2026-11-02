@@ -134,8 +134,9 @@ body.welcome-active{overflow-x:clip;background:#0a100e}
 .plate .zero b{display:block;font-weight:700;font-size:1.12rem;line-height:1.25}
 .plate .zero small{color:var(--accent-ink)}
 .plate .zero .mode-tag{color:var(--accent-ink);margin-top:.6em}
-/* The seal: printed once, slightly off true, like a hand stamp. Its word is in the text beside it too. */
-.seal-stamp{position:absolute;right:6%;top:clamp(10px,1.2vw,18px);padding:.14em .42em;border:3px solid var(--accent);color:var(--accent);font:400 clamp(1.2rem,2vw,2rem)/1 var(--head);letter-spacing:.06em;text-transform:uppercase;transform:rotate(-8deg);pointer-events:none}
+/* The seal: printed once, slightly off true, like a hand stamp, under the struck figure: it never covers a word. Its word
+   is in the text beside it too. */
+.seal-stamp{display:block;width:fit-content;position:relative;margin:.95em 0 .5em .15em;padding:.14em .42em;border:3px solid var(--accent);color:var(--accent);font:400 clamp(1.2rem,2vw,2rem)/1 var(--head);letter-spacing:.06em;text-transform:uppercase;transform:rotate(-8deg);pointer-events:none}
 /* The other half of the promise, on the first screen too: a scam script, set in one line and stamped. */
 .plate-scam{display:grid;grid-template-columns:minmax(0,auto) auto minmax(14em,1fr);column-gap:clamp(14px,2vw,32px);align-items:center;margin:0;padding:clamp(10px,1.1vw,16px) 0;border-bottom:2px solid var(--ink)}
 .plate-scam .k{grid-column:1/-1;margin-bottom:.25em;font-size:.92rem;color:var(--muted)}
@@ -762,7 +763,7 @@ body.not-found{min-height:100dvh}
   .plate .quote{grid-column:1/-1;font-size:min(1.3rem,6vw);margin-top:.15em}
   .plate .fig{font-size:min(clamp(1.9rem,9.6vw,3.6rem),11vw);justify-self:end}
   .plate>li>small{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-  .seal-stamp{position:static;grid-column:1;grid-row:2;justify-self:start;margin-top:.3em;font-size:1rem;border-width:2px}
+  .seal-stamp{position:static;grid-column:1;grid-row:2;justify-self:start;margin:.6em 0 0;font-size:1rem;border-width:2px}
   .exhibit.engraved::before{opacity:.1}
   .hero.engraved::before{display:none}
   .plate .draft .k{grid-row:1}

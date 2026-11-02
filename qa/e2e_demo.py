@@ -1117,6 +1117,31 @@ def run(browser, base: str, args) -> None:
             server.terminate()
             server.wait(10)
 
+
+    def landing_stamp():
+        """The FROZEN stamp on the landing ledger must not cover any words, at any width."""
+        c = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
+        q = c.new_page()
+        watch(q, "stamp")
+        try:
+            q.goto(base + "/")
+            expect(q.locator(".plate .seal-stamp")).to_be_visible()
+            for w in (320, 390, 600, 768, 900, 1024, 1180, 1280, 1366, 1440, 1920):
+                q.set_viewport_size({"width": w, "height": 900})
+                time.sleep(0.25)
+                hits = q.evaluate("""() => { const s = document.querySelector('.plate .seal-stamp').getBoundingClientRect();
+                  const words = [...document.querySelectorAll('.plate .k, .plate .fig, .plate .quote, .plate small, .plate b, .plate .num, .welcome-lead, .plate-scam > *')]
+                    .filter(e => e.getClientRects().length && getComputedStyle(e).clipPath === 'none');
+                  const lines = e => { const g = document.createRange(); g.selectNodeContents(e); return [...g.getClientRects()]; };
+                  return words.filter(e => lines(e).some(r =>
+                    r.width > 1 && r.left < s.right - 1 && s.left < r.right - 1 && r.top < s.bottom - 1 && s.top < r.bottom - 1))
+                    .map(e => e.textContent.trim().slice(0, 30)); }""")
+                check(f"landing {w}: the FROZEN stamp covers no words", not hits, hits)
+                if w in (320, 390, 1440):
+                    shot(q, f"82-landing-stamp-{w}")
+        finally:
+            c.close()
+
     for name, fn in [("Landing and pages", landing), ("Send money to family", send_money), ("Same payment asked twice", double_payment),
                      ("Agentic purchase, approval, capture, refund", purchase_and_refund), ("Cancel on the approval page", cancel_on_approval),
                      ("Pay a bill by invoice", pay_bill), ("The fake invoice", fake_invoice), ("A spoken scam", spoken_scam),
@@ -1127,7 +1152,7 @@ def run(browser, base: str, args) -> None:
                      ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo),
                      ("Rescore fixes on a phone", rescore_fixes), ("Rescore: one clock", one_clock),
                      ("Rescore: polish", polish_fixes), ("Rescore: guardian clears a scam alert", guardian_clears),
-                     ("Rescore: Care on a phone", care_phone_layout)]:
+                     ("Rescore: Care on a phone", care_phone_layout), ("Rescore: landing stamp", landing_stamp)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
     ctx.close()
