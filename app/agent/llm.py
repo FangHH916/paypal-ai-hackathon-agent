@@ -115,6 +115,14 @@ def _has(key: str, text: str) -> bool:
     return bool(re.search(_RX[key], text, re.I))
 
 
+_GENERIC_NAME_WORDS = {"county", "company", "services", "service", "district", "municipal", "utilities", "utility", "energy",
+                       "national", "american", "general"}
+# A kind of bill she names, to say plainly when she has none: "my property tax bill", "the phone bill"
+_BILL_KIND = re.compile(r"\b(property tax(?:es)?|tax(?:es)?|phone|telephone|mobile|internet|cable|gas|insurance|rent|mortgage|"
+                        r"credit card|medical|hospital|doctor'?s?|council tax|trash|garbage)\b(?:\s+\w+){0,2}?\s+bill\b|"
+                        r"\bbill\b.{0,20}\bfor (?:my |the )?(property tax(?:es)?|phone|internet|cable|gas|insurance|rent)\b", re.I)
+
+
 def detect_intent(text: str) -> str:
     if re.search(r"\bhow much did I (?:send|pay|transfer)\b", text, re.I) and not re.search(r"\b(?:same again|usual amount)\b", text, re.I):
         return "spending"
@@ -320,7 +328,9 @@ class OfflineLLM:
             picked = self._pick_bill(text, bills)
             if picked is None:
                 lst = ", ".join(b["title"] for b in bills)
-                return self._say(f"You have these bills: {lst}. Which one would you like to pay?")
+                kind = _BILL_KIND.search(text)
+                missing = f"I couldn't find your {(kind.group(1) or kind.group(2)).lower()} bill. " if kind else ""
+                return self._say(f"{missing}You have these bills: {lst}. Which one would you like to pay?")
             if "draft_bill_payment" not in results:
                 if "draft_bill_payment" not in allowed:
                     return self._say("You still have a payment waiting for confirmation. Please confirm or cancel it first.")
@@ -500,8 +510,11 @@ class OfflineLLM:
                 b = next((b for b in bills if b["payee_id"] == pid), None)
                 if b:
                     return b
+        # A word that names one company ("Riverside"), never a generic one ("county", "company"): "my property tax bill to
+        # the county" is not the Maple County Water bill
         by_name = next((b for b in bills if b["from"].lower() in text.lower() or b["title"].lower() in text.lower()
-                        or any(w in text.lower() for w in b["from"].lower().split() if len(w) > 5)), None)
+                        or any(re.search(rf"\b{re.escape(w)}\b", text, re.I) for w in b["from"].lower().split()
+                               if len(w) > 5 and w not in _GENERIC_NAME_WORDS)), None)
         return by_name or (bills[0] if len(bills) == 1 else None)
 
     @staticmethod
