@@ -107,11 +107,15 @@ export async function mountGrid(host, opts){
     if(showAll) return columns.map(c => c.colId || c.field).filter(c => c !== 'card');
     return ['time', 'to', 'amount_cents', 'status'];
   };
+  let shown = '';
   const applyColumns = () => {
     if(!api) return;
     const show = sets();
-    api.setColumnsVisible(columns.map(c => c.colId || c.field), false);
-    api.setColumnsVisible(show, true);
+    if(show.join() !== shown){        // only when the set changes: hiding every column redraws every cell
+      shown = show.join();
+      api.setColumnsVisible(columns.map(c => c.colId || c.field), false);
+      api.setColumnsVisible(show, true);
+    }
     const filters = showAll && !isNarrow() && !care;
     $('.grid-host', host).classList.toggle('filters-on', filters);
     api.setGridOption('floatingFiltersHeight', filters ? 52 : 0);
