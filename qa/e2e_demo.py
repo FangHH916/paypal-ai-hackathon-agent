@@ -483,9 +483,10 @@ def run(browser, base: str, args) -> None:
         pp.evaluate("index => [...document.styleSheets].find(s => s.href?.endsWith('/styles.css')).deleteRule(index)", rule)
         nav(pp, "Talk to Star")
         say(pp, "Send 30 to my grandson")
-        expect(pp.locator(".choice").first).to_be_visible()      # two grandsons: Star asks, it doesn't guess
+        grandsons = pp.locator(".choice", has_text="(grandson)")   # the easier-version invite is still open above them
+        expect(grandsons).to_have_count(2)      # two grandsons: Star asks, it doesn't guess
         shot(pp, "42-phone-which-grandson")
-        pp.locator(".choice").first.click()
+        grandsons.first.click()
         expect(pp.locator("#confirm .amt")).to_have_text("$30.00", timeout=15000)
         shot(pp, "42-phone-card")
         pp.locator("#c-go").click()
