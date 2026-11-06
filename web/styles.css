@@ -929,3 +929,5 @@ h1,.welcome h1,.hero h1{letter-spacing:-.035em;font-weight:500}
   .exhibit .plate::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(111,227,255,.10),transparent);background-size:30% 100%;background-repeat:no-repeat;animation:scan 7s ease-in-out 1.2s infinite}
   @keyframes scan{from{background-position:-40% 0}to{background-position:140% 0}}
 }
+/* The particle field sits behind everything in its host and never takes a click from the page. */
+.particles{position:absolute;left:0;top:0;z-index:-1;pointer-events:none}

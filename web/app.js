@@ -4,7 +4,7 @@
 // No inline script or style anywhere, so the server's strict Content-Security-Policy applies.
 import {$, esc, store, api, download, money, clock, icon, ppBadge, modeTag, statusInfo, sourceWords, b64, deviceKeys, mockFingerprint, loadFailed} from '/common.js';
 import {mountGrid} from '/activity.js';
-import {pageIn, stopFx, verifiedFx, caughtFx, plateFx, cardIn, sealSvg} from '/motion.js';
+import {pageIn, stopFx, verifiedFx, caughtFx, plateFx, cardIn, sealSvg, particles} from '/motion.js';
 
 // Online demo (server PUBLIC_DEMO=1): this browser's own demo customer, so testers never see each other's payments,
 // resets or passkeys. Locally the server doesn't ask for it and everyone is the same Mrs. Lee.
@@ -1767,6 +1767,7 @@ async function enterApp(){
     await init();
     $('#app').hidden = false; welcome.hidden = true;
     document.body.classList.remove('welcome-active');
+    stopField(); stopField = particles($('.sidebar'), {density:9000, max:40});
     const skip = $('#skip'); skip.href = '#main'; skip.textContent = 'Skip to main content';
     $('#main')?.focus({preventScroll:true});
     try{ sessionStorage.setItem('entered', '1'); }catch{}
@@ -1783,7 +1784,7 @@ $('#welcome-test').addEventListener('click', async () => {
   await enterApp();
   if(welcome.hidden) send('Send 50 to my daughter', '/api/demo/model-mistake', false, false, true);
 });
-let stopPlate = () => {};
+let stopPlate = () => {}, stopField = () => {};
 const playPlate = () => { stopPlate(); stopPlate = plateFx(welcome); };
 $('#welcome-replay').addEventListener('click', playPlate);
 (() => {
@@ -1791,5 +1792,5 @@ $('#welcome-replay').addEventListener('click', playPlate);
   let entered = false; try{ entered = sessionStorage.getItem('entered') === '1'; }catch{}
   const q = new URLSearchParams(location.search);
   if(entered || q.get('pp_return') || q.get('pp_cancel') || store.get('tracking', null)){ welcome.hidden = true; enterApp(); }
-  else playPlate();
+  else { playPlate(); stopField = particles(welcome.querySelector('.exhibit')); }
 })();
