@@ -1,5 +1,5 @@
-/* Star: security print. The look of a banknote or a bank cheque, because that is what Star protects:
-   engraved line work, intaglio ink on mineral paper, one seal-red that only ever means "stopped here".
+/* Star: quiet future. A night-blue instrument panel with cool light, fine grid lines and level readouts, because Star
+   is the check that sits between a model and her money. One red still only ever means "stopped here".
    See docs/DESIGN.md, Art direction. Large by default for older eyes; sizes in rem so browser font size is obeyed.
    Nothing here depends on colour or motion alone: every state has a word next to it. */
 @font-face{font-family:'Gloock';src:url(/fonts/gloock-latin.woff2) format('woff2');font-weight:400;font-display:swap}
@@ -11,40 +11,40 @@
 @font-face{font-family:'Plain Figures';src:local('Segoe UI Semibold'),local('SegoeUI-Semibold'),local('Segoe UI Bold'),local('SegoeUI-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Arial Bold'),local('Arial-BoldMT'),local('Roboto Bold'),local('Roboto-Bold'),local('Liberation Sans Bold'),local('LiberationSans-Bold'),local('DejaVu Sans Bold'),local('DejaVuSans-Bold');font-weight:550 900;unicode-range:U+30-39}
 :root{
   color-scheme:light dark;
-  --bg:#edf0ee; --surface:#f8faf8; --surface-2:#e0e5e2; --ink:#0c1412; --muted:#35423d; --line:#a9b5b0; --rule:#0c1412;
-  --brand:#10201b; --brand-ink:#f8faf8; --brand-soft:#d5ded9; --accent:#9c1c05; --accent-ink:#ffffff;
-  --ok:#0b5430; --ok-bg:#dcefe2; --warn:#5e3f00; --warn-bg:#f5e9c9; --bad:#8a1703; --bad-bg:#f9e4dd; --pend:#17436b; --pend-bg:#deeaf3; --neutral:#35423d; --neutral-bg:#e0e5e2;
-  --engrave:#0c1412;
+  --bg:#edf2f8; --surface:#f8fbfe; --surface-2:#dfe8f2; --ink:#07121f; --muted:#2f4359; --line:#a3b4c7; --rule:#07121f;
+  --brand:#0a1a2f; --brand-ink:#f8fbfe; --brand-soft:#d3e0ee; --accent:#9c1c05; --accent-ink:#ffffff;
+  --ok:#0b5430; --ok-bg:#dcefe4; --warn:#5e3f00; --warn-bg:#f5e9c9; --bad:#8a1703; --bad-bg:#f9e4dd; --pend:#123f6b; --pend-bg:#dce9f6; --neutral:#2f4359; --neutral-bg:#dfe8f2;
+  --engrave:#0a5a8a; --glow:#0a6fa8;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0a100e; --surface:#111916; --surface-2:#1b2521; --ink:#f2f5f2; --muted:#bdc9c4; --line:#3d4c46; --rule:#f2f5f2;
-  --brand:#f2f5f2; --brand-ink:#0a100e; --brand-soft:#26332e; --accent:#ff9478; --accent-ink:#1a0500;
-  --ok:#93e6b3; --ok-bg:#0e2a1b; --warn:#f2cb72; --warn-bg:#2d2108; --bad:#ff9b80; --bad-bg:#2f130a; --pend:#aed3f5; --pend-bg:#13263a; --neutral:#c8d2ce; --neutral-bg:#1b2521;
-  --engrave:#f2f5f2;
+  --bg:#05090f; --surface:#0b1320; --surface-2:#13203a; --ink:#eaf4ff; --muted:#a9bdd3; --line:#2a3d57; --rule:#5b7896;
+  --brand:#6fe3ff; --brand-ink:#00131b; --brand-soft:#132a40; --accent:#ff9478; --accent-ink:#1a0500;
+  --ok:#8ff0c0; --ok-bg:#062418; --warn:#f6cf6e; --warn-bg:#231a04; --bad:#ff9b80; --bad-bg:#2a0f0b; --pend:#9fd4ff; --pend-bg:#0c2136; --neutral:#c5d3e3; --neutral-bg:#13203a;
+  --engrave:#6fe3ff; --glow:#6fe3ff;
 }}
 :root[data-theme="dark"]{
-  --bg:#0a100e; --surface:#111916; --surface-2:#1b2521; --ink:#f2f5f2; --muted:#bdc9c4; --line:#3d4c46; --rule:#f2f5f2;
-  --brand:#f2f5f2; --brand-ink:#0a100e; --brand-soft:#26332e; --accent:#ff9478; --accent-ink:#1a0500;
-  --ok:#93e6b3; --ok-bg:#0e2a1b; --warn:#f2cb72; --warn-bg:#2d2108; --bad:#ff9b80; --bad-bg:#2f130a; --pend:#aed3f5; --pend-bg:#13263a; --neutral:#c8d2ce; --neutral-bg:#1b2521;
-  --engrave:#f2f5f2;
+  --bg:#05090f; --surface:#0b1320; --surface-2:#13203a; --ink:#eaf4ff; --muted:#a9bdd3; --line:#2a3d57; --rule:#5b7896;
+  --brand:#6fe3ff; --brand-ink:#00131b; --brand-soft:#132a40; --accent:#ff9478; --accent-ink:#1a0500;
+  --ok:#8ff0c0; --ok-bg:#062418; --warn:#f6cf6e; --warn-bg:#231a04; --bad:#ff9b80; --bad-bg:#2a0f0b; --pend:#9fd4ff; --pend-bg:#0c2136; --neutral:#c5d3e3; --neutral-bg:#13203a;
+  --engrave:#6fe3ff; --glow:#6fe3ff;
 }
 *{box-sizing:border-box}
 /* Two fixed materials. Ink: the rail and the landing, the same in both themes. Paper: the card she signs, always the brightest thing on screen. */
 .ink-plate,.welcome,.sidebar{
-  --bg:#0a100e; --surface:#111916; --surface-2:#1b2521; --ink:#f2f5f2; --muted:#bdc9c4; --line:#3d4c46; --rule:#f2f5f2;
-  --brand:#f2f5f2; --brand-ink:#0a100e; --brand-soft:#26332e; --accent:#ff9478; --accent-ink:#1a0500;
-  --ok:#93e6b3; --ok-bg:#0e2a1b; --warn:#f2cb72; --warn-bg:#2d2108; --bad:#ff9b80; --bad-bg:#2f130a; --pend:#aed3f5; --pend-bg:#13263a; --neutral:#c8d2ce; --neutral-bg:#1b2521;
-  --engrave:#f2f5f2; color:var(--ink); color-scheme:dark;
+  --bg:#05090f; --surface:#0b1320; --surface-2:#13203a; --ink:#eaf4ff; --muted:#a9bdd3; --line:#2a3d57; --rule:#5b7896;
+  --brand:#6fe3ff; --brand-ink:#00131b; --brand-soft:#132a40; --accent:#ff9478; --accent-ink:#1a0500;
+  --ok:#8ff0c0; --ok-bg:#062418; --warn:#f6cf6e; --warn-bg:#231a04; --bad:#ff9b80; --bad-bg:#2a0f0b; --pend:#9fd4ff; --pend-bg:#0c2136; --neutral:#c5d3e3; --neutral-bg:#13203a;
+  --engrave:#6fe3ff; --glow:#6fe3ff; color:var(--ink); color-scheme:dark;
 }
 .paper-plate,.confirm{
-  --bg:#edf0ee; --surface:#f8faf8; --surface-2:#e0e5e2; --ink:#0c1412; --muted:#35423d; --line:#a9b5b0; --rule:#0c1412;
-  --brand:#10201b; --brand-ink:#f8faf8; --brand-soft:#d5ded9; --accent:#9c1c05; --accent-ink:#ffffff;
-  --ok:#0b5430; --ok-bg:#dcefe2; --warn:#5e3f00; --warn-bg:#f5e9c9; --bad:#8a1703; --bad-bg:#f9e4dd; --pend:#17436b; --pend-bg:#deeaf3; --neutral:#35423d; --neutral-bg:#e0e5e2;
-  --engrave:#0c1412; color:var(--ink); color-scheme:light;
+  --bg:#edf2f8; --surface:#f8fbfe; --surface-2:#dfe8f2; --ink:#07121f; --muted:#2f4359; --line:#a3b4c7; --rule:#07121f;
+  --brand:#0a1a2f; --brand-ink:#f8fbfe; --brand-soft:#d3e0ee; --accent:#9c1c05; --accent-ink:#ffffff;
+  --ok:#0b5430; --ok-bg:#dcefe4; --warn:#5e3f00; --warn-bg:#f5e9c9; --bad:#8a1703; --bad-bg:#f9e4dd; --pend:#123f6b; --pend-bg:#dce9f6; --neutral:#2f4359; --neutral-bg:#dfe8f2;
+  --engrave:#0a5a8a; --glow:#0a6fa8; color:var(--ink); color-scheme:light;
 }
 :root{
-  --head:'Gloock','Georgia','Times New Roman',serif; --body:'Plain Figures','Atkinson Next','Segoe UI','Helvetica Neue',Arial,sans-serif;
-  --mono:'Atkinson Mono','Cascadia Mono',Consolas,Menlo,monospace; --radius:3px;
+  --head:'Plain Figures','Atkinson Next','Segoe UI','Helvetica Neue',Arial,sans-serif; --body:'Plain Figures','Atkinson Next','Segoe UI','Helvetica Neue',Arial,sans-serif;
+  --mono:'Atkinson Mono','Cascadia Mono',Consolas,Menlo,monospace; --radius:6px;
 }
 html{-webkit-text-size-adjust:100%;overflow-x:clip}
 body{margin:0;background:var(--bg);color:var(--ink);font:400 1.125rem/1.55 var(--body);font-variant-numeric:lining-nums}
@@ -892,3 +892,40 @@ body.not-found{min-height:100dvh}
   .engraved::before,.sidebar::before,:is(.stop-block,.stop-plate)::before,.confirm::before,.band-rule,.mf-pad::before{display:none}
 }
 @media print{.sidebar,.topbar,.band,#toast,.trace,.welcome-actions{display:none}}
+
+/* Quiet future: the line work becomes a fine instrument grid that fades out, seals become level readouts with a soft
+   glow, and lit edges mark what can be pressed. Text sizes and colours above are untouched, so every contrast pair holds. */
+.engraved::before,.sidebar::before{-webkit-mask:radial-gradient(120% 90% at var(--ros-x,100%) var(--ros-y,0%),#000 0,transparent 70%);mask:radial-gradient(120% 90% at var(--ros-x,100%) var(--ros-y,0%),#000 0,transparent 70%);background:linear-gradient(var(--engrave) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(90deg,var(--engrave) 1px,transparent 1px) 0 0/44px 44px;opacity:.16}
+.engraved::before{--ros-x:100%;--ros-y:0%}
+.sidebar::before{--ros-x:0%;--ros-y:100%}
+.exhibit.engraved::before{opacity:.22}
+.cheque.engraved::before{opacity:.08}
+:is(.stop-block,.stop-plate)::before{-webkit-mask:radial-gradient(90% 120% at 100% 0,#000 0,transparent 75%);mask:radial-gradient(90% 120% at 100% 0,#000 0,transparent 75%);background:linear-gradient(var(--bad) 1px,transparent 1px) 0 0/28px 28px,linear-gradient(90deg,var(--bad) 1px,transparent 1px) 0 0/28px 28px;opacity:.12}
+.band-rule{height:2px;-webkit-mask:none;mask:none;opacity:1;background:linear-gradient(90deg,transparent,var(--glow) 20%,var(--glow) 80%,transparent);box-shadow:0 0 12px var(--glow)}
+.confirm::before{height:3px;margin-top:0;-webkit-mask:none;mask:none;opacity:1;background:linear-gradient(90deg,var(--glow),transparent 70%)}
+.mf-pad::before{-webkit-mask:radial-gradient(circle,transparent 58%,#000 60%,#000 66%,transparent 68%);mask:radial-gradient(circle,transparent 58%,#000 60%,#000 66%,transparent 68%);background:conic-gradient(var(--glow),transparent 40%,var(--glow) 70%,transparent)}
+/* Seals: level readouts in capitals with a lit frame, not tilted hand stamps. The word is still in the text beside them. */
+.seal-stamp,.scam-seal,.caught-badge,:is(.stop-block,.stop-plate)::after{transform:none;border-width:1.5px;border-radius:4px;font:700 clamp(.95rem,1.3vw,1.2rem)/1.2 var(--body);letter-spacing:.16em;padding:.3em .6em;box-shadow:0 0 0 1px currentColor inset,0 0 18px -6px currentColor}
+.seal-stamp{margin-top:.8em}
+/* Lit edges */
+.plate,.stats,.offer-grid{border-color:var(--rule)}
+.plate>li,.stat,.cg,.caught-path li{border-left-color:var(--line)}
+.btn.primary,.mic,.care-toggle{box-shadow:0 0 0 1px var(--brand),0 0 22px -8px var(--glow)}
+.btn.primary:hover:not(:disabled){box-shadow:0 0 0 1px var(--accent),0 0 22px -8px var(--accent)}
+.nav-btn[aria-current="page"]{box-shadow:inset 3px 0 0 var(--glow),0 0 20px -10px var(--glow)}
+.composer textarea:focus-visible,.btn:focus-visible{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--glow)}
+.cheque,.confirm{box-shadow:0 0 0 1px rgba(111,227,255,.35),0 40px 90px -24px rgba(0,0,0,.8),0 0 60px -30px rgba(111,227,255,.6)}
+.cheque{transform:none}
+.plate .zero,.caught-zero{box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
+h1,.welcome h1,.hero h1{letter-spacing:-.035em;font-weight:500}
+.stat-value,.plate .fig,.counter b,.stop-count b,.caught-zero b,.plate .zero .num,.crow.amount .amt,.tracker-amt,.offer-price{font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.eyebrow,.plate .k,.plate-scam .k,.nav-label{letter-spacing:.08em;text-transform:uppercase;font-size:max(1rem,.86em)}
+/* A faint cool light from the top of dark surfaces; flat colour in the light theme and on paper. */
+.welcome,.sidebar{background:radial-gradient(1100px 520px at 85% -12%,rgba(111,227,255,.10),transparent 70%),var(--bg)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body{background:radial-gradient(1200px 600px at 90% -15%,rgba(111,227,255,.07),transparent 70%) fixed,var(--bg)}}
+:root[data-theme="dark"] body{background:radial-gradient(1200px 600px at 90% -15%,rgba(111,227,255,.07),transparent 70%) fixed,var(--bg)}
+/* One slow scan across the landing plate, purely decorative, never over text for long and gone for reduced motion. */
+@media (prefers-reduced-motion:no-preference){
+  .exhibit .plate::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(111,227,255,.10),transparent);background-size:30% 100%;background-repeat:no-repeat;animation:scan 7s ease-in-out 1.2s infinite}
+  @keyframes scan{from{background-position:-40% 0}to{background-position:140% 0}}
+}
