@@ -55,7 +55,7 @@ Claude Code and OpenAI Codex assisted with code, tests, review and materials und
 ## Links and testing instructions
 
 - Source: https://github.com/FangHH916/paypal-ai-hackathon-agent — must be public with a confirmed open-source licence at submission.
-- Demo: `[TEAM: hosted URL, or use the complete local run instructions in README]`.
+- Demo: https://star-family-payments.onrender.com (keyless simulator and offline rules until the sandbox and model keys are set; the first visit may take about a minute to wake). Local run instructions are in the README.
 - Video: `[TEAM: public YouTube URL, under three minutes]`.
 - Team and rights: `[TEAM: confirm every contributor's permission and the earlier contest's reuse terms]`.
 

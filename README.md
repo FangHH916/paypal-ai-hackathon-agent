@@ -27,7 +27,7 @@ checks all of it again before any PayPal request goes out. A fooled model produc
 
 ## Try it in 60 seconds, no keys
 
-Hosted demo: **not deployed yet.** The team adds the link here after the Render deploy ([docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md)).
+Hosted demo: **https://star-family-payments.onrender.com** (Render free plan, keyless: the PayPal simulator and the offline rule engine, labelled SIMULATED on every screen). A free instance sleeps when idle, so the first visit can take about a minute to wake.
 
 Locally, with Python 3.13 or 3.14:
 
@@ -206,7 +206,7 @@ Please record what you find in [docs/PAYPAL_NOTES.md](docs/PAYPAL_NOTES.md).
 
 **New + > Blueprint**, and pick this repository. `render.yaml` runs the keyless simulator out of the box, as the service `star-family-payments`. Leave the prompted values empty for that.
 For the real sandbox, set `PAYPAL_MODE=sandbox` and the `PAYPAL_*` secrets in the dashboard; for AI, set the `LLM_*` values. Free instances sleep after about 15 idle minutes and lose their disk, so choose a paid plan for judging week.
-This blueprint has not been deployed by us yet.
+This blueprint is deployed at https://star-family-payments.onrender.com on the free plan, keyless. Free instances sleep when idle and reset their disk on restart, so the demo data starts fresh after a wake.
 
 The `Dockerfile` and `deploy/compose.yaml` cover other hosts. Neither has been built for this version: no Docker was available.
 
