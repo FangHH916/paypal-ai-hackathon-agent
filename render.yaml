@@ -43,11 +43,15 @@ services:
         sync: false
       - key: LLM_MODEL
         sync: false
-      - key: ASR_PROVIDER           # browser (default) or openai_compat
+      - key: ASR_PROVIDER           # browser (default), openai_compat, or the cloud speech option in .env.example
         sync: false
       - key: ASR_BASE_URL
         sync: false
       - key: ASR_API_KEY
         sync: false
       - key: ASR_MODEL
+        sync: false
+      - key: TENCENTCLOUD_SECRET_ID   # only for that cloud's speech recognition; see .env.example
+        sync: false
+      - key: TENCENTCLOUD_SECRET_KEY
         sync: false

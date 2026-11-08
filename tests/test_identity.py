@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parent.parent
 OLD_NAMES = ["d" + "bs", "po" + "sb", "digi" + "bank", "ten" + "cent", "hun" + "yuan", "oc" + "bc", "sing" + "tel", "scam" + "shield"]     # split, so this list is no hit itself
 TERMS = re.compile(r"\b(?:" + "|".join(OLD_NAMES) + r")\b|\bgiro\b|\bcpf\b|mdm chen|\bS\$\d|\bSGD\b", re.I)
 PENDING = set()
-ALLOWED = {"tests/test_identity.py", "app/agent/request_guard.py"}     # this list itself; a refusal that names other currencies
+ALLOWED = {"tests/test_identity.py", "app/agent/request_guard.py",     # this list itself; a refusal that names other currencies
+           # the optional Tencent Cloud speech recognition provider (ASR_PROVIDER), named because it is a vendor setting
+           "app/voice/asr.py", "app/config.py", "tests/test_asr_tencent.py", ".env.example"}
 SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".pdf", ".wav", ".webm"}
 
 

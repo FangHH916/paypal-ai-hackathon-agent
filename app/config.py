@@ -106,11 +106,15 @@ class Settings:
     allow_browser_key = _f("ALLOW_BROWSER_KEY", "1").lower() in ("1", "true", "yes")
     draft_ttl = int(_f("DRAFT_TTL", "600"))
 
-    # ---- Speech recognition. Default: the browser's own. Optional: any OpenAI-compatible /audio/transcriptions ----
-    asr_provider = _f("ASR_PROVIDER", "browser").lower()     # browser | openai_compat
-    asr_base_url = _f("ASR_BASE_URL", "")                    # empty = LLM_BASE_URL
-    asr_api_key = _f("ASR_API_KEY", "")                      # empty = LLM_API_KEY
-    asr_model = _f("ASR_MODEL", "")
+    # ---- Speech recognition. Default: the browser's own. Optional: any OpenAI-compatible /audio/transcriptions,
+    # or Tencent Cloud one-sentence recognition (SentenceRecognition) ----
+    asr_provider = _f("ASR_PROVIDER", "browser").lower()     # browser | openai_compat | tencent
+    asr_base_url = _f("ASR_BASE_URL", "")                    # empty = LLM_BASE_URL (openai_compat only)
+    asr_api_key = _f("ASR_API_KEY", "")                      # empty = LLM_API_KEY (openai_compat only)
+    asr_model = _f("ASR_MODEL", "")                          # tencent: the engine, empty = 16k_en
+    tencent_secret_id = _f("TENCENTCLOUD_SECRET_ID", "")
+    tencent_secret_key = _f("TENCENTCLOUD_SECRET_KEY", "")
+    tencent_asr_region = _f("TENCENTCLOUD_ASR_REGION", "")   # optional for ASR; empty = not sent
 
     # ---- Storage ----
     audit_path = Path(_f("AUDIT_PATH", str(ROOT / "data" / "audit.jsonl")))
@@ -124,7 +128,14 @@ class Settings:
 
     @property
     def asr_enabled(self) -> bool:
+        if self.asr_provider == "tencent":
+            return bool(self.tencent_secret_id and self.tencent_secret_key)
         return self.asr_provider == "openai_compat" and bool(self.asr_model) and bool(self.asr_base_url or self.llm_base_url)
+
+    @property
+    def asr_engine(self) -> str:
+        """What the UI and the audit trail name as the speech engine."""
+        return f"tencent:{self.asr_model or '16k_en'}" if self.asr_provider == "tencent" else self.asr_model
 
 
 settings = Settings()
