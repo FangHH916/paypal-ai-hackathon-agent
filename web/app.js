@@ -25,7 +25,10 @@ const state = {
 
 const NAV = [['home', 'Home', 'home'], ['star', 'Talk to Star', 'spark'], ['bills', 'Bills', 'bolt'], ['family', 'Family', 'family'], ['shop', 'Shop', 'cart'],
   ['activity', 'Activity & audit', 'audit'], ['settings', 'Settings', 'settings'], ['lab', 'Security lab', 'lab']];
-const NAV_FIRST = new Set(['home', 'star', 'bills', 'family']);     // a phone shows these and More
+const NAV_FIRST = new Set(['home', 'star', 'family', 'activity']);     // a phone shows these and More
+// One job, done well: sending money to family by voice. Bills and Shop still work (and are tested) but stay off the screen;
+// they can be reached at #/bills and #/shop.
+const OFF_SCREEN = new Set(['bills', 'shop']);
 const CARE_HIDES = new Set(['star', 'lab']);
 const KIND = {user:'You', thought:'Thought', action:'Action', observation:'Observe', rule:'Rule', guard:'Guard', judge:'Judge',
   state:'State', sign:'Sign', exec:'Execute', plan:'Plan', asr:'Speech', fallback:'Fallback', handoff:'Handoff', evidence:'Evidence', ui:'UI',
@@ -180,7 +183,7 @@ function renderBand(){ const b = $('#band'); if(b) b.innerHTML = bandHtml(); }
 function render(){
   document.body.classList.toggle('care', state.care);
   document.body.classList.toggle('large', state.large && !state.care);
-  const items = NAV.filter(([id]) => !(state.care && CARE_HIDES.has(id)));
+  const items = NAV.filter(([id]) => !OFF_SCREEN.has(id) && !(state.care && CARE_HIDES.has(id)));
   const navBtn = ([id, label, ic]) => `<button class="nav-btn" type="button" data-page="${id}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}<span class="nav-text">${label}</span></button>`;
   const extra = items.filter(([id]) => !NAV_FIRST.has(id));
   const navHtml = `${items.filter(([id]) => NAV_FIRST.has(id)).map(navBtn).join('')}
@@ -281,6 +284,7 @@ function attentionItems(){
   state.payments.filter(p => WAITING.has(p.state)).forEach(p => out.push(p.next_step?.type === 'redirect'
     ? {tone:'warn', ic:'transfer', text:`${p.amount} to ${p.to} is waiting for you on the approval page.`, act:'Continue', href:p.next_step.url, track:p.payment_id}
     : {tone:'warn', ic:'alert', text:`${p.amount} to ${p.to}: ${statusInfo(p.state, p.verified, mode()).word}.`, act:'Open Activity', page:'activity'}));
+  if(OFF_SCREEN.has('bills')) return out;
   d.invoices.filter(i => openInvoice(i) && !i.known_biller).forEach(i => out.push({tone:'bad', ic:'alert', text:`${i.amount} invoice from ${i.from}, someone you've never paid. Check it with Star before doing anything.`, act:"What's this?", say:`What's this bill?`}));
   d.invoices.filter(i => openInvoice(i) && i.known_biller).forEach(i => out.push({tone:'info', ic:'bolt', text:`${i.title}: ${i.amount}, due ${dueDate(i.due)}.`, act:'Pay with Star', say:`Pay the ${i.from} bill`}));
   return out;
@@ -408,7 +412,7 @@ function renderSafety(){
     row('idle', 'Checked against what you said', 'The person and the amount must come from your own words.'),
     live() ? row('idle', 'A second, independent check', 'A separate model re-reads only your words. If anything differs, the payment is frozen.')
       : row('idle', 'A second reading', 'Your words are read again on their own. Offline this uses the same rules that prepared the card, so read the card yourself. If anything differs, the payment is frozen.'),
-    row('idle', 'Safety rules', 'Limits, new people and sellers, odd prices, scam signs.'),
+    row('idle', 'Safety rules', 'Limits, new people, unusual amounts, scam signs.'),
     row('idle', 'Your device signs', 'Your device signs the exact payment. Only then can anything reach PayPal.'),
   ].join('');
   el.innerHTML = `<h2>Behind your request</h2><p class="muted small">${c ? esc(c.title) : 'What happens before any money moves'}</p>
@@ -460,11 +464,10 @@ function setTyping(on, focus = true){
 const clockNow = at => at ? new Date(at).toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}) : '';
 const msgSide = (m, name, i) => `<div class="msg-side"><span class="who">${name}</span>${m.at ? `<time>${esc(clockNow(m.at))}</time>` : ''}${i === undefined ? '' : `<button class="replay" type="button" data-i="${i}" aria-label="Read this aloud">${icon('speaker')}</button>`}</div>`;
 const SUGGEST = [
-  ['family', 'Send 50 to my daughter'], ['cart', 'Get me a blood pressure monitor'], ['bolt', 'Pay the Riverside Power bill'],
-  ['coin', 'Ask David to pay me back 20'], ['refresh', 'I want my money back'], ['audit', 'What have I paid recently?'],
+  ['family', 'Send 50 to my daughter'], ['family', 'Send 20 to my son'], ['audit', 'What have I paid recently?'],
   ['alert', 'The police say I must move my savings to a safe account', 'danger'],
 ];
-const SUGGEST_CARE = [['family', 'Send money to my daughter'], ['bolt', 'Pay my bills'], ['cart', 'Get me a blood pressure monitor'], ['refresh', 'I want my money back'], ['phone', 'Talk to a real person']];
+const SUGGEST_CARE = [['family', 'Send money to my daughter'], ['family', 'Send money to my son'], ['phone', 'Talk to a real person']];
 function whyHtml(reasons){ return reasons?.length ? `<ul class="why-list">${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''; }
 function stageHtml(m, i){
   if(m.role === 'user') return `<div class="msg user">${msgSide(m, 'You')}<div class="msg-body">${m.demo ? '<small class="demo-tag">Demo input</small>' : ''}${esc(m.text)}</div></div>`;

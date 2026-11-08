@@ -12,6 +12,9 @@ Mrs. Lee, 74, says what she needs in her own words. Star sends money to her fami
 handles bills that arrive as invoices (Invoicing), and gets her money back (Refunds, payout cancel). Her daughter Anna is her **family guardian**:
 she sees the activity, co-approves risky payments from her own device, and can freeze everything.
 
+**The demo focuses on one job: sending money to family by voice.** Its screens show only that path (with the scam stop and the safety
+test inside it); the Bills and Shop pages still work and are tested, but are kept off the navigation, at `#/bills` and `#/shop`.
+
 The rule behind it: **the model understands, code decides, the customer authorizes.**
 
 A typical payment agent hands the model tools such as `create_order` and `pay_order` and asks it to behave. Star assumes the model will be fooled. The model has

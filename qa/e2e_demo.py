@@ -79,7 +79,13 @@ def overflow(page: Page) -> int:
     return page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
 
 
+OFF_SCREEN = {"Bills": "bills", "Shop": "shop"}      # working pages kept off the navigation; reached by address
+
+
 def nav(page: Page, label: str) -> None:
+    if label in OFF_SCREEN:
+        page.evaluate(f"location.hash = '#/{OFF_SCREEN[label]}'")
+        return
     control = page.locator(".nav-btn", has_text=label)
     if not control.is_visible():                 # on a phone, the rest of the pages live under More
         page.locator("#nav-more").click()
@@ -637,12 +643,13 @@ def run(browser, base: str, args) -> None:
                 size = q.evaluate("parseFloat(getComputedStyle(document.querySelector('.nav-btn .nav-text')).fontSize)")
                 check("navigation text is at least 13px", size >= 13, size)
                 q.locator("#nav-more").click()
-                check("More shows the rest", all(q.locator(".nav-btn", has_text=t).is_visible() for t in ("Shop", "Activity", "Settings", "Security lab")))
+                check("More shows the rest", all(q.locator(".nav-btn", has_text=t).is_visible() for t in ("Settings", "Security lab")))
+                check("Bills and Shop are off the navigation", q.locator(".nav-btn", has_text="Bills").count() == 0 and q.locator(".nav-btn", has_text="Shop").count() == 0)
                 check("the lab is marked as being for judges", "for judges" in q.locator("#nav-extra").inner_text().lower())
                 q.locator(".nav-btn", has_text="Settings").click()
                 expect(q.locator(".page-head h1")).to_have_text("Settings")
                 check("More shows you are inside it", q.locator("#nav-more").get_attribute("aria-current") == "page")
-                check("More closes after choosing", not q.locator(".nav-btn", has_text="Shop").is_visible())
+                check("More closes after choosing", not q.locator(".nav-btn", has_text="Security lab").is_visible())
                 # The back button stays inside the app, and a reload stays on the page
                 nav(q, "Home")
                 nav(q, "Bills")
