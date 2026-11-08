@@ -1792,5 +1792,5 @@ $('#welcome-replay').addEventListener('click', playPlate);
   let entered = false; try{ entered = sessionStorage.getItem('entered') === '1'; }catch{}
   const q = new URLSearchParams(location.search);
   if(entered || q.get('pp_return') || q.get('pp_cancel') || store.get('tracking', null)){ welcome.hidden = true; enterApp(); }
-  else { playPlate(); stopField = particles(welcome.querySelector('.exhibit')); }
+  else { playPlate(); stopField = particles(welcome.querySelector('.exhibit'), {density:26000, max:55}); }
 })();

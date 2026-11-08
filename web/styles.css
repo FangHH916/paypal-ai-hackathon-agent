@@ -931,3 +931,60 @@ h1,.welcome h1,.hero h1{letter-spacing:-.035em;font-weight:500}
 }
 /* The particle field sits behind everything in its host and never takes a click from the page. */
 .particles{position:absolute;left:0;top:0;z-index:-1;pointer-events:none}
+
+/* Landing, minimal: one light, one glass panel, one headline. No grid, no scan, no filled blocks; the zero glows instead
+   of sitting on a slab. Colours come from the night palette, so every contrast pair holds. */
+.welcome{background:#05090f}
+.exhibit.engraved::before{display:none}
+.exhibit{position:relative;isolation:isolate}
+.exhibit::after{content:"";position:absolute;z-index:-2;pointer-events:none;left:50%;top:-30vh;width:min(1400px,160vw);height:90vh;transform:translateX(-50%);
+  background:radial-gradient(closest-side,rgba(111,227,255,.16),rgba(111,227,255,.05) 55%,transparent),radial-gradient(40% 50% at 70% 60%,rgba(140,120,255,.10),transparent 70%);filter:blur(20px)}
+.welcome-top{border-bottom:1px solid rgba(169,189,211,.08)}
+.welcome .mode-chip{border:1px solid rgba(169,189,211,.25);border-radius:999px;padding:.3em .9em;font-size:.95rem}
+.welcome h1{font-weight:600;letter-spacing:-.045em;margin-top:clamp(4px,2vh,28px)}
+.exhibit .welcome-cta{padding-block:clamp(14px,1.6vw,22px)}
+.exhibit .plate-scam{padding-block:clamp(10px,1.2vw,18px)}
+.welcome h1 .said-line{color:#6fe3ff;background:linear-gradient(100deg,#6fe3ff 0%,#c9f6ff 60%,#6fe3ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;text-shadow:none;filter:drop-shadow(0 0 28px rgba(111,227,255,.25))}
+.welcome-lead{color:var(--muted);max-width:40em}
+.welcome .mode-tag{border:1px solid currentColor;border-radius:999px;padding:.05em .6em;font-size:.8rem;letter-spacing:.08em;opacity:1}
+/* The ledger: one glass panel with hairlines */
+.exhibit .plate{border:1px solid rgba(111,227,255,.16);border-radius:18px;background:linear-gradient(180deg,rgba(19,32,58,.55),rgba(11,19,32,.45));-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  box-shadow:0 0 0 1px rgba(255,255,255,.02) inset,0 30px 80px -40px rgba(0,0,0,.9);overflow:hidden}
+.exhibit .plate::after{display:none}
+.exhibit .plate>li{border-left:1px solid rgba(169,189,211,.10)}
+.exhibit .plate>li:first-child{border-left:0;padding-left:clamp(14px,1.6vw,26px)}
+.exhibit .plate .k{text-transform:none;letter-spacing:.01em;font-weight:500;font-size:1rem}
+.exhibit .plate .fig{font-weight:500}
+.exhibit .plate .draft .fig{color:var(--muted)}
+.exhibit .plate .draft .fig::after{height:.05em;box-shadow:0 0 12px var(--accent)}
+.exhibit .plate .seal-stamp{font-size:.85rem;letter-spacing:.2em}
+.exhibit .plate .zero{background:radial-gradient(120% 120% at 0% 0%,rgba(255,148,120,.14),transparent 70%);color:var(--ink);--muted:#a9bdd3;--ink:#eaf4ff;--line:rgba(169,189,211,.10);box-shadow:none}
+.exhibit .plate .zero .num{color:var(--accent);font-weight:500;text-shadow:0 0 40px rgba(255,148,120,.45)}
+.exhibit .plate .zero small{color:var(--muted)}
+.exhibit .plate .zero .mode-tag{color:var(--warn)}
+/* The scam line: a quiet second row, no heavy rules */
+.exhibit .plate-scam{border-bottom:0;padding:clamp(14px,1.6vw,22px) clamp(14px,1.6vw,26px)}
+.exhibit .plate-scam .k{text-transform:none;letter-spacing:.01em;font-size:1rem}
+.exhibit .plate-scam q{color:var(--ink);font-weight:400}
+.exhibit .scam-seal{font-size:.85rem;letter-spacing:.2em}
+.scam-note{color:var(--muted)}
+/* Buttons: one lit pill, one ghost */
+.welcome .btn.big{border-radius:999px;padding-inline:1.6em}
+.welcome .btn.primary{background:linear-gradient(180deg,#9aedff,#6fe3ff);border-color:transparent;color:#00131b;box-shadow:0 0 0 1px rgba(111,227,255,.6),0 10px 40px -10px rgba(111,227,255,.6)}
+.welcome .btn.primary:hover:not(:disabled){background:#eaf4ff;color:#00131b;border-color:transparent;box-shadow:0 0 0 1px #eaf4ff,0 10px 50px -8px rgba(111,227,255,.8)}
+.welcome .btn.secondary{border:1px solid rgba(234,244,255,.35);background:rgba(255,255,255,.02)}
+.welcome .btn.secondary:hover:not(:disabled){background:rgba(234,244,255,.08);color:var(--ink);border-color:rgba(234,244,255,.7)}
+.welcome-links .text-btn{text-decoration-color:rgba(234,244,255,.35);text-underline-offset:.25em;color:var(--muted)}
+/* Below the fold: the same hairlines, no slabs */
+.welcome-scam{background:linear-gradient(180deg,transparent,rgba(19,32,58,.35),transparent)}
+.welcome-foot{border-top:1px solid rgba(169,189,211,.12)}
+.welcome .cheque.engraved::before{display:none}
+@media (max-width:900px){
+  .exhibit::after{top:-20vh;height:70vh}
+  .exhibit .plate{border-radius:14px}
+  .exhibit .plate>li{border-top:1px solid rgba(169,189,211,.10);padding-inline:14px}
+  .exhibit .plate .zero{margin:0;padding:12px 14px}
+  .exhibit .plate-scam{padding-inline:2px}
+  .welcome-actions{background:rgba(5,9,15,.88);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-top:1px solid rgba(169,189,211,.12)}
+}
+@media (forced-colors:active){.welcome h1 .said-line{-webkit-text-fill-color:CanvasText;filter:none}}
