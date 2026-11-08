@@ -184,11 +184,9 @@ def run(browser, base: str, args) -> None:
 
     def landing():
         page.goto(base + "/")
-        expect(page.locator("#welcome-title")).to_have_text("Star")
-        check("landing says it isn't affiliated", "not affiliated" in page.locator(".welcome-foot").inner_text())
+        expect(page.locator(".hero h1")).to_contain_text("Mrs. Lee")       # no landing: the app opens straight away
+        check("the app says it isn't affiliated", "not affiliated" in page.locator(".page-foot").inner_text())
         shot(page, "01-landing")
-        page.locator("#welcome-enter").click()
-        expect(page.locator(".hero h1")).to_contain_text("Mrs. Lee")
         expect(page.locator(".band-sim")).to_contain_text("SIMULATED")
         expect(page.locator("#last-pay")).to_contain_text("No payments yet")
         check("no horizontal overflow on Home", overflow(page) <= 0, overflow(page))
@@ -479,7 +477,7 @@ def run(browser, base: str, args) -> None:
         pp.goto(base + "/")
         shot(pp, "40-phone-landing")
         check("phone landing fits", overflow(pp) <= 0, overflow(pp))
-        pp.locator("#welcome-enter").click()
+        pp.locator(".sidebar").wait_for()
         expect(pp.locator(".hero h1")).to_be_visible()
         for label in ("Home", "Talk to Star", "Shop", "Bills", "Family", "Activity", "Security lab", "Settings"):
             nav(pp, label)
@@ -536,7 +534,7 @@ def run(browser, base: str, args) -> None:
         watch(dp, "dark")
         dp.goto(base + "/")
         shot(dp, "48-dark-landing")
-        dp.locator("#welcome-enter").click()
+        dp.locator(".sidebar").wait_for()
         expect(dp.locator(".hero h1")).to_be_visible()
         shot(dp, "49-dark-home")
         dp.locator(".nav-btn", has_text="Activity").click()
@@ -581,7 +579,7 @@ def run(browser, base: str, args) -> None:
         shot(page, "51-lost-reply")
         page.reload()
         expect(page.locator(".tracker").last).to_contain_text("Sent, verified")
-        check("a reload keeps the conversation and skips the landing", page.locator("#welcome").is_hidden())
+        check("a reload keeps the conversation", page.locator(".tracker").count() > 0)
         check("a reload pays nothing", writes() == before + 1)
 
     def misconfigured():
@@ -595,7 +593,7 @@ def run(browser, base: str, args) -> None:
             watch(q, "sandbox-without-keys")
             try:
                 q.goto(f"http://localhost:{port}/")
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 expect(q.locator(".band-bad")).to_contain_text("isn't set up")
                 check("no SIMULATED success in a misconfigured sandbox", q.locator(".band-sim").count() == 0)
                 shot(q, "52-sandbox-without-keys")
@@ -626,7 +624,7 @@ def run(browser, base: str, args) -> None:
                 q.goto(url + "/")
                 check("the landing page doesn't overclaim", "Built on the PayPal sandbox" not in q.locator("body").inner_text()
                       and "stop scams and mistakes" not in q.locator("body").inner_text())
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 expect(q.locator(".hero h1")).to_be_visible()
 
                 def rect(selector):
@@ -704,7 +702,7 @@ def run(browser, base: str, args) -> None:
                 c.clear_cookies()
                 q.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
                 q.goto(url + "/")
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 expect(q.locator(".hero h1")).to_be_visible()
                 # Waiting for family with nobody paired: say so and offer the way out
                 nav(q, "Talk to Star")
@@ -755,7 +753,7 @@ def run(browser, base: str, args) -> None:
                 requests.post(url + "/api/reset", json={"world": True}, timeout=5)
                 q.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
                 q.goto(url + "/")
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 nav(q, "Talk to Star")
                 expect(q.locator(".choice").first).to_be_visible()
                 q.locator("#care-toggle").click()
@@ -789,13 +787,9 @@ def run(browser, base: str, args) -> None:
             try:
                 def fits(label):
                     check(f"320: {label} has no sideways scroll", overflow(q) <= 0, overflow(q))
-                # The first frame already carries the facts, and the phone's first screen ends in the zero
                 q.goto(url + "/")
-                lead, cta = q.locator(".welcome-lead").bounding_box(), q.locator("#welcome-enter").bounding_box()
-                check("320x640: the name, the line and Start are on the first screen", lead["y"] < cta["y"] and cta["y"] + cta["height"] <= 640, (lead, cta))
-                fits("landing")
-                q.locator("#welcome-enter").click()
                 expect(q.locator(".hero h1")).to_be_visible()
+                fits("Home")
                 # Larger text from the browser
                 q.evaluate("document.documentElement.style.fontSize = '200%'")
                 time.sleep(0.3)
@@ -867,7 +861,7 @@ def run(browser, base: str, args) -> None:
                 url = f"http://localhost:{port}"
                 check("a shared server has no anonymous customer", requests.get(url + "/api/state", timeout=5).status_code == 404)
                 q.goto(url + "/")
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 expect(q.locator(".hero h1")).to_contain_text("Mrs. Lee")
                 sid = q.evaluate("JSON.parse(localStorage.getItem('sid'))")
                 user = requests.get(url + "/api/state", params={"session_id": sid}, timeout=5).status_code
@@ -893,7 +887,7 @@ def run(browser, base: str, args) -> None:
             watch(q, "rescore")
             try:
                 q.goto(url + "/")
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 expect(q.locator(".hero h1")).to_be_visible()
                 nav(q, "Talk to Star")
                 # A request while the easier-version invite is open is a request; the invite waits for its own answer
@@ -957,7 +951,7 @@ def run(browser, base: str, args) -> None:
             watch(q, "one-clock")
             try:
                 q.goto(f"http://localhost:{port}/")
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 expect(q.locator(".hero h1")).to_be_visible()
                 hello = q.locator(".hero h1").inner_text()
                 h = datetime.now(ZoneInfo(day_zone)).hour
@@ -987,7 +981,7 @@ def run(browser, base: str, args) -> None:
             watch(q, "polish")
             try:
                 q.goto(url + "/")
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 expect(q.locator(".hero h1")).to_be_visible()
                 nav(q, "Talk to Star")
                 q.locator(".choice", has_text="No, standard").click()
@@ -1020,7 +1014,7 @@ def run(browser, base: str, args) -> None:
             watch(g, "clear-guardian")
             try:
                 q.goto(url + "/")
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 expect(q.locator(".hero h1")).to_be_visible()
                 nav(q, "Family")
                 q.locator("#g-invite").click()
@@ -1100,7 +1094,7 @@ def run(browser, base: str, args) -> None:
                 watch(q, f"care-phone-{w}")
                 try:
                     q.goto(url + "/")
-                    q.locator("#welcome-enter").click()
+                    q.locator(".sidebar").wait_for()
                     expect(q.locator(".hero h1")).to_be_visible()
                     nav(q, "Talk to Star")
                     q.locator(".choice", has_text="Yes, make it easier").click()
@@ -1150,7 +1144,7 @@ def run(browser, base: str, args) -> None:
             q.on("console", lambda m: warnings.append(m.text[:200]) if m.type == "warning" and "AG Grid" in m.text else None)
             try:
                 q.goto(url + "/")
-                q.locator("#welcome-enter").click()
+                q.locator(".sidebar").wait_for()
                 expect(q.locator(".hero h1")).to_be_visible()
                 nav(q, "Talk to Star")
                 q.locator(".choice", has_text="No, standard").click()
@@ -1223,7 +1217,7 @@ def run(browser, base: str, args) -> None:
                     watch(q, f"toast-{w}")
                     try:
                         q.goto(url + "/")
-                        q.locator("#welcome-enter").click()
+                        q.locator(".sidebar").wait_for()
                         expect(q.locator(".hero h1")).to_be_visible()
                         q.locator("#care-toggle").click()
                         expect(q.locator("#toast.show")).to_contain_text("Care mode", timeout=5000)

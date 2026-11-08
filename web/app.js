@@ -1757,38 +1757,16 @@ async function afterEnter(){
   else offerCare();
 }
 
-// The landing screen is local only: no API, microphone or signing request before she enters.
-const welcome = $('#welcome'), enter = $('#welcome-enter');
-async function enterApp(){
-  if(enter.disabled) return;
-  enter.disabled = true; enter.setAttribute('aria-busy', 'true');
-  $('#welcome-status').textContent = 'Opening…';
-  try{
-    await init();
-    $('#app').hidden = false; welcome.hidden = true;
-    document.body.classList.remove('welcome-active');
-    stopField(); stopField = particles($('.sidebar'), {density:9000, max:40});
-    const skip = $('#skip'); skip.href = '#main'; skip.textContent = 'Skip to main content';
-    $('#main')?.focus({preventScroll:true});
-    try{ sessionStorage.setItem('entered', '1'); }catch{}
-    await afterEnter();
-  }catch(e){
-    welcome.hidden = false;
-    $('#welcome-status').textContent = 'Unable to connect to the demo. Please try again in a moment.';
-    enter.disabled = false; enter.removeAttribute('aria-busy');
-  }
-}
-enter.addEventListener('click', enterApp);
-// "Run this test yourself": the same fault, sent through the same pipeline, in her own chat. Nothing runs before the click.
-$('#welcome-test').addEventListener('click', async () => {
-  await enterApp();
-  if(welcome.hidden) send('Send 50 to my daughter', '/api/demo/model-mistake', false, false, true);
-});
+// No landing page: the app opens straight away. If the service isn't ready, one sentence and Try again.
 let stopField = () => {};
-(() => {
-  // Coming back from an approval page, or reloading: go straight in.
-  let entered = false; try{ entered = sessionStorage.getItem('entered') === '1'; }catch{}
-  const q = new URLSearchParams(location.search);
-  if(entered || q.get('pp_return') || q.get('pp_cancel') || store.get('tracking', null)){ welcome.hidden = true; enterApp(); }
-  else stopField = particles(welcome.querySelector('.exhibit'), {density:30000, max:45});
+(async () => {
+  try{ await init(); }
+  catch{
+    $('#app').innerHTML = `<div class="boot"><p role="status">Unable to connect to the demo. Please try again in a moment.</p>
+      <button class="btn primary" type="button" id="boot-retry">Try again</button></div>`;
+    $('#boot-retry').onclick = () => location.reload();
+    return;
+  }
+  stopField = particles($('.sidebar'), {density:9000, max:40});
+  await afterEnter();
 })();

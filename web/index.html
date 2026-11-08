@@ -12,27 +12,10 @@
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
 </head>
-<body class="welcome-active">
-  <a class="skip-link" href="#welcome-enter" id="skip">Skip to start</a>
-  <div class="welcome" id="welcome">
-    <header class="welcome-top">
-      <span class="mode-chip">Fictional demo</span>
-    </header>
-    <main class="exhibit">
-      <img class="welcome-mark" src="/logo.svg" alt="" width="72" height="72">
-      <h1 id="welcome-title">Star</h1>
-      <p class="welcome-lead">AI drafts the payment. Only she can sign it.</p>
-      <div class="welcome-actions">
-        <button class="btn primary big" id="welcome-enter" type="button">Start as Mrs. Lee</button>
-        <button class="btn secondary big" id="welcome-test" type="button">Run the safety test</button>
-      </div>
-      <p class="welcome-links"><a class="text-btn" href="/guardian">I'm family: guardian page</a></p>
-      <p class="welcome-status" id="welcome-status" role="status" aria-live="polite"></p>
-      <noscript><p>Please turn on JavaScript and refresh this page to use the demo.</p></noscript>
-    </main>
-    <footer class="welcome-foot">Mrs. Lee and her family are fictional. Designed for the PayPal sandbox; not affiliated with PayPal.</footer>
-  </div>
-  <div id="app" hidden></div>
+<body>
+  <a class="skip-link" href="#main" id="skip">Skip to main content</a>
+  <div id="app"><p class="boot" role="status">Opening Star…</p></div>
+  <noscript><p class="boot">Please turn on JavaScript and refresh this page to use the demo. Mrs. Lee and her family are fictional. Designed for the PayPal sandbox; not affiliated with PayPal.</p></noscript>
   <aside class="trace" id="trace" aria-label="Agent trace" aria-hidden="true">
     <header><h2>Agent trace</h2><button type="button" class="btn secondary small" id="trace-close">Close</button></header>
     <p class="muted small">Thought, action, observation, evidence, rules, signature, execution. Every step is also written to a hash-chained audit log.</p>

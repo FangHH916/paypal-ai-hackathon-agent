@@ -4,7 +4,7 @@
 
 Star is a hackathon project with a fictional family. Designed for the PayPal sandbox; not affiliated with PayPal.
 
-![The Star landing page](docs/images/landing.png)
+![Star's home screen](docs/images/landing.png)
 
 ## What it does
 

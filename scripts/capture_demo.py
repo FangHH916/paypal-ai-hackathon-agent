@@ -128,14 +128,10 @@ class Run:
 def demo(r: Run) -> None:
     page, gp = r.page, r.guardian
 
-    r.scene("Hook: landing")
+    r.scene("Hook: home")
     page.goto(r.base + "/")
-    expect(page.locator("#welcome-title")).to_have_text("Star")
-    time.sleep(2)
-    r.shot(page, "01-landing")
-    time.sleep(3)
-    page.locator("#welcome-enter").click()
     expect(page.locator(".hero h1")).to_contain_text("Mrs. Lee")
+    r.shot(page, "01-landing")
     time.sleep(1.5)
     r.nav("Talk to Star")
     page.locator(".choice", has_text="Yes, make it easier").click()      # Star asks once; the same switch is in Settings
