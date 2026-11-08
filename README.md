@@ -177,7 +177,8 @@ These steps follow PayPal's [REST getting-started](https://developer.paypal.com/
 
 1. Log in to the [developer dashboard](https://developer.paypal.com/dashboard/) (a free account works) and open **Apps & Credentials**, with the Sandbox toggle on.
 2. Use the **Default Application** or select **Create App**, then copy the client ID and secret. They belong to a sandbox business account, which plays the household: it sends payouts, is the merchant on orders and issues invoices.
-3. Open **Testing Tools > Sandbox Accounts**. New developer accounts have one business and one personal account. Create at least one more personal account, so that Mrs. Lee and her family are separate. **View/Edit Account** shows each email and password.
+   Star works in USD by default, so link the app to a **United States** business account (when you create the app you choose its sandbox business account). A default business account from another country may hold its balance in another currency.
+3. Open **Testing Tools > Sandbox Accounts**. New developer accounts have one business and one personal account. Create at least one more personal account, so that Mrs. Lee and her family are separate. **View/Edit Account** shows each email and password, and lets you give Mrs. Lee's account a USD balance so she can approve orders.
 4. Check that the REST app has the Payouts and Invoicing features switched on in its settings. We haven't verified what the dashboard shows here: if the check script reports a permission error, look here first.
 5. Run the check, with the secrets in your environment and never in a committed file:
 
@@ -205,7 +206,7 @@ Please record what you find in [docs/PAYPAL_NOTES.md](docs/PAYPAL_NOTES.md).
 ### Deploy on Render
 
 **New + > Blueprint**, and pick this repository. `render.yaml` runs the keyless simulator out of the box, as the service `star-family-payments`. Leave the prompted values empty for that.
-For the real sandbox, set `PAYPAL_MODE=sandbox` and the `PAYPAL_*` secrets in the dashboard; for AI, set the `LLM_*` values. Free instances sleep after about 15 idle minutes and lose their disk, so choose a paid plan for judging week.
+For the real sandbox, set `PAYPAL_MODE=sandbox` and the `PAYPAL_*` secrets under the service's **Environment** in the dashboard, then **Save, rebuild, and deploy**; `/api/health` then reports `"mode": "sandbox"`. `PAYPAL_MODE` is a dashboard value (empty means the simulator), so a Blueprint sync doesn't reset it. For AI, set the `LLM_*` values. Free instances sleep after about 15 idle minutes and lose their disk, so choose a paid plan for judging week.
 This blueprint is deployed at https://star-family-payments.onrender.com on the free plan, keyless. Free instances sleep when idle and reset their disk on restart, so the demo data starts fresh after a wake.
 
 The `Dockerfile` and `deploy/compose.yaml` cover other hosts. Neither has been built for this version: no Docker was available.

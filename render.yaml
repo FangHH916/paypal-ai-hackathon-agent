@@ -16,8 +16,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.4
-      - key: PAYPAL_MODE
-        value: simulator
+      - key: PAYPAL_MODE            # set in the dashboard: sandbox, or empty for the keyless simulator. Not a fixed
+        sync: false                 # value here, so a Blueprint sync never resets the dashboard's choice
       - key: PUBLIC_DEMO            # every browser gets its own demo customer; per-device rate limits
         value: "1"
       - key: SIGNING_SECRET
