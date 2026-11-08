@@ -25,9 +25,30 @@ checks all of it again before any PayPal request goes out. A fooled model produc
 | ![A fake invoice stopped, with 0 money-moving calls](docs/images/fake-invoice-stopped.png) | ![Anna's guardian page with a card waiting for her](docs/images/guardian-pending.png) |
 | A fake invoice with a hidden instruction: stopped by rules, 0 money-moving calls. | Anna sees the exact card on her own device. Her signature is bound to its digest. |
 
+## For judges
+
+Hosted demo: **https://star-family-payments-agob.onrender.com**, connected to an AI model and to the **real PayPal sandbox** (every PayPal status is tagged SANDBOX).
+It runs on Render's free plan: the first visit after a quiet spell can take about a minute to wake, and its own records reset after a restart (PayPal's sandbox keeps every transaction).
+
+PayPal sandbox test accounts (sandbox money only, not real accounts). Log in to them at **https://www.sandbox.paypal.com**, ideally in a private window:
+
+| Role | Email | Password | Use it to |
+| --- | --- | --- | --- |
+| Mrs. Lee, the buyer | `sb-hiclw53793433@personal.example.com` | `QZaw&,W3` | Approve purchases on PayPal's checkout page |
+| Anna Lee, the family | `sb-cnlf053772453-1@personal.example.com` | `12345678` | See the money Star sent arrive in her account |
+
+Three steps:
+
+1. Open the demo, press **Start as Mrs. Lee**, type `Send 50 to my daughter` and confirm with the simulated fingerprint. Star shows "Sent, verified" only after PayPal confirms it.
+   Then log in to the sandbox as **Anna**: the $50.00 payment is in her activity (the sandbox site can take a few minutes to show it; refresh the page).
+2. Type `Get me a blood pressure monitor` and confirm. Star takes you to PayPal's sandbox checkout: log in as **Mrs. Lee** and approve. Back in Star, the order is captured and verified.
+3. Type `I want my money back` to refund that purchase, or open **Security lab** to watch a model mistake and 31 attacks stopped with 0 money-moving PayPal calls.
+
+**Activity & audit** lists each payment with its PayPal reference, which matches the transaction in the sandbox account.
+
 ## Try it in 60 seconds, no keys
 
-Hosted demo: **https://star-family-payments.onrender.com** (Render free plan, keyless: the PayPal simulator and the offline rule engine, labelled SIMULATED on every screen). A free instance sleeps when idle, so the first visit can take about a minute to wake.
+You can also run it yourself, with no keys: the PayPal simulator and the offline rule engine, labelled SIMULATED on every screen.
 
 Locally, with Python 3.13 or 3.14:
 
@@ -207,7 +228,7 @@ Please record what you find in [docs/PAYPAL_NOTES.md](docs/PAYPAL_NOTES.md).
 
 **New + > Blueprint**, and pick this repository. `render.yaml` runs the keyless simulator out of the box, as the service `star-family-payments`. Leave the prompted values empty for that.
 For the real sandbox, set `PAYPAL_MODE=sandbox` and the `PAYPAL_*` secrets under the service's **Environment** in the dashboard, then **Save, rebuild, and deploy**; `/api/health` then reports `"mode": "sandbox"`. `PAYPAL_MODE` is a dashboard value (empty means the simulator), so a Blueprint sync doesn't reset it. For AI, set the `LLM_*` values. Free instances sleep after about 15 idle minutes and lose their disk, so choose a paid plan for judging week.
-This blueprint is deployed at https://star-family-payments.onrender.com on the free plan, keyless. Free instances sleep when idle and reset their disk on restart, so the demo data starts fresh after a wake.
+This blueprint is deployed at https://star-family-payments-agob.onrender.com on the free plan, with the PayPal sandbox and an AI model. Free instances sleep when idle and reset their disk on restart, so the demo data starts fresh after a wake.
 
 The `Dockerfile` and `deploy/compose.yaml` cover other hosts. Neither has been built for this version: no Docker was available.
 
