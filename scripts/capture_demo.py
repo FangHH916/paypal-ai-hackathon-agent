@@ -130,10 +130,10 @@ def demo(r: Run) -> None:
 
     r.scene("Hook: landing")
     page.goto(r.base + "/")
-    expect(page.locator("#welcome-title")).to_contain_text("She said $50")
-    time.sleep(3)                                   # the safety test plays out on the first screen
+    expect(page.locator("#welcome-title")).to_have_text("Star")
+    time.sleep(2)
     r.shot(page, "01-landing")
-    time.sleep(7)
+    time.sleep(3)
     page.locator("#welcome-enter").click()
     expect(page.locator(".hero h1")).to_contain_text("Mrs. Lee")
     time.sleep(1.5)

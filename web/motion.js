@@ -47,27 +47,6 @@ export function caughtFx(el){
   landZero(el.querySelector('.caught-zero b'), 420);
 }
 
-// The landing. Each beat plays when its own element comes into view, so a phone reader sees what a desktop reader sees.
-// Returns a function that cancels whatever is playing or still waiting.
-export function plateFx(root){
-  if(!root || calm()) return () => {};
-  const draft = root.querySelector('.plate .draft'), fig = draft.querySelector('.fig'), played = [];
-  const add = a => { if(a) played.push(a); };
-  const beats = new Map([
-    [fig, () => {
-      add(fig.animate([{transform:'scaleX(0)'}, {transform:'scaleX(1)'}], {duration:260, delay:80, easing:'cubic-bezier(.7,0,.3,1)', pseudoElement:'::after', fill:'backwards'}));
-      add(run(draft.querySelector('.seal-stamp'), STAMP(-8), {duration:260, delay:300, easing:DROP}));
-    }],
-    [root.querySelector('.plate .zero .num'), () => add(run(root.querySelector('.plate .zero .num'), [{transform:'translateY(.14em) scale(1.3)'}, {transform:'none'}], {duration:400, delay:460, easing:SLAM}))],
-    [root.querySelector('.scam-seal'), () => add(run(root.querySelector('.scam-seal'), STAMP(-4), {duration:260, delay:120, easing:DROP}))],
-  ]);
-  const seen = new IntersectionObserver(entries => entries.forEach(e => {
-    if(!e.isIntersecting) return;
-    seen.unobserve(e.target); beats.get(e.target)?.();
-  }), {threshold:.6});
-  beats.forEach((_, el) => el && seen.observe(el));
-  return () => { seen.disconnect(); played.forEach(a => { try{ a.cancel(); }catch{} }); };
-}
 
 // The dialog is printed up from the bottom of the page.
 export function cardIn(dialog){

@@ -4,7 +4,7 @@
 // No inline script or style anywhere, so the server's strict Content-Security-Policy applies.
 import {$, esc, store, api, download, money, clock, icon, ppBadge, modeTag, statusInfo, sourceWords, b64, deviceKeys, mockFingerprint, loadFailed} from '/common.js';
 import {mountGrid} from '/activity.js';
-import {pageIn, stopFx, verifiedFx, caughtFx, plateFx, cardIn, sealSvg, particles} from '/motion.js';
+import {pageIn, stopFx, verifiedFx, caughtFx, cardIn, sealSvg, particles} from '/motion.js';
 
 // Online demo (server PUBLIC_DEMO=1): this browser's own demo customer, so testers never see each other's payments,
 // resets or passkeys. Locally the server doesn't ask for it and everyone is the same Mrs. Lee.
@@ -1784,13 +1784,11 @@ $('#welcome-test').addEventListener('click', async () => {
   await enterApp();
   if(welcome.hidden) send('Send 50 to my daughter', '/api/demo/model-mistake', false, false, true);
 });
-let stopPlate = () => {}, stopField = () => {};
-const playPlate = () => { stopPlate(); stopPlate = plateFx(welcome); };
-$('#welcome-replay').addEventListener('click', playPlate);
+let stopField = () => {};
 (() => {
   // Coming back from an approval page, or reloading: go straight in.
   let entered = false; try{ entered = sessionStorage.getItem('entered') === '1'; }catch{}
   const q = new URLSearchParams(location.search);
   if(entered || q.get('pp_return') || q.get('pp_cancel') || store.get('tracking', null)){ welcome.hidden = true; enterApp(); }
-  else { playPlate(); stopField = particles(welcome.querySelector('.exhibit'), {density:26000, max:55}); }
+  else stopField = particles(welcome.querySelector('.exhibit'), {density:30000, max:45});
 })();

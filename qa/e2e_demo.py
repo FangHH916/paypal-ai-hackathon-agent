@@ -184,7 +184,7 @@ def run(browser, base: str, args) -> None:
 
     def landing():
         page.goto(base + "/")
-        expect(page.locator("#welcome-title")).to_contain_text("She said $50")
+        expect(page.locator("#welcome-title")).to_have_text("Star")
         check("landing says it isn't affiliated", "not affiliated" in page.locator(".welcome-foot").inner_text())
         shot(page, "01-landing")
         page.locator("#welcome-enter").click()
@@ -791,12 +791,8 @@ def run(browser, base: str, args) -> None:
                     check(f"320: {label} has no sideways scroll", overflow(q) <= 0, overflow(q))
                 # The first frame already carries the facts, and the phone's first screen ends in the zero
                 q.goto(url + "/")
-                state = q.evaluate("""() => { const z = getComputedStyle(document.querySelector('.plate .zero')), l = getComputedStyle(document.querySelector('.said-line'));
-                  return [z.clipPath, z.opacity, l.opacity]; }""")
-                check("the landing's facts are readable from the first frame", state == ["none", "1", "1"], state)
-                zero, cta = q.locator(".plate .zero").bounding_box(), q.locator(".welcome-actions").bounding_box()
-                check("320x640: the zero is on the first screen, above the buttons", zero["y"] + zero["height"] <= cta["y"], (zero, cta))
-                check("320x640: SIMULATED is on the first screen", q.locator(".plate .zero .mode-tag").bounding_box()["y"] < cta["y"])
+                lead, cta = q.locator(".welcome-lead").bounding_box(), q.locator("#welcome-enter").bounding_box()
+                check("320x640: the name, the line and Start are on the first screen", lead["y"] < cta["y"] and cta["y"] + cta["height"] <= 640, (lead, cta))
                 fits("landing")
                 q.locator("#welcome-enter").click()
                 expect(q.locator(".hero h1")).to_be_visible()
@@ -1138,31 +1134,6 @@ def run(browser, base: str, args) -> None:
             server.wait(10)
 
 
-    def landing_stamp():
-        """The FROZEN stamp on the landing ledger must not cover any words, at any width."""
-        c = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
-        q = c.new_page()
-        watch(q, "stamp")
-        try:
-            q.goto(base + "/")
-            expect(q.locator(".plate .seal-stamp")).to_be_visible()
-            for w in (320, 390, 600, 768, 900, 1024, 1180, 1280, 1366, 1440, 1920):
-                q.set_viewport_size({"width": w, "height": 900})
-                time.sleep(0.25)
-                hits = q.evaluate("""() => { const s = document.querySelector('.plate .seal-stamp').getBoundingClientRect();
-                  const words = [...document.querySelectorAll('.plate .k, .plate .fig, .plate .quote, .plate small, .plate b, .plate .num, .welcome-lead, .plate-scam > *')]
-                    .filter(e => e.getClientRects().length && getComputedStyle(e).clipPath === 'none');
-                  const lines = e => { const g = document.createRange(); g.selectNodeContents(e); return [...g.getClientRects()]; };
-                  return words.filter(e => lines(e).some(r =>
-                    r.width > 1 && r.left < s.right - 1 && s.left < r.right - 1 && r.top < s.bottom - 1 && s.top < r.bottom - 1))
-                    .map(e => e.textContent.trim().slice(0, 30)); }""")
-                check(f"landing {w}: the FROZEN stamp covers no words", not hits, hits)
-                if w in (320, 390, 1440):
-                    shot(q, f"82-landing-stamp-{w}")
-        finally:
-            c.close()
-
-
     def activity_words():
         """Activity: the totals' labels are whole at every width, the audit list is all plain words, and the grid loads
         without a console warning. Own server."""
@@ -1292,7 +1263,7 @@ def run(browser, base: str, args) -> None:
                      ("Review fixes on a phone", review_fixes), ("Narrow, large text, no network", narrow_and_failing), ("Public demo", public_demo),
                      ("Rescore fixes on a phone", rescore_fixes), ("Rescore: one clock", one_clock),
                      ("Rescore: polish", polish_fixes), ("Rescore: guardian clears a scam alert", guardian_clears),
-                     ("Rescore: Care on a phone", care_phone_layout), ("Rescore: landing stamp", landing_stamp),
+                     ("Rescore: Care on a phone", care_phone_layout),
                      ("Rescore: activity words", activity_words), ("Rescore: toasts", toasts_clear)]:
         if not args.only or args.only.lower() in name.lower():
             step(name, page, fn)
