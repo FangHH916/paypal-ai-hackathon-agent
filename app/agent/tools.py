@@ -180,7 +180,7 @@ class ToolGateway:
         # Judge THIS request: the words of the current task, not earlier finished payments (their scam signs, if any,
         # already raised the session's level, which never goes down)
         utterances = s.task_utterances() or [m["content"] for m in s.messages if m["role"] == "user"][-1:]
-        level, reasons, _ = fraud.scan(" ".join(utterances[-6:]))
+        level, reasons, _ = fraud.scan(fraud.TURN_BREAK.join(utterances[-6:]))
         s.escalate_scam(prot.cap_scam(level, level_p), reasons)
         if self.judge:
             j_level, j_reasons, raw = self.judge(utterances, summary)

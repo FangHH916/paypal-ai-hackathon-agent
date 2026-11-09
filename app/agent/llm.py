@@ -124,7 +124,7 @@ _BILL_KIND = re.compile(r"\b(property tax(?:es)?|tax(?:es)?|phone|telephone|mobi
 
 
 def detect_intent(text: str) -> str:
-    if re.search(r"\bhow much did I (?:send|pay|transfer)\b", text, re.I) and not re.search(r"\b(?:same again|usual amount)\b", text, re.I):
+    if re.search(r"\bhow much (?:did|have) I (?:send|sent|pay|paid|transfer|transferred|spend|spent)\b", text, re.I) and not re.search(r"\b(?:same again|usual amount)\b", text, re.I):
         return "spending"
     if _has("handoff", text):
         return "handoff"
@@ -176,7 +176,7 @@ class OfflineLLM:
              model: str | None = None) -> dict:
         if json_mode:   # scam assessment: use keyword rules when offline
             payload = json.loads(messages[-1]["content"])
-            level, reasons, _ = fraud.scan(" ".join(payload.get("user_utterances", [])))
+            level, reasons, _ = fraud.scan(fraud.TURN_BREAK.join(payload.get("user_utterances", [])))
             return {"role": "assistant", "content": json.dumps({"level": level.value, "reasons": reasons},
                                                                 ensure_ascii=False), "tool_calls": []}
         allowed = {t["function"]["name"] for t in tools or []}
@@ -413,8 +413,8 @@ class OfflineLLM:
                                                           f"amount {amount:g}; draft the transfer.")
             return self._draft_done(results["draft_transfer"])
 
-        return self._say("I can send money to your family, buy what you need from sellers I've checked, pay your bills, get "
-                         "your money back, or ask someone to pay you. What would you like to do?")
+        return self._say("I can send money to your family. Tell me who and how much, for example \"Send 50 to my daughter\". "
+                         "You'll check the card and sign it before anything is sent.")
 
     # ------------------------------------------------------------------ helpers
     def _invoice_query(self, text: str, results: dict) -> dict:

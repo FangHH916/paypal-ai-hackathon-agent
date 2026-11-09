@@ -33,7 +33,7 @@ class VoiceStore:
             path = self.folder / f"{sha}.wav"
             if not path.exists():
                 path.write_bytes(wav)
-            self._prune()
+            self._prune(keep=path)
         return sha
 
     def path(self, sha: str) -> Path | None:
@@ -42,8 +42,11 @@ class VoiceStore:
         p = self.folder / f"{sha}.wav"
         return p if p.exists() else None
 
-    def _prune(self) -> None:
-        files = sorted(self.folder.glob("*.wav"), key=lambda p: p.stat().st_mtime)
+    def _prune(self, keep: Path | None = None) -> None:
+        # Oldest first; the clip just saved is never the one removed, even when several share a timestamp.
+        files = sorted((p for p in self.folder.glob("*.wav") if p != keep), key=lambda p: p.stat().st_mtime_ns)
+        if keep is not None and keep.exists():
+            files.append(keep)
         total = sum(p.stat().st_size for p in files)
         while files and (len(files) > MAX_FILES or total > MAX_BYTES):
             old = files.pop(0)

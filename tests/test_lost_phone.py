@@ -44,12 +44,29 @@ class TestLostPhoneAsksFirst(Base):
                 self.assertTrue(self.frozen(), r.reply)
                 self.assertIn("frozen", r.reply.lower())
 
-    def test_no_does_not_freeze_and_sends_nothing(self):
+    def test_no_does_not_freeze_and_carries_on_with_the_card_she_asked_for(self):
+        # Changed on Nov 9: a "no" used to drop the payment in the same sentence, so she had to say it again. It now
+        # becomes the card she asked for. Nothing is sent: her device still has to sign it.
         self.turn("I lost my phone, can you send 20 to my son")
+        r = self.turn("No")
+        self.assertFalse(self.frozen())
+        self.assertIn("haven't frozen", r.reply)
+        self.assertEqual(r.ui["type"], "confirm", r.reply)
+        self.assertEqual(self.s.current_draft.amount_cents, 2000)
+        self.assertEqual(self.wallet.payments_for(self.s.user_id), [])      # a card only: nothing was sent
+
+    def test_no_after_a_lost_phone_alone_sends_nothing(self):
+        self.turn("I lost my phone")
         r = self.turn("No")
         self.assertFalse(self.frozen())
         self.assertIsNone(self.s.current_draft_id)
         self.assertIn("not", r.reply.lower())
+
+    def test_the_carried_on_card_is_not_asked_about_again(self):
+        self.turn("I can't find my phone anywhere, send 30 to Anna")
+        r = self.turn("no")
+        self.assertNotIn("freeze all payments", r.reply)
+        self.assertEqual(r.ui["type"], "confirm", r.reply)
 
     def test_something_else_is_a_new_request(self):
         self.turn("My phone was stolen yesterday")

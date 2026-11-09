@@ -72,6 +72,8 @@ class Session:
     care_offer_pending: bool = False                         # Star just asked "would you like the easier version?"
     timezone: str = ""                                       # her browser's IANA zone (validated): her clock for the night rule
     freeze_offer_pending: bool = False                      # Star asked "shall I freeze payments?" after a lost phone
+    freeze_offer_rest: str = ""                             # the sentence that came with it, carried on after a no
+    lost_asked: str = ""                                    # that sentence while it is carried on: not asked about twice
     care_changed: bool | None = None                         # set this turn (by the user's answer or set_care_mode)
     amount_hint: tuple | None = None                         # (cents, "half of $200.00") this turn
     last_offers: list[dict] = field(default_factory=list)    # what search_catalogue checked this turn (shown on the card)

@@ -11,6 +11,10 @@ import re
 
 from app.models import RiskLevel
 
+# Joins her separate messages for a scan. Rules that read a script told over several messages still match across it
+# (it is whitespace to \s and matches .); a rule that must stay inside one sentence excludes it.
+TURN_BREAK = " \u2029 "
+
 _GC_DEBT = r"(?:\b(?:the|my|his|her|their|this|that|traffic|parking|court) fine\b|\bpay (?:a )?fine\b|\bbail\b|\btax(?:es)?\b|\bwarrant\b|\bdebt\b|\bpenalty\b|\b(?:traffic|parking|speeding) ticket\b)"
 
 # A prize or inheritance that is said to be hers (or the caller's "you")
@@ -154,8 +158,13 @@ PATTERNS = [
      "Someone claiming to be the police, government or bank and asking you to send money is the most common scam."),
     ("freeze", 2, r"arrest|(account|money|funds?) (is |are |was |will be |has been )?(frozen|suspended)|money laundering|investigat|suspect|warrant",
      "Saying your account will be frozen or that you're involved in a crime is a common scare tactic."),
-    ("tech_support", 3, r"tech(nical)? support|microsoft (called|said|technician)|(virus|hacked) .{0,40}(computer|laptop|phone)|"
-                        r"(computer|laptop|phone) .{0,30}(virus|hacked|infected)",
+    # A virus is the scam only when someone else claims it (a caller, a pop-up, a technician) or money is wanted to fix it.
+    # "My computer has a virus, can my son fix it?" is her own problem, not a script.
+    ("tech_support", 3, r"tech(nical)? support|(microsoft|apple|windows) (called|said|says|technician|support)|"
+                        r"\b(?:called|phoned|rang|pop-?up|warning|message|alert|technician|caller|stranger|someone|somebody|"
+                        r"(?:a|the|this) (?:man|woman|guy|lady))\b[^.?!\n\u2029]{0,60}\b(?:virus|viruses|hacked|infected|malware)\b|"
+                        r"\b(?:virus|viruses|hacked|infected|malware)\b[^.?!\n\u2029]{0,60}"
+                        r"\b(?:costs?|fee|charges?|wants?|needs?|pay|send|\$\s?\d+|\d{2,}(?:\s*dollars)?)\b",
      "Someone calling about a virus on your computer and asking for money is a well-known tech support scam."),
     ("grandchild", 3, r"(grandson|granddaughter|grandchild|grandkid).{0,60}(jail|bail|arrested|lawyer|accident|hospital)|"
                       r"(jail|bail|arrested|lawyer).{0,60}(grandson|granddaughter|grandchild|grandkid)|\bbail money\b",

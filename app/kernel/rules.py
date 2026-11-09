@@ -16,7 +16,7 @@ from app.kernel import contract, protection as prot, trust
 from app.models import Draft, RiskDecision, RiskLevel, fmt_money
 from app.wallet.ledger import Wallet
 
-RULESET_VERSION = "rules-2026.11.02-v9"
+RULESET_VERSION = "rules-2026.11.09-v10"
 DUPLICATE_WINDOW = 600
 OUTGOING = ("transfer", "bill", "purchase")
 

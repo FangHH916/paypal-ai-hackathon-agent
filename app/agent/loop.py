@@ -118,6 +118,7 @@ def her_lost_device(text: str):
 LOST_PHONE_ASK = ("I'm sorry about your {what}. Would you like me to freeze all payments now, so nobody else can send your money? "
                   "Nothing has been sent. Please say yes or no.")
 FREEZE_DONE = "Done. All payments are frozen. Nothing can be sent until you and your family lift the freeze."
+FREEZE_KEPT = "OK, I haven't frozen anything."
 FREEZE_DECLINED = "OK, I haven't frozen anything, and nothing has been sent. If you'd still like to pay someone, tell me who and how much."
 
 _KIN = (r"(family|daughter|son|grandson|granddaughter|grandchildren|kids|children|husband|wife|sister|brother|niece|nephew|"
@@ -276,7 +277,16 @@ class Agent:
         # Star asked "shall I freeze all payments?" after a lost phone: only a plain yes / no answers it
         if s.freeze_offer_pending:
             s.freeze_offer_pending = False
+            rest, s.freeze_offer_rest = s.freeze_offer_rest, ""
             answer = plain_yes_no(text)
+            if answer is False and rest:
+                # "I lost my phone, can you send 20 to my son" + "no": don't freeze, and carry on with the 20. It is only a card;
+                # her device still signs it. The lost-phone question isn't asked again for the same sentence.
+                s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": FREEZE_KEPT}])
+                s.add_trace("guard", "She said no to freezing: nothing frozen, carrying on with the payment she asked for")
+                s.lost_asked = rest
+                r = self.run_turn(s, rest)
+                return TurnResult(f"{FREEZE_KEPT} {r.reply}", r.ui, f"{FREEZE_KEPT} {r.speak}", s.trace[start:], r.llm)
             if answer is not None:
                 if answer:
                     self.gateway.call(s, "freeze_payments", {"reason": "Her phone or wallet is lost or stolen; she said yes to freezing"})
@@ -414,11 +424,13 @@ class Agent:
 
         # A lost or stolen phone / wallet: offer the freeze once, and don't act on anything else in the same sentence
         # ("I lost my phone, can you send 20 to my son"). "Freeze my payments" said outright still freezes at once.
-        lost = her_lost_device(text)
+        lost = her_lost_device(text) if s.lost_asked != text else None
+        s.lost_asked = ""
         if lost and detect_intent(text) != "freeze":
             what = next((w for w in ("wallet", "purse", "handbag", "tablet", "ipad") if w in lost.group(0).lower()), "phone")
             reply = LOST_PHONE_ASK.format(what=what)
             s.freeze_offer_pending = True
+            s.freeze_offer_rest = text if detect_intent(text) in ("transfer", "bill_pay", "purchase") else ""
             s.messages.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
             s.start_task()
             s.add_trace("guard", "Lost or stolen device: asked before freezing, and nothing else in the sentence was acted on")
