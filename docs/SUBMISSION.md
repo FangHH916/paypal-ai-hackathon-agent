@@ -1,62 +1,108 @@
 # Star — Devpost submission draft
 
-Replace every `[TEAM: ...]` before submitting. Local simulator footage is labelled SIMULATED and uses offline rules. It does not establish real PayPal sandbox or online AI operation.
+Replace every `[TEAM: ...]` before submitting. Say only what was seen: a sandbox payout to Anna's sandbox account was
+seen arriving on the hosted demo on Nov 9, 2026 ("Sent, verified" after a PayPal status check, about 21 seconds after
+signing). Local simulator footage is labelled SIMULATED and proves nothing about the sandbox.
 
 ## Project name
 
-Star — voice payments with a family safety check
+Star — the AI can draft the payment. Only she can sign it.
 
 ## Tagline
 
-Say what you need. Check the payment. Let family help when something looks wrong.
+Voice payments to family for older adults, where a fooled AI still can't move a cent.
 
 ## Inspiration
 
-An older adult should be able to ask for a payment in ordinary words without handing an AI unrestricted authority over money. A scammer can persuade a person, and can put instructions inside a merchant listing or invoice. We built Star around that problem: the model can be mistaken, so the payment path must check more than its answer.
+Older adults lose more to fraud than any other group, and the scripts are the same every time: the police, the bank,
+a grandchild in trouble, a virus on the computer. `[TEAM: one sourced figure, e.g. FBI IC3 Elder Fraud Report, with year]`.
+Meanwhile payment agents are arriving that hand a language model tools such as `pay_order` and ask it to behave. A
+model can be talked into things, exactly like a person can. We wanted the convenience of saying "send 50 to my
+daughter" without giving the model, or anyone talking to her, a way to move her money.
 
 ## What it does
 
-Mrs. Lee is a fictional customer. She can send money to family through Payouts, choose a product through Orders, check an invoice, request repayment and refund a purchase. Star builds a plain-language card from fixed data and asks her device to sign it. New recipients and other risky payments also need her daughter Anna's signature on the same card. A family guardian can refuse or freeze payments.
+Star does one job: it sends money to her family when she asks in her own words, through PayPal Payouts.
 
-The demonstration has three main moments: a purchase chosen from checked offers, a fake support invoice stopped before a payment call, and a new-person payment waiting for Anna on another device. Activity & audit combines payment states and stops in an AG Grid table. It can filter, export, open a timeline and download a receipt whose digest and device signature can be verified offline.
+1. Mrs. Lee (fictional, 74) says "Send 50 to my daughter". The model understands it and drafts a card. It has no tool
+   that moves money.
+2. Fixed rules check the draft against her own words: the person, the amount, someone new, limits, the time of night
+   and the classic scam scripts. "The police say I must move my savings to a safe account" is stopped before any
+   model sees it, with the fraud hotline, and 0 money-moving PayPal calls.
+3. Her device signs the exact card she sees. Change one character and the signature no longer fits.
+4. A separate gateway checks the signature again and calls PayPal Payouts, with the request id derived from the card.
+5. "Sent, verified" appears only from a signature-checked PayPal webhook or a PayPal status check. A lost reply is
+   reconciled, never retried with a new key.
+
+Her daughter Anna is her family guardian: on her own phone she approves a first payment to someone new, refuses one,
+or freezes everything at once. Lifting a freeze needs both of them.
+
+The **Dashboard**, built with AG Studio, is the family's view: what she sent and to whom, whether PayPal confirmed each
+payment and how, what Star stopped and which check stopped it. A custom widget, Safety path, shows every step a
+request takes with live counts, and the stops branching off with their 0 PayPal calls. The AI assistant answers
+questions about it and builds widgets ("Who got the most?").
 
 ## How we built it
 
-Python and Starlette serve a small JavaScript application. An OpenAI-compatible client handles natural-language interpretation and read tools; a separate verifier extracts the customer's intent without seeing the draft. Fixed rules compare them and build the confirmation card. The execution gateway rechecks the signature, expiry, replay protection, allowance and guardian approval before calling PayPal.
-
-PayPal is central: Payouts, Orders v2, capture refunds, Invoicing, disputes, transaction search and signature-verified webhooks. A record is saved before a request; keys derive from the signed card. Unknown responses are reconciled with the same keys. Status, amount and currency must match before success appears. Webhook deduplication and state changes persist together.
-
-The keyless simulator runs the same client through an in-process transport adapter. It does not contact PayPal. Sandbox mode requires credentials and never silently falls back. Live money is unsupported.
+- **PayPal:** Payouts (create, batch and item status, unclaimed-item cancel), signature-verified webhooks
+  (`/v1/notifications/verify-webhook-signature`), OAuth client credentials, idempotent request ids, reconciliation of
+  unknown outcomes. Orders, captures, refunds and Invoicing are implemented and tested too, but kept off the screen so
+  the demo does one thing well. A Postman collection (`postman/`) replays the transfer path against the sandbox and
+  shows Star refusing an unsigned card.
+- **AI:** an OpenAI-compatible model with function calling drafts cards and answers questions; a second, independent
+  reading of her words can freeze a draft; a separate scam assessment can only make things stricter. Offline rules
+  run the same pipeline without a model and say so on screen.
+- **Device signatures:** Web Crypto keys, or real passkeys (Touch ID, Face ID, Windows Hello), sign the card's digest.
+- **AG Studio:** a React + TypeScript dashboard with three tables, a calendar, a currency format, a measure, a theme
+  from the app's own colour tokens, a custom widget, and the Studio Agent Framework on Star's model through a
+  Chat Completions adapter we wrote and a capped server proxy.
+- **Stack:** Python, Starlette, vanilla JavaScript, SQLite, AG Grid, AG Studio, Vite, Playwright; deployed on Render.
 
 ## Challenges
 
-Timeouts are harder than errors: a request can succeed while its reply is lost. Treating that as failure invites a duplicate payment. We kept unknown outcomes visible, reserved the allowance and reconciled before another attempt. Separately, a guardian approval must be tied to exactly the payment the customer sees, rather than to a general permission to spend.
+- A payment request can succeed while its reply is lost. Treating that as a failure invites a second payment, so an
+  unknown outcome stays visible, keeps its allowance reserved and is reconciled with the same request id.
+- AG Studio writes inline styles whose values change with the data, while Star's page allows none. We run the
+  dashboard in a same-origin frame with a policy of its own, so the app keeps its strict CSP.
+- Our model speaks Chat Completions; AG Studio's example adapter speaks the Responses API. We wrote the adapter.
 
 ## Accomplishments
 
-The local demonstration covers signed transfers, purchase approval and capture, refunds, two-device guardian decisions and blocked invoice instructions. Automated tests exercise HTTP contract shapes, wrong signatures, wrong amounts and currencies, replay, restart and lost replies. Real-browser checks cover desktop, phone widths, Care mode, keyboard use, CSV export and receipt verification. Exact results are recorded in `docs/VERIFICATION.md`.
+- A real sandbox payout from a spoken sentence, signed on the device and confirmed by PayPal, on the hosted demo.
+- A planted 10x model bug ($500 drafted for her $50) is frozen by code and never reaches a card she can sign.
+- `[TEAM: copy the current counts from docs/VERIFICATION.md: unit tests, browser checks, eval cases]`.
 
 ## What we learned
 
-A reassuring model response is weak evidence for a financial action. A useful interface must also make uncertainty clear: “processing” and “unknown” cannot look like either success or a failed payment that is safe to retry.
+A reassuring model answer is weak evidence for moving money. The safe design is not a smarter model but a path where
+the model's mistakes have nowhere to go, and where "processing" and "unknown" never look like success or like a
+failure that is safe to retry.
 
 ## What's next
 
-Run every documented path against actual sandbox accounts and an online model, resolve provider differences, and test with older adults. A production service would also need customer account permissions, external security review, reliable off-page family notifications and operational support.
+Test with older adults and their families; real notifications to the guardian; more languages; an external security
+review before any live money.
 
 ## Built with
 
-Python, Starlette, JavaScript, Web Crypto, WebAuthn, SQLite, requests, PayPal REST APIs, AG Grid Community, Playwright. Render blueprint supplied; deployment not yet verified.
+python, starlette, javascript, typescript, react, paypal-payouts, paypal-webhooks, paypal-rest-api, ag-studio,
+ag-grid, webauthn, web-crypto, sqlite, vite, playwright, render, postman
 
 ## AI and sponsor tools
 
-Claude Code and OpenAI Codex assisted with code, tests, review and materials under the team's direction. Runtime AI uses the configured OpenAI-compatible model. `[TEAM: name the model actually tested, its provider, and the test date]`. Offline rules are not an AI model. AG Grid Community powers the Activity & audit table. `[TEAM: disclose any other tools actually used]`.
+Claude Code and OpenAI Codex assisted with code, tests, review and materials under the team's direction. Runtime AI:
+`[TEAM: the model behind LLM_MODEL on the hosted demo, its provider, and the date it was tested]`. Offline rules are
+not an AI model. Sponsor tools: PayPal (Payouts, webhooks), AG Studio and AG Grid (Dashboard, Activity), Render
+(hosting), Postman (collection in `postman/`).
 
 ## Links and testing instructions
 
-- Source: https://github.com/FangHH916/paypal-ai-hackathon-agent — must be public with a confirmed open-source licence at submission.
-- Demo: https://star-family-payments-agob.onrender.com (PayPal sandbox and an AI model; the first visit may take about a minute to wake). The sandbox test accounts and three test steps are under "For judges" in the README. Local run instructions are in the README.
+- Source: https://github.com/FangHH916/paypal-ai-hackathon-agent (must be public, MIT licence on the front page).
+- Demo: https://star-family-payments-agob.onrender.com (PayPal sandbox and an AI model). Steps for judges, with the
+  sandbox test accounts, are under "For judges" in the README.
 - Video: `[TEAM: public YouTube URL, under three minutes]`.
 - Team and rights: `[TEAM: confirm every contributor's permission and the earlier contest's reuse terms]`.
 
-The project began as an earlier team voice-agent prototype. The PayPal rail, family-commerce product, current interface and AG Grid experience were built during this submission period. The README lists the retained components and substantive changes. No user adoption, fraud reduction or prize claim is made.
+The project began as an earlier team voice-agent prototype. The PayPal rail, the family product, the interface, the
+Dashboard and the AG Grid work were built during this submission period; the README lists what was kept and what
+changed. No user adoption, fraud reduction or prize claim is made.
