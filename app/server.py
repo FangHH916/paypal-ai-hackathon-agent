@@ -33,7 +33,7 @@ from app.kernel.state import UnknownSession, valid_visitor
 from app.models import fmt_money
 from app.paypal import calls as paypal_calls
 from app.paypal.errors import PayPalConfigError, PayPalError, PayPalUnknown
-from app.security import SecurityMiddleware, grid_csp
+from app.security import DASHBOARD_CSP, SecurityMiddleware, grid_csp
 from app.voice import asr
 from app.wallet import catalogue, payments
 from app.wallet.guardian import GuardianError
@@ -126,6 +126,13 @@ async def index(request: Request):
     return _page("index.html")
 
 
+async def dashboard_frame(_: Request):
+    """The Dashboard's own frame (see DASHBOARD_CSP): framed only by this origin."""
+    html = (ROOT / "web" / "dashboard.html").read_bytes()
+    return Response(html, media_type="text/html; charset=utf-8",
+                    headers={"content-security-policy": DASHBOARD_CSP, "x-frame-options": "SAMEORIGIN"})
+
+
 async def guardian_page(_: Request):
     return _page("guardian.html") if (ROOT / "web" / "guardian.html").exists() else _err("Not found.", "NOT_FOUND", 404)
 
@@ -139,9 +146,10 @@ STATIC = {"/styles.css": ("styles.css", "text/css"), "/app.js": ("app.js", "text
           "/fonts/gloock-latin.woff2": ("fonts/gloock-latin.woff2", "font/woff2"),
           "/fonts/atkinson-next-latin.woff2": ("fonts/atkinson-next-latin.woff2", "font/woff2"),
           "/fonts/atkinson-mono-latin.woff2": ("fonts/atkinson-mono-latin.woff2", "font/woff2"),
-          "/vendor/ag-grid/ag-grid-community.min.js": ("vendor/ag-grid/ag-grid-community.min.js", "text/javascript")}
+          "/vendor/ag-grid/ag-grid-community.min.js": ("vendor/ag-grid/ag-grid-community.min.js", "text/javascript"),
+          "/dashboard/star-dashboard.js": ("dashboard/star-dashboard.js", "text/javascript")}
 # Heavy or binary: otherwise no-store downloads them on every visit
-_CACHED = {"/vendor/ag-grid/ag-grid-community.min.js", "/rosette.svg", "/fonts/gloock-latin.woff2", "/fonts/atkinson-next-latin.woff2", "/fonts/atkinson-mono-latin.woff2"}
+_CACHED = {"/vendor/ag-grid/ag-grid-community.min.js", "/dashboard/star-dashboard.js", "/rosette.svg", "/fonts/gloock-latin.woff2", "/fonts/atkinson-next-latin.woff2", "/fonts/atkinson-mono-latin.woff2"}
 
 
 async def static(request: Request):
@@ -149,8 +157,13 @@ async def static(request: Request):
     path = ROOT / "web" / name
     if not path.exists():
         return _err("Not found.", "NOT_FOUND", 404)
-    headers = {"cache-control": "public, max-age=86400"} if request.url.path in _CACHED else None
-    return Response(path.read_bytes(), media_type=mime + ("; charset=utf-8" if mime.startswith("text/") else ""), headers=headers)
+    headers = {"cache-control": "public, max-age=86400"} if request.url.path in _CACHED else {}
+    media = mime + ("; charset=utf-8" if mime.startswith("text/") else "")
+    # The dashboard bundle is large; its build also writes a gzip copy, sent to any browser that accepts gzip.
+    packed = path.with_name(path.name + ".gz")
+    if packed.exists() and "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(packed.read_bytes(), media_type=media, headers={**headers, "content-encoding": "gzip", "vary": "Accept-Encoding"})
+    return Response(path.read_bytes(), media_type=media, headers=headers or None)
 
 
 def _pp_status() -> dict:
@@ -762,6 +775,13 @@ def activity_rows(user_id: str) -> list[dict]:
     return rows
 
 
+async def dashboard_config(request: Request):
+    """What the Dashboard page needs besides the activity rows: the currency, and the AG Studio licence held in the
+    host's environment (a front-end licence, so it is meant to reach the browser)."""
+    runtime.sessions.get(request.query_params.get("session_id"))
+    return JSONResponse({"currency": settings.wallet_currency, "license": settings.ag_studio_license})
+
+
 async def activity(request: Request):
     s = runtime.sessions.get(request.query_params.get("session_id"))
     await run_in_threadpool(_refresh_all, s.user_id)
@@ -998,6 +1018,7 @@ async def simulator_decide(request: Request):
 routes = [
     Route("/", index),
     Route("/guardian", guardian_page),
+    Route("/dashboard-frame", dashboard_frame),
     *[Route(path, static) for path in STATIC],
     Route("/api/state", state),
     Route("/api/audit/session/{session_id}", audit_export),
@@ -1042,6 +1063,7 @@ routes = [
     Route("/api/invoices", invoices_view),
     Route("/api/disputes", disputes_view),
     Route("/api/activity", activity),
+    Route("/api/dashboard/config", dashboard_config),
     # Freeze and guardian
     Route("/api/freeze", freeze, methods=["POST"]),
     Route("/api/freeze/lift/challenge", freeze_lift_challenge, methods=["POST"]),

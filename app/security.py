@@ -46,6 +46,15 @@ def grid_csp(nonce: str) -> str:
             "frame-ancestors 'none'; form-action 'self'")
 
 
+# The Dashboard runs AG Studio in a same-origin frame of its own. AG Studio writes many inline style attributes whose
+# values change with the data, so they can't be pinned by hash like the grid's. Only this frame allows inline styles;
+# its scripts are still only this origin's, it can only be framed by this origin, and the app around it keeps the strict
+# policy above. The frame only reads the activity rows; nothing in it can move money.
+DASHBOARD_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                 "font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; "
+                 "form-action 'none'")
+
+
 HEADERS = [
     (b"content-security-policy", CSP.encode()),
     (b"x-content-type-options", b"nosniff"),

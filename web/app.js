@@ -24,12 +24,12 @@ const state = {
 };
 
 const NAV = [['home', 'Home', 'home'], ['star', 'Talk to Star', 'spark'], ['bills', 'Bills', 'bolt'], ['family', 'Family', 'family'], ['shop', 'Shop', 'cart'],
-  ['activity', 'Activity & audit', 'audit'], ['settings', 'Settings', 'settings'], ['lab', 'Security lab', 'lab']];
+  ['activity', 'Activity & audit', 'audit'], ['dashboard', 'Dashboard', 'chart'], ['settings', 'Settings', 'settings'], ['lab', 'Security lab', 'lab']];
 const NAV_FIRST = new Set(['home', 'star', 'family', 'activity']);     // a phone shows these and More
 // One job, done well: sending money to family by voice. Bills and Shop still work (and are tested) but stay off the screen;
 // they can be reached at #/bills and #/shop. The Security lab is at #/lab.
 const OFF_SCREEN = new Set(['bills', 'shop', 'lab']);
-const CARE_HIDES = new Set(['star', 'lab']);
+const CARE_HIDES = new Set(['star', 'lab', 'dashboard']);
 const KIND = {user:'You', thought:'Thought', action:'Action', observation:'Observe', rule:'Rule', guard:'Guard', judge:'Judge',
   state:'State', sign:'Sign', exec:'Execute', plan:'Plan', asr:'Speech', fallback:'Fallback', handoff:'Handoff', evidence:'Evidence', ui:'UI',
   verify:'Verifier', gateway:'Gateway', model:'Model', api:'PayPal call', paypal:'PayPal call'};
@@ -269,7 +269,7 @@ function renderPage(){
   const m = $('#main'); if(!m) return;
   if(state.grid && state.page !== 'activity'){ clearInterval(state.gridTimer); state.grid.destroy(); state.grid = null; }
   state.sig = pageSig();
-  ({home: state.care ? careHome : homePage, star: starPage, shop: shopPage, bills: billsPage, family: familyPage, activity: activityPage, lab: labPage, settings: settingsPage}[state.page] || homePage)(m);
+  ({home: state.care ? careHome : homePage, star: starPage, shop: shopPage, bills: billsPage, family: familyPage, activity: activityPage, dashboard: dashboardPage, lab: labPage, settings: settingsPage}[state.page] || homePage)(m);
   watchBars();
 }
 const head = (_section, title, sub) => `<div class="page-head"><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>`;
@@ -1275,6 +1275,14 @@ const AUDIT_WORDS = {'user.utterance':'You said something', 'voice.recorded':'A 
   'guardian.removal_scheduled':'Removing the family guardian was asked for: it waits out a delay', 'guardian.alert_cleared':'Your family guardian cleared a scam alert'};
 // Plain words for every audit record. In the simulator, the simulator is never called PayPal.
 const auditWords = ev => (AUDIT_WORDS[ev] || 'A step was recorded').replace('{pp}', mode() === 'SIMULATED' ? 'the PayPal simulator' : 'PayPal');
+// ---------------------------------------------------------------- Dashboard: AG Studio over the same activity rows
+// It runs in a same-origin frame with a CSP of its own (DASHBOARD_CSP in app/security.py), so the app keeps its strict
+// style policy. The frame only reads this session's activity; nothing on it can move money.
+function dashboardPage(m){
+  m.innerHTML = head('For the family', 'Dashboard', 'What she sent, whether PayPal confirmed it, and what Star stopped, from the same records as Activity &amp; audit. Edit dashboard rearranges it; your layout is kept on this browser.') +
+    '<iframe class="dash-frame-el" src="/dashboard-frame" title="Dashboard: payments and stops, built with AG Studio"></iframe>';
+}
+
 async function activityPage(m){
   m.innerHTML = head('Trust and transparency', 'Activity &amp; audit', 'Every payment, and every payment that was stopped, with who stopped it and why. Open a row for its whole story.') + `
     <section class="card pad" aria-labelledby="ac-h"><h2 id="ac-h" class="sr">Activity table</h2><div id="grid-mount"><p class="muted">Loading the table…</p></div></section>

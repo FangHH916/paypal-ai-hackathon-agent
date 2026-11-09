@@ -32,3 +32,6 @@ eval/report.html
 *private*key*.txt
 *私钥*
 /secrets/
+
+# The dashboard's build tools; its built output in web/dashboard is committed
+dashboard/node_modules/

@@ -100,6 +100,9 @@ class Settings:
     public_demo = _f("PUBLIC_DEMO", "0").lower() in ("1", "true", "yes")
     # How many proxies of our own sit in front of the server (each appends to X-Forwarded-For). 0 = ignore the header.
     trusted_proxy_hops = int(_f("TRUSTED_PROXY_HOPS", "0") or 0)
+    # AG Studio licence for the Dashboard page. A front-end licence: the browser needs it, so it is served to the page,
+    # but it lives only in the host's environment, never in the repository. Empty = the dashboard shows a watermark.
+    ag_studio_license = _f("AG_STUDIO_LICENSE", "") or _f("AG_STUDIO", "")
     # The demo's default signer: a simulated fingerprint step unlocks a non-extractable browser key that signs the
     # exact card. Real passkeys (Face ID / Touch ID / Windows Hello) are an
     # opt-in in Settings. Set ALLOW_BROWSER_KEY=0 to require a real passkey for every payment.

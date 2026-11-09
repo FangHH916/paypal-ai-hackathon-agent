@@ -94,6 +94,7 @@ Base rules are in `app/kernel/rules.py`: unknown payee, allowance, limits, new p
 | Replaces a card lock | A freeze: instant for Mrs. Lee or Anna, lifted only by both signatures | Protective actions should be fast, and undoing them slow |
 | Scam alert | One scam stop stops new payments for that conversation. Only the paired guardian clears it, with her device's signature for that purpose; clearing moves nothing, and the next scam script is stopped again. Without a guardian Star says it stays stopped | A way out that isn't "Reset demo", held by the person a scammer isn't talking to |
 | Focus | The screens show one job, sending money to family by voice. Bills, Shop and the Security lab stay in the code and the tests, off the navigation (`OFF_SCREEN` in `web/app.js`) | One thing done well is easier to judge and to trust |
+| Dashboard | AG Studio in a same-origin frame with its own policy, over the activity rows; a labelled fictional sample month when a session has none | AG Studio's inline styles change with the data, so they can't be pinned by hash; isolating them keeps the app's policy strict. Judges see a full dashboard without inventing records |
 
 **Not doing, on purpose:** live PayPal mode, Subscriptions, Vault, JS SDK v6, an MCP server, real email or SMS, purchases with no human approval, accepting or fighting disputes, onboarding merchants.
 

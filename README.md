@@ -278,6 +278,30 @@ Care mode gets larger rows and text.
 
 ![The Activity grid](docs/images/activity-grid.png)
 
+**AG Studio 3.0.0** draws the **Dashboard** page: the family's view of the one job Star does. Two report pages, from the
+same activity rows (`GET /api/activity`, emails masked by the server):
+
+- **Her money:** sent to family, cards she signed, requests stopped, money-moving PayPal calls on stops (always 0), sent to
+  each person, the share PayPal has confirmed and how (signature-checked webhook or status check), sent by day, and every
+  payment with its PayPal reference and audit record.
+- **What Star stopped:** each stop in plain words, which check stopped it (rule codes in words) and who.
+
+Three tables (payments, stops, rules) with relationships and a shared calendar, a currency format, a measure (confirmed
+share) and a theme built from Star's own colour tokens. **Edit dashboard** opens AG Studio's editor; the layout is kept in
+that browser. A session with no activity yet opens on a fictional sample month, labelled SAMPLE, with a button back to
+its own rows.
+
+It is a separate React + TypeScript project in `dashboard/`, built with Vite into one module, `web/dashboard/star-dashboard.js`
+(and a gzip copy), served from this origin. It runs in a same-origin frame, `/dashboard-frame`, with a policy of its own:
+AG Studio writes inline style attributes whose values change with the data, so only that frame allows inline styles;
+scripts still come only from this origin, and the app around it keeps its strict CSP (`tests/test_dashboard.py`).
+The licence is a front-end licence read from `AG_STUDIO_LICENSE` in the host's environment, never committed; without
+it the dashboard works with a watermark.
+
+```bash
+cd dashboard && npm ci && npm run build     # rebuilds web/dashboard/; the Python server needs no Node at runtime
+```
+
 **Render:** `render.yaml` is a one-click blueprint, keyless by default.
 
 ## Significant updates during the submission period

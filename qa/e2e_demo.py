@@ -948,8 +948,11 @@ def run(browser, base: str, args) -> None:
             h = (datetime.now(ZoneInfo(z)).hour + ahead) % 24
             return h >= night_start or h < night_end
         steady = [z for z in zones if at_night(z) == at_night(z, 1) and datetime.now(ZoneInfo(z)).minute < 55]
-        day_zone = next(z for z in steady if not at_night(z) and 7 <= datetime.now(ZoneInfo(z)).hour < 21)
-        night_zone = next(z for z in steady if at_night(z))
+        day_zone = next((z for z in steady if not at_night(z) and 7 <= datetime.now(ZoneInfo(z)).hour < 21), None)
+        night_zone = next((z for z in steady if at_night(z)), None)
+        if not (day_zone and night_zone):       # e.g. in the last minutes of an hour, when no zone is steady
+            print("SKIP  one clock: no day zone and night zone are steady at this minute; run again later")
+            return
         port = free_port()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data:
             server = start_server(port, data, {"RULE_FIXED_HOUR": "", "CUSTOMER_TIMEZONE": night_zone})
