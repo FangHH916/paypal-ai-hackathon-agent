@@ -286,6 +286,11 @@ same activity rows (`GET /api/activity`, emails masked by the server):
   payment with its PayPal reference and audit record.
 - **What Star stopped:** each stop in plain words, which check stopped it (rule codes in words) and who.
 
+**Safety path** is a custom AG Studio widget (`dashboard/src/safetyPath.tsx`), registered with `createWidgets` and listed
+first in the editor's widget menu. It asks the data engine for two aggregates through `widgetApi.getData` and draws the
+path every request takes: she asked, signed on her device, sent through PayPal, confirmed by PayPal, and the branch
+where stops leave it with their count of money-moving PayPal calls (0). Page filters apply to it like to any widget.
+
 Three tables (payments, stops, rules) with relationships and a shared calendar, a currency format, a measure (confirmed
 share) and a theme built from Star's own colour tokens. **Edit dashboard** opens AG Studio's editor; the layout is kept in
 that browser. A session with no activity yet opens on a fictional sample month, labelled SAMPLE, with a button back to

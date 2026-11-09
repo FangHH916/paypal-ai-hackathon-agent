@@ -22,6 +22,8 @@ const kpi = (text: string, value: { id: string; aggregation?: 'sum' }, caption =
 const money: AgPageState = {
   id: 'money',
   widgets: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    path: { type: 'safety-path' } as any,
     'kpi-sent': kpi('Sent to family', sum('payments.sent'), 'Counted once PayPal confirms'),
     'kpi-payments': kpi('Cards she signed', sum('payments.one')),
     'kpi-stops': kpi('Requests stopped', sum('stops.one'), 'Before any money moved'),
@@ -59,11 +61,12 @@ const money: AgPageState = {
     'kpi-payments': at(6, 0, 6, 7),
     'kpi-stops': at(12, 0, 6, 7),
     'kpi-calls': at(18, 0, 6, 7),
-    'sent-by-person': at(0, 7, 10, 16),
-    confirmed: at(10, 7, 5, 16),
-    'confirmed-how': at(15, 7, 9, 16),
-    'by-day': at(0, 23, 24, 14),
-    payments: at(0, 37, 24, 20),
+    path: at(0, 7, 24, 11),
+    'sent-by-person': at(0, 18, 10, 16),
+    confirmed: at(10, 18, 5, 16),
+    'confirmed-how': at(15, 18, 9, 16),
+    'by-day': at(0, 34, 24, 14),
+    payments: at(0, 48, 24, 20),
   },
 };
 

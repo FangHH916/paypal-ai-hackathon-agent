@@ -4,13 +4,19 @@
 import { useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AgReportState, AgStudioApi, AgStudioMode } from 'ag-studio';
-import { AgStudio, AgStudioProvider } from 'ag-studio-react';
+import { AgStudio, AgStudioProvider, createWidgets } from 'ag-studio-react';
+import { safetyPathWidget } from './safetyPath';
 import { buildData, hasRows, type ActivityRow } from './data';
 import { PAGES, starReport } from './report';
 import { sampleRows } from './sample';
 import { starTheme } from './theme';
 
 type Loaded = { rows: ActivityRow[]; currency: string; license: string };
+
+// AG Studio's own widgets, plus Star's Safety path, which also appears first in the editor's widget menu.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const widgets = (config: any) =>
+  createWidgets<any>({ additionalTypes: [safetyPathWidget], menu: [{ label: 'Star', widgetIds: ['safety-path'] }, ...config.menu] }); // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const SAVED = 'star.dashboard.v1';
 const read = (key: string) => {
@@ -124,6 +130,7 @@ function Dashboard({ rows, currency, license }: Loaded) {
             loadThemeGoogleFonts={false}
             layout={{ widgetBorderEnabled: true }}
             panels={{ view: { right: [] } }}
+            widgets={widgets}
             data={data}
             initialState={{ ...initial, selectedPageId: page }}
             mode={mode}
