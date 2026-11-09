@@ -1,1 +1,3 @@
+# Built bundles are served byte for byte (with a gzip copy); never convert their line endings
+web/dashboard/* -text
 web/vendor/** -text
