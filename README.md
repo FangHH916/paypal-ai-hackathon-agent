@@ -28,6 +28,17 @@ checks all of it again before any PayPal request goes out. A fooled model produc
 | ![A fake invoice stopped, with 0 money-moving calls](docs/images/fake-invoice-stopped.png) | ![Anna's guardian page with a card waiting for her](docs/images/guardian-pending.png) |
 | A fake invoice with a hidden instruction: stopped by rules, 0 money-moving calls. | Anna sees the exact card on her own device. Her signature is bound to its digest. |
 
+## Try the PayPal calls in Postman
+
+`postman/` holds a collection and an environment. Import both into Postman, choose the **Star sandbox** environment, and fill
+`client_id` and `client_secret` with your own sandbox REST app's keys (keep them in Postman; never commit them) and `receiver_email` with a
+sandbox personal account.
+
+- **PayPal sandbox: the transfer path** runs the calls behind "Send 50 to my daughter" in order: token, `POST /v1/payments/payouts`,
+  the batch and item checks Star uses to confirm "Sent", the unclaimed-item cancel, and the webhook list.
+- **Star: a draft can't pay itself** talks to Star (`star_base`): it gets a card for $50.00 to Anna Lee, then tries to send it without her
+  device's signature. Star refuses (`400 VERIFY_REQUIRED`) and makes no PayPal call. A scam script is stopped.
+
 ## For judges
 
 Hosted demo: **https://star-family-payments-agob.onrender.com**, connected to an AI model and to the **real PayPal sandbox** (every PayPal status is tagged SANDBOX).
@@ -62,7 +73,7 @@ pip install -r requirements.txt
 uvicorn app.server:app --port 8000
 ```
 
-Open http://localhost:8000 (use `localhost`, as passkeys don't work on an IP address) and press **Start as Mrs. Lee**.
+Open http://localhost:8000 (use `localhost`, as passkeys don't work on an IP address). It opens on Mrs. Lee's Home.
 
 **With no keys you get the PayPal simulator and the offline rule engine, which is not an AI model.** The screen says so: every PayPal status is tagged SIMULATED and
 the header reads "Offline rule engine (no AI model connected)". To see Star with AI, [connect a model](#connect-an-ai-model). To see real PayPal calls,

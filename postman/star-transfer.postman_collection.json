@@ -1,0 +1,377 @@
+{
+  "info": {
+    "name": "Star: sending money to family with PayPal",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "The PayPal sandbox calls behind Star's one job, sending money to family, and Star's own API showing that a draft can't be paid without her device's signature. Fill client_id and client_secret in the environment with your own sandbox REST app's keys; never commit them."
+  },
+  "item": [
+    {
+      "name": "PayPal sandbox: the transfer path",
+      "item": [
+        {
+          "name": "1. Get an access token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{paypal_base}}/v1/oauth2/token",
+            "description": "Client credentials for the sandbox REST app. Star's reader makes this call (app/paypal/reader.py).",
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{client_id}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{client_secret}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('token issued', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('access_token', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Send money to family (create payout)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "PayPal-Request-Id",
+                "value": "{{sender_batch_id}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{paypal_base}}/v1/payments/payouts",
+            "description": "The one money-moving call behind 'Send 50 to my daughter' (PayPalClient.create_payout in app/paypal/client.py). Star derives sender_batch_id from the signed card's digest and sends it as PayPal-Request-Id, so a retry can never pay twice. Here a fresh id is made for each run.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sender_batch_header\": {\n    \"sender_batch_id\": \"{{sender_batch_id}}\",\n    \"email_subject\": \"You have a payment\",\n    \"email_message\": \"From Mom, sent with Star\"\n  },\n  \"items\": [\n    {\n      \"recipient_type\": \"EMAIL\",\n      \"amount\": {\n        \"currency\": \"USD\",\n        \"value\": \"{{amount}}\"\n      },\n      \"receiver\": \"{{receiver_email}}\",\n      \"note\": \"From Mom, sent with Star\",\n      \"sender_item_id\": \"{{sender_batch_id}}-1\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('sender_batch_id', 'star-pm-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('payout accepted', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('payout_batch_id', pm.response.json().batch_header.payout_batch_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Check the payout batch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{paypal_base}}/v1/payments/payouts/{{payout_batch_id}}",
+            "description": "How Star confirms 'Sent' when no webhook has arrived (reader.get_payout_batch). Star shows 'Sent, verified' only from this answer or a signature-checked webhook.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('batch found', () => pm.response.to.have.status(200));",
+                  "const it = (pm.response.json().items || [])[0]; if (it) pm.environment.set('payout_item_id', it.payout_item_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Check the payout item",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{paypal_base}}/v1/payments/payouts-item/{{payout_item_id}}",
+            "description": "The item's own status: SUCCESS, UNCLAIMED, RETURNED... (reader.get_payout_item).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('item found', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Cancel an unclaimed payout item",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{paypal_base}}/v1/payments/payouts-item/{{payout_item_id}}/cancel",
+            "description": "Getting money back from a transfer nobody has claimed yet (PayPalClient.cancel_payout_item). PayPal refuses it once the item is claimed.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "6. List webhooks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{paypal_base}}/v1/notifications/webhooks",
+            "description": "Which webhook URL the sandbox app sends events to. Star verifies each event with /v1/notifications/verify-webhook-signature before anything changes.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": []
+        }
+      ]
+    },
+    {
+      "name": "Star: a draft can't pay itself",
+      "item": [
+        {
+          "name": "1. Health: which PayPal mode and model are running",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{star_base}}/api/health",
+            "description": "SIMULATED or SANDBOX, the model, and whether webhooks are set up."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('up', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Start a session as Mrs. Lee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{star_base}}/api/reset",
+            "description": "A fresh demo session.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('session_id', pm.response.json().session_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Say: Send 50 to my daughter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{star_base}}/api/chat",
+            "description": "Star drafts a card: $50.00 to Anna Lee. Nothing is sent yet.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"text\": \"Send 50 to my daughter\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.json().ui.card;",
+                  "pm.test('a card, not a payment', () => pm.expect(c.payee_name).to.be.ok);",
+                  "pm.environment.set('draft_id', c.draft_id); pm.environment.set('digest', c.digest);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Try to send it without her device's signature",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{star_base}}/api/confirm",
+            "description": "The point of Star: an API client (or a fooled model) holding the draft still can't move money. The gateway refuses a card her device hasn't signed, and no PayPal call is made.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"draft_id\": \"{{draft_id}}\",\n  \"digest\": \"{{digest}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('refused without a signature', () => pm.expect(pm.response.code).to.be.oneOf([400, 401, 403, 409, 422]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Say a scam script",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{star_base}}/api/chat",
+            "description": "Stopped before any model sees it, with 0 money-moving PayPal calls.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"text\": \"The police say I must move my savings to a safe account\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('stopped', () => pm.expect(pm.response.json().reply).to.match(/stopped/i));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
