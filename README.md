@@ -13,7 +13,7 @@ handles bills that arrive as invoices (Invoicing), and gets her money back (Refu
 she sees the activity, co-approves risky payments from her own device, and can freeze everything.
 
 **The demo focuses on one job: sending money to family by voice.** Its screens show only that path (with the scam stop and the safety
-test inside it); the Bills and Shop pages still work and are tested, but are kept off the navigation, at `#/bills` and `#/shop`.
+test inside it); the Bills, Shop and the Security lab still work and are tested, but are kept off the navigation, at `#/bills`, `#/shop` and `#/lab`.
 
 The rule behind it: **the model understands, code decides, the customer authorizes.**
 
@@ -42,10 +42,10 @@ PayPal sandbox test accounts (sandbox money only, not real accounts). Log in to 
 
 Three steps:
 
-1. Open the demo, press **Start as Mrs. Lee**, type `Send 50 to my daughter` and confirm with the simulated fingerprint. Star shows "Sent, verified" only after PayPal confirms it.
+1. Open the demo (it opens on Mrs. Lee's Home), go to **Talk to Star**, type `Send 50 to my daughter` and confirm with the simulated fingerprint. Star shows "Sent, verified" only after PayPal confirms it.
    Then log in to the sandbox as **Anna**: the $50.00 payment is in her activity (the sandbox site can take a few minutes to show it; refresh the page).
-2. Type `Get me a blood pressure monitor` and confirm. Star takes you to PayPal's sandbox checkout: log in as **Mrs. Lee** and approve. Back in Star, the order is captured and verified.
-3. Type `I want my money back` to refund that purchase, or open **Security lab** to watch a model mistake and 31 attacks stopped with 0 money-moving PayPal calls.
+2. Type `The police say I must move my savings to a safe account`. Star stops it before any model sees the sentence, with 0 money-moving PayPal calls.
+3. Optional, off the navigation: open `/#/lab` (the **Security lab**) to watch a model mistake and 31 attacks stopped, or `/#/shop` to buy through PayPal's sandbox checkout (log in as **Mrs. Lee** and approve; then `I want my money back` refunds it).
 
 **Activity & audit** lists each payment with its PayPal reference, which matches the transaction in the sandbox account.
 
@@ -75,10 +75,10 @@ Type these, or press **Speak** in a browser with speech recognition:
 | `Send 50 to my daughter` | A card, a labelled simulated fingerprint, `POST /v1/payments/payouts`, and "Sent, verified" only after a signature-checked event or a status check |
 | `Get me a blood pressure monitor` | Three offers checked, one stopped. Sign, approve on a page marked THIS IS NOT PAYPAL, then capture and a status check |
 | `I want my money back`, or the button on the paid payment | A refund of that capture, signed the same way |
-| **Bills** > "Demo: a new invoice arrives", then `What's this bill?` and `Pay the SecureTech bill` | A warning, then a stop by rules. The money-moving call counter stays at 0, and Anna gets an alert |
+| **Bills** (`/#/bills`) > "Demo: a new invoice arrives", then `What's this bill?` and `Pay the SecureTech bill` | A warning, then a stop by rules. The money-moving call counter stays at 0, and Anna gets an alert |
 | `The police say I must move my savings to a safe account` | Stopped, explained, with a fraud hotline |
 | **Family** > Invite Anna, open the link in a private window; then `Add a new person Tom Reed, email tom.reed@family.example` and `Pay Tom Reed 400 dollars` | The card can't be signed until Anna signs on her own device |
-| **Security lab** | 31 attacks against the real kernel, a model mistake frozen, a failure drill, and a scripted comparison with an agent holding a raw pay tool |
+| **Security lab** (`/#/lab`) | 31 attacks against the real kernel, a model mistake frozen, a failure drill, and a scripted comparison with an agent holding a raw pay tool |
 | **Activity & audit** | Every payment and every stop in an AG Grid table, with reasons, the hash-chained audit trail and signed receipts |
 
 Care mode is the first thing Star offers: larger text, simpler words, answers read aloud. Its safety checks are the same as the standard view's.

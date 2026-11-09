@@ -79,7 +79,7 @@ def overflow(page: Page) -> int:
     return page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
 
 
-OFF_SCREEN = {"Bills": "bills", "Shop": "shop"}      # working pages kept off the navigation; reached by address
+OFF_SCREEN = {"Bills": "bills", "Shop": "shop", "Security lab": "lab"}      # working pages kept off the navigation; reached by address
 
 
 def nav(page: Page, label: str) -> None:
@@ -196,7 +196,8 @@ def run(browser, base: str, args) -> None:
         expect(page.locator(".band-sim")).to_contain_text("SIMULATED")
         expect(page.locator("#last-pay")).to_contain_text("No payments yet")
         check("no horizontal overflow on Home", overflow(page) <= 0, overflow(page))
-        check("a wide screen shows every page and no More button", not page.locator("#nav-more").is_visible() and page.locator(".nav-btn", has_text="Security lab").is_visible())
+        check("a wide screen shows every page and no More button", not page.locator("#nav-more").is_visible() and page.locator(".nav-btn", has_text="Settings").is_visible())
+        check("the Security lab is off the navigation", page.locator(".nav-btn", has_text="Security lab").count() == 0)
         shot(page, "02-home")
         for label, heading in (("Shop", "Shop"), ("Bills", "Bills"), ("Family", "Family"), ("Security lab", "Security lab"), ("Settings", "Settings")):
             nav(page, label)
@@ -643,13 +644,12 @@ def run(browser, base: str, args) -> None:
                 size = q.evaluate("parseFloat(getComputedStyle(document.querySelector('.nav-btn .nav-text')).fontSize)")
                 check("navigation text is at least 13px", size >= 13, size)
                 q.locator("#nav-more").click()
-                check("More shows the rest", all(q.locator(".nav-btn", has_text=t).is_visible() for t in ("Settings", "Security lab")))
+                check("More shows the rest", q.locator(".nav-btn", has_text="Settings").is_visible())
                 check("Bills and Shop are off the navigation", q.locator(".nav-btn", has_text="Bills").count() == 0 and q.locator(".nav-btn", has_text="Shop").count() == 0)
-                check("the lab is marked as being for judges", "for judges" in q.locator("#nav-extra").inner_text().lower())
                 q.locator(".nav-btn", has_text="Settings").click()
                 expect(q.locator(".page-head h1")).to_have_text("Settings")
                 check("More shows you are inside it", q.locator("#nav-more").get_attribute("aria-current") == "page")
-                check("More closes after choosing", not q.locator(".nav-btn", has_text="Security lab").is_visible())
+                check("More closes after choosing", not q.locator("#nav-extra .nav-btn", has_text="Settings").is_visible())
                 # The back button stays inside the app, and a reload stays on the page
                 nav(q, "Home")
                 nav(q, "Bills")

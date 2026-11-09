@@ -27,8 +27,8 @@ const NAV = [['home', 'Home', 'home'], ['star', 'Talk to Star', 'spark'], ['bill
   ['activity', 'Activity & audit', 'audit'], ['settings', 'Settings', 'settings'], ['lab', 'Security lab', 'lab']];
 const NAV_FIRST = new Set(['home', 'star', 'family', 'activity']);     // a phone shows these and More
 // One job, done well: sending money to family by voice. Bills and Shop still work (and are tested) but stay off the screen;
-// they can be reached at #/bills and #/shop.
-const OFF_SCREEN = new Set(['bills', 'shop']);
+// they can be reached at #/bills and #/shop. The Security lab is at #/lab.
+const OFF_SCREEN = new Set(['bills', 'shop', 'lab']);
 const CARE_HIDES = new Set(['star', 'lab']);
 const KIND = {user:'You', thought:'Thought', action:'Action', observation:'Observe', rule:'Rule', guard:'Guard', judge:'Judge',
   state:'State', sign:'Sign', exec:'Execute', plan:'Plan', asr:'Speech', fallback:'Fallback', handoff:'Handoff', evidence:'Evidence', ui:'UI',

@@ -103,7 +103,11 @@ class Run:
         page.screenshot(path=str(SHOTS / f"{name}.png"), full_page=full)
 
     def nav(self, label: str) -> None:
-        self.page.locator(".nav-btn", has_text=label).click()
+        off = {"Bills": "bills", "Shop": "shop", "Security lab": "lab"}      # off the navigation, reached by address
+        if label in off:
+            self.page.evaluate(f"location.hash = '#/{off[label]}'")
+        else:
+            self.page.locator(".nav-btn", has_text=label).click()
         time.sleep(0.8)
 
     def say(self, text: str, hold: float = 1.0) -> None:
