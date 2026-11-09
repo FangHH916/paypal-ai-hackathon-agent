@@ -1439,22 +1439,19 @@ function labPage(m){
 // ---------------------------------------------------------------- Settings
 function settingsPage(m){
   const sw = (id, on, title, sub) => `<div class="setting"><div>${title}<small>${sub}</small></div><button class="switch" type="button" role="switch" id="${id}" aria-checked="${on}" aria-label="${esc(title)}"><span aria-hidden="true">${on ? 'On' : 'Off'}</span></button></div>`;
-  const pr = state.data?.protection || {level: 'enhanced'}, pk = state.data?.passkey || {}, pp = state.data?.paypal || {};
+  const pr = state.data?.protection || {level: 'enhanced'}, pk = state.data?.passkey || {};
   const when = t => new Date(t * 1000).toLocaleString('en-US', {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
   const wait = pr.delay_words || '2 minutes';
   const pend = pr.pending && pr.level === 'enhanced';
   const usd = n => money(Math.round((n || 0) * 100), state.data?.currency || 'USD').replace('.00', '');
   m.innerHTML = head('Your choices', 'Settings') + `
     <section class="card settings protection">
-      <div class="setting"><div>Account protection<small>This is a protection setting, not a screen setting: Care mode doesn't change it.
-        Raising it is instant. Lowering it needs your fingerprint and only starts ${esc(wait)} later, so nobody can rush you into it on the phone.
-        (This demo waits ${esc(wait)} so you can watch it happen. A real product would wait longer.)</small></div></div>
+      <div class="setting"><div>Account protection<small>Raising it is instant. Lowering it needs your fingerprint and starts ${esc(wait)} later, so nobody can rush you on the phone.</small></div></div>
       <div class="levels" role="radiogroup" aria-label="Protection level">
         <button role="radio" type="button" class="level ${pr.level === 'enhanced' ? 'on' : ''}" data-to="enhanced" aria-checked="${pr.level === 'enhanced'}"><b>Enhanced${pr.level === 'enhanced' ? ' <em class="lvl-tag">On now</em>' : ''}</b><small>Recommended for seniors. Waits before payments over ${esc(usd(pr.enhanced_threshold))}, stops scam-like requests, and double-checks late at night.</small></button>
         <button role="radio" type="button" class="level ${pr.level === 'standard' ? 'on' : ''} ${pend ? 'queued' : ''}" data-to="standard" aria-checked="${pr.level === 'standard'}"><b>Standard${pr.level === 'standard' ? ' <em class="lvl-tag">On now</em>' : pend ? ' <em class="lvl-tag wait">Starts in <span class="prot-count"></span></em>' : ''}</b><small>Fewer interruptions: waits only over ${esc(usd(pr.standard_threshold))}, and scam-like requests get a warning instead of a stop. "Safe account" requests are always stopped.</small></button>
       </div>
       ${pend ? `<div class="pending" role="status"><span>Switching to Standard in <b class="prot-count"></b> (at ${esc(when(pr.pending.effective_at))}). Until then Enhanced stays on.</span> <button class="btn secondary small" id="p-cancel" type="button">Keep Enhanced</button></div>` : ''}
-      <p class="muted small">Always on for everyone: Star only drafts, every draft is checked against your words, your device signs every payment, and the payment gateway refuses anything unsigned.</p>
     </section>
     <section class="card settings page-gap">
       ${sw('s-realbio', passkeyMode(), 'Real fingerprint or face (optional)', passkeyMode()
@@ -1464,36 +1461,12 @@ function settingsPage(m){
     </section>
     <section class="card settings page-gap">
       ${sw('s-care', state.care, 'Care mode', 'Larger text, fewer choices, an easy-to-find voice button, and answers read aloud. The safety checks are exactly the same.')}
-      ${sw('s-large', state.large, 'Larger text in the standard view', 'Makes the normal pages easier to read.')}
-      ${sw('s-read', readAloudOn(), 'Read every answer aloud', 'Answers to questions you speak are always read aloud, and so is every stop. Tap the microphone to stop one.')}
-      <div class="setting speech-setting"><div><label for="s-speech-rate">Reading speed</label><small>Applies to automatic reading and the speaker button. Saved on this browser.</small></div>
-        <div class="speech-controls"><select id="s-speech-rate">
-          <option value="auto" ${!SPEECH_RATES.includes(state.speechRate) ? 'selected' : ''}>Automatic (by view)</option>
-          ${SPEECH_RATES.map((rate, i) => `<option value="${rate}" ${state.speechRate === rate ? 'selected' : ''}>${['Very slow','Slow','Normal','Faster','Fast'][i]} (${rate}×)</option>`).join('')}
-        </select><button class="btn secondary small" id="s-speech-preview" type="button">Preview voice</button></div></div>
     </section>
-    <section class="card settings page-gap" aria-label="What is running">
-      <div class="setting"><div>PayPal<small>${esc(pp.mode === 'simulator' ? 'A keyless simulator following the documented request and response shapes. No real money.' : pp.mode === 'sandbox' ? 'Real calls to the PayPal sandbox with test money. Live is deliberately not supported.' : '')} Webhooks: ${esc(pp.webhooks || '')}.</small></div>${modeTag(pp.label)}</div>
-      <div class="setting"><div>Language model<small>The model that reads your words and prepares drafts. It has no tool that moves money.</small></div><code>${esc(state.health.engine || state.health.model || '')}</code></div>
-      <div class="setting"><div>Speech recognition<small>${serverAsr() ? 'A server speech model, with each clip kept in the audit trail.' : "Your browser's own speech recognition."}</small></div><code>${serverAsr() ? esc(state.health.asr) : 'Browser'}</code></div>
-      <div class="setting"><div>Second reading<small>Re-reads only your words and can freeze a payment. ${live() ? 'A separate model.' : 'Offline it shares the rules that prepared the card, so it is not a second opinion.'}</small></div><code>${live() ? esc(state.health.verifier || '') : 'Offline rules'}</code></div>
-      <div class="setting"><div>Browser signing key<small>Used with the simulated fingerprint, or on devices without a sensor.</small></div><code>${esc(state.keyId || 'not created')}</code></div>
-      <div class="setting"><div>Reset demo<small>New session, invoices and allowance restored, guardian unpaired. Old audit records are kept.</small></div><button class="btn secondary small" id="s-reset" type="button">${icon('refresh')}Reset</button></div>
+    <section class="card settings page-gap">
+      <div class="setting"><div>Reset demo<small>Start again with a new session. Old audit records are kept.</small></div><button class="btn secondary small" id="s-reset" type="button">${icon('refresh')}Reset</button></div>
     </section>`;
   $('#s-care').onclick = () => setCare(!state.care);
-  $('#s-large').onclick = () => { state.large = !state.large; store.set('large', state.large); render(); };
-  $('#s-read').onclick = () => { state.readAloud = !readAloudOn(); store.set('readAloud', state.readAloud); if(!state.readAloud) stopSpeaking(); renderPage(); };
   $('#s-reset').onclick = resetDemo;
-  $('#s-speech-rate').onchange = e => {
-    const rate = Number(e.target.value);
-    state.speechRate = SPEECH_RATES.includes(rate) ? rate : null;
-    store.set('speechRate', state.speechRate);
-    toast('Reading speed saved. Applies to the next reading.');
-  };
-  $('#s-speech-preview').onclick = () => {
-    state.queueSpeech = false;
-    speak("Hello, I'm Star. Take your time. You can check every payment before you confirm.", true, null);
-  };
   m.querySelectorAll('.level').forEach(b => b.onclick = () => setProtection(b.dataset.to));
   $('#p-cancel') && ($('#p-cancel').onclick = () => setProtection('enhanced'));
   protCountdown();
