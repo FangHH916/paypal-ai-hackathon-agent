@@ -12,7 +12,8 @@ class TestPostman(unittest.TestCase):
         urls = json.dumps(col)
         for path in ("/v1/oauth2/token", "/v1/payments/payouts", "/v1/payments/payouts-item/", "/api/confirm"):
             self.assertIn(path, urls)
-        self.assertNotIn("api-m.paypal.com", urls)          # sandbox only, never live
+        requests = [r["request"]["url"] for folder in col["item"] for r in folder["item"]]
+        self.assertTrue(all(u.startswith(("{{paypal_base}}/", "{{star_base}}/")) for u in requests), requests)   # no hard-coded host
 
     def test_environment_holds_no_secret(self):
         env = json.loads((DIR / "star-sandbox.postman_environment.json").read_text(encoding="utf-8"))
