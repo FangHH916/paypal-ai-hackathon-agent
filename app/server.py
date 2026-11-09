@@ -779,7 +779,46 @@ async def dashboard_config(request: Request):
     """What the Dashboard page needs besides the activity rows: the currency, and the AG Studio licence held in the
     host's environment (a front-end licence, so it is meant to reach the browser)."""
     runtime.sessions.get(request.query_params.get("session_id"))
-    return JSONResponse({"currency": settings.wallet_currency, "license": settings.ag_studio_license})
+    return JSONResponse({"currency": settings.wallet_currency, "license": settings.ag_studio_license, "ai": settings.llm_enabled})
+
+
+# The Dashboard's AI assistant (AG Studio's Studio Agent Framework) reaches Star's own model through this one call. The
+# browser never sees the key or picks the model, output is capped, and the call is rate-limited per address. Its tools
+# run in the browser and only change the dashboard: none of them can reach a payment.
+_AI_FIELDS = ("messages", "tools", "tool_choice")
+AI_MAX_TOKENS = 4000
+
+
+def _dashboard_ai_call(body: dict) -> tuple[int, dict]:
+    import requests
+    req = {k: body[k] for k in _AI_FIELDS if body.get(k)}
+    req.update(model=settings.llm_model, max_tokens=AI_MAX_TOKENS, stream=False)
+    if body.get("json"):
+        req["response_format"] = {"type": "json_object"}
+    try:
+        r = requests.post(f"{settings.llm_base_url.rstrip('/')}/chat/completions", json=req, timeout=max(settings.llm_timeout, 60),
+                          headers={"Authorization": f"Bearer {settings.llm_api_key}"})
+    except requests.RequestException:
+        return 502, {"error": {"message": "The model didn't answer. Please try again."}}
+    try:
+        data = r.json()
+    except ValueError:
+        return 502, {"error": {"message": "The model sent something that isn't JSON."}}
+    if r.status_code >= 400:
+        msg = (data.get("error") or {}).get("message") if isinstance(data.get("error"), dict) else None
+        return r.status_code, {"error": {"message": msg or f"The model returned {r.status_code}."}}
+    return 200, {k: data.get(k) for k in ("id", "choices", "usage", "model")}
+
+
+async def dashboard_ai(request: Request):
+    body = await _json(request)
+    runtime.sessions.get(body.get("session_id"))
+    if not settings.llm_enabled:
+        return JSONResponse({"error": {"message": "No AI model is connected to this server."}}, status_code=503)
+    if not isinstance(body.get("messages"), list) or not body["messages"]:
+        return _err("messages are required")
+    status, data = await run_in_threadpool(_dashboard_ai_call, body)
+    return JSONResponse(data, status_code=status)
 
 
 async def activity(request: Request):
@@ -1064,6 +1103,7 @@ routes = [
     Route("/api/disputes", disputes_view),
     Route("/api/activity", activity),
     Route("/api/dashboard/config", dashboard_config),
+    Route("/api/dashboard/ai", dashboard_ai, methods=["POST"]),
     # Freeze and guardian
     Route("/api/freeze", freeze, methods=["POST"]),
     Route("/api/freeze/lift/challenge", freeze_lift_challenge, methods=["POST"]),

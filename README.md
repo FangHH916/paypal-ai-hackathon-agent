@@ -291,6 +291,15 @@ first in the editor's widget menu. It asks the data engine for two aggregates th
 path every request takes: she asked, signed on her device, sent through PayPal, confirmed by PayPal, and the branch
 where stops leave it with their count of money-moving PayPal calls (0). Page filters apply to it like to any widget.
 
+**The AI assistant** is AG Studio's Studio Agent Framework on Star's own model. In **Edit dashboard** it sits on the left,
+with prompt starters ("Who got the most?", "What was stopped?"), and Studio's built-in agents read the schema, plan, and
+delegate to the agents that build or change widgets. Star talks to any OpenAI-compatible `/chat/completions` API, so
+`dashboard/src/chatAdapter.ts` is a Chat Completions adapter for Studio (the AG Studio boilerplate's adapter speaks the
+Responses API). Every turn goes through `POST /api/dashboard/ai`: the server holds the key and fixes the model
+(`LLM_*`), caps the output at 4,000 tokens, accepts up to 512 KB and rate-limits each address on the public demo. Its
+tools run in the browser and only read or rearrange the dashboard; none of them can reach a payment. It appears only
+when a model is configured.
+
 Three tables (payments, stops, rules) with relationships and a shared calendar, a currency format, a measure (confirmed
 share) and a theme built from Star's own colour tokens. **Edit dashboard** opens AG Studio's editor; the layout is kept in
 that browser. A session with no activity yet opens on a fictional sample month, labelled SAMPLE, with a button back to

@@ -62,5 +62,69 @@ class TestDashboardFrame(unittest.TestCase):
         self.assertNotEqual(self.c.get("/api/dashboard/config?session_id=nope").status_code, 200)
 
 
+
+class TestDashboardAssistant(unittest.TestCase):
+    """AG Studio's AI assistant reaches Star's model only through /api/dashboard/ai: the server holds the key, fixes the
+    model and caps the output; the browser can't choose any of them."""
+
+    def setUp(self):
+        self.c = TestClient(server.app, base_url="http://localhost")
+        self.sid = self.c.post("/api/reset", json={}).json()["session_id"]
+        self.saved = {k: getattr(settings, k) for k in ("llm_provider", "llm_base_url", "llm_api_key", "llm_model")}
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(settings, k, v)
+
+    def connect(self):
+        settings.llm_provider, settings.llm_base_url, settings.llm_api_key, settings.llm_model = (
+            "openai_compat", "http://model.invalid/v1", "server-key", "server-model")
+
+    def ask(self, **extra):
+        body = {"session_id": self.sid, "messages": [{"role": "user", "content": "Who got the most?"}], **extra}
+        return self.c.post("/api/dashboard/ai", json=body)
+
+    def test_without_a_model_it_says_so(self):
+        settings.llm_provider = "offline"
+        r = self.ask()
+        self.assertEqual(r.status_code, 503)
+        self.assertFalse(self.c.get(f"/api/dashboard/config?session_id={self.sid}").json()["ai"])
+
+    def test_the_server_picks_the_model_holds_the_key_and_caps_the_output(self):
+        from unittest import mock
+        self.connect()
+        seen = {}
+
+        class Reply:
+            status_code = 200
+            def json(self):
+                return {"id": "x", "model": "server-model", "choices": [{"message": {"role": "assistant", "content": "Anna."}}]}
+
+        def post(url, json, timeout, headers):
+            seen.update(url=url, body=json, headers=headers)
+            return Reply()
+
+        with mock.patch("requests.post", post):
+            r = self.ask(model="someone-elses-model", max_tokens=99999, api_key="nope", tools=[{"type": "function", "function": {"name": "view_page"}}])
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["choices"][0]["message"]["content"], "Anna.")
+        self.assertEqual(seen["url"], "http://model.invalid/v1/chat/completions")
+        self.assertEqual(seen["body"]["model"], "server-model")
+        self.assertEqual(seen["body"]["max_tokens"], server.AI_MAX_TOKENS)
+        self.assertNotIn("api_key", seen["body"])
+        self.assertEqual(seen["headers"]["Authorization"], "Bearer server-key")
+        self.assertTrue(self.c.get(f"/api/dashboard/config?session_id={self.sid}").json()["ai"])
+
+    def test_it_needs_a_session_and_messages(self):
+        self.connect()
+        self.assertNotEqual(self.c.post("/api/dashboard/ai", json={"session_id": "nope", "messages": [{"role": "user", "content": "hi"}]}).status_code, 200)
+        self.assertEqual(self.c.post("/api/dashboard/ai", json={"session_id": self.sid, "messages": []}).status_code, 400)
+
+    def test_a_huge_request_is_refused_before_it_reaches_the_model(self):
+        self.connect()
+        r = self.ask(tools=[{"type": "function", "function": {"name": "x" * (600 * 1024)}}])
+        self.assertEqual(r.status_code, 413)
+
+
 if __name__ == "__main__":
     unittest.main()

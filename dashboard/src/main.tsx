@@ -3,7 +3,8 @@
 // reads: no call it makes can move money.
 import { useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { AgReportState, AgStudioApi, AgStudioMode } from 'ag-studio';
+import { AgStudioAiModule, createAiHarness, type AgAiHarnessSetup, type AgReportState, type AgStudioApi, type AgStudioMode } from 'ag-studio';
+import { starChatAdapter } from './chatAdapter';
 import { AgStudio, AgStudioProvider, createWidgets } from 'ag-studio-react';
 import { safetyPathWidget } from './safetyPath';
 import { buildData, hasRows, type ActivityRow } from './data';
@@ -11,7 +12,16 @@ import { PAGES, starReport } from './report';
 import { sampleRows } from './sample';
 import { starTheme } from './theme';
 
-type Loaded = { rows: ActivityRow[]; currency: string; license: string };
+type Loaded = { rows: ActivityRow[]; currency: string; license: string; ai: boolean; sid: string };
+
+// The assistant, when the server has a model: Studio's own agents, on Star's model through Star's server.
+const PROMPTS = [
+  { label: 'Summarise this page', prompt: 'Summarise what this page shows, in plain words a family member would use.' },
+  { label: 'Who got the most?', prompt: 'Who did she send the most money to, and how much in total?' },
+  { label: 'What was stopped?', prompt: 'Which check stopped the most requests? Add a chart of stops by day.' },
+];
+const buildAi = (sid: string): AgAiHarnessSetup => ({ api }) =>
+  createAiHarness(api, { adapter: starChatAdapter(sid), promptStarters: PROMPTS });
 
 // AG Studio's own widgets, plus Star's Safety path, which also appears first in the editor's widget menu.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,10 +64,11 @@ async function load(): Promise<Loaded> {
   };
   const q = `session_id=${encodeURIComponent(sid)}`;
   const [act, cfg] = await Promise.all([get(`/api/activity?${q}`), get(`/api/dashboard/config?${q}`)]);
-  return { rows: act.rows as ActivityRow[], currency: cfg.currency as string, license: cfg.license as string };
+  return { rows: act.rows as ActivityRow[], currency: cfg.currency as string, license: cfg.license as string, ai: !!cfg.ai, sid };
 }
 
-function Dashboard({ rows, currency, license }: Loaded) {
+function Dashboard({ rows, currency, license, ai, sid }: Loaded) {
+  const [assistant] = useState(() => (ai ? buildAi(sid) : undefined));
   const api = useRef<AgStudioApi | null>(null);
   const real = hasRows(rows);
   const [sample, setSample] = useState(!real);
@@ -122,15 +133,19 @@ function Dashboard({ rows, currency, license }: Loaded) {
         </div>
       </div>
       <div className="dash-canvas">
-        <AgStudioProvider licenseKey={license || undefined}>
+        <AgStudioProvider licenseKey={license || undefined} modules={assistant ? [AgStudioAiModule] : undefined}>
           <AgStudio
             key={sample ? 'sample' : 'real'}
             style={{ height: '100%', width: '100%' }}
             theme={starTheme}
             loadThemeGoogleFonts={false}
             layout={{ widgetBorderEnabled: true }}
-            panels={{ view: { right: [] } }}
+            panels={{
+              view: { right: [] },
+              edit: assistant ? { left: ['ai'], right: ['edit', 'data', 'filters'] } : { right: ['edit', 'data', 'filters'] },
+            }}
             widgets={widgets}
+            ai={assistant}
             data={data}
             initialState={{ ...initial, selectedPageId: page }}
             mode={mode}

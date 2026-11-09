@@ -64,12 +64,13 @@ HEADERS = [
     (b"cache-control", b"no-store"),
 ]
 API_LIMIT, ASR_LIMIT, WEBHOOK_LIMIT = 32 * 1024, 3 * 1024 * 1024, 64 * 1024   # official webhook max size: unverified
-LIMITS = {"/api/asr": ASR_LIMIT, "/api/paypal/webhook": WEBHOOK_LIMIT}
+DASHBOARD_AI_LIMIT = 512 * 1024    # AG Studio sends the report's schema and its tool definitions with every turn
+LIMITS = {"/api/asr": ASR_LIMIT, "/api/paypal/webhook": WEBHOOK_LIMIT, "/api/dashboard/ai": DASHBOARD_AI_LIMIT}
 
 
 # Each device gets a fair share of the model and speech APIs (they cost money and have quotas)
 COSTLY = {"/api/chat": 40, "/api/asr": 20, "/api/lab": 12, "/api/lab/contract": 6, "/api/lab/drill": 12, "/api/lab/naive-agent": 12,
-          "/api/demo/model-mistake": 12, "/api/reset": 30}          # requests per address per 5 minutes
+          "/api/demo/model-mistake": 12, "/api/reset": 30, "/api/dashboard/ai": 40}          # requests per address per 5 minutes
 # These answer to anyone on the internet, so they are limited in every mode
 ALWAYS = {"/api/paypal/webhook": 600, "/api/guardian/pair": 30, "/api/guardian/feed": 2400, "/api/guardian/challenge": 60,
           "/api/guardian/decide": 60, "/api/guardian/freeze": 20, "/api/guardian/lift": 20, "/simulator/api/decide": 60}
