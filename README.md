@@ -23,10 +23,12 @@ checks all of it again before any PayPal request goes out. A fooled model produc
 
 | | |
 | --- | --- |
-| ![A purchase card with three offers checked](docs/images/purchase-card.png) | ![Paid, verified by a status check, and tagged SIMULATED](docs/images/paid-verified.png) |
-| Star checked three offers. The card is built by code, from the catalogue price. | "Paid" appears only after a verified status. A redirect never sets it. |
-| ![A fake invoice stopped, with 0 money-moving calls](docs/images/fake-invoice-stopped.png) | ![Anna's guardian page with a card waiting for her](docs/images/guardian-pending.png) |
-| A fake invoice with a hidden instruction: stopped by rules, 0 money-moving calls. | Anna sees the exact card on her own device. Her signature is bound to its digest. |
+| ![The card she signs: $50.00 to Anna Lee, built from her own words](docs/images/send-card.png) | ![Sent, verified: the payout confirmed by PayPal, with a signed receipt](docs/images/paid-verified.png) |
+| She checks the exact card her device will sign. The model drafted it; code built it. | "Sent, verified" appears only after a signature-checked webhook or a PayPal status check. |
+| ![A scam script stopped, with the fraud hotline and 0 money-moving calls](docs/images/scam-stopped.png) | ![Anna's guardian page with a card waiting for her](docs/images/guardian-pending.png) |
+| A "safe account" script is stopped before any model sees it: the hotline, and 0 money-moving PayPal calls. | Anna sees the exact card on her own device. Her signature is bound to its digest. |
+
+![The Dashboard, built with AG Studio, on a labelled sample month](docs/images/dashboard.png)
 
 ## Try the PayPal calls in Postman
 

@@ -1221,7 +1221,7 @@ function familyPage(m){
     <section class="card pad page-gap" aria-labelledby="al-h"><h2 id="al-h">Alerts</h2>${d.alerts.length ? `<ul class="alert-list">${d.alerts.slice(0, 8).map(a => `<li class="alert-item level-${esc(a.level)}"><span class="when">${esc(clock(a.at))}</span><span>${a.kind === 'approval' ? `Asked ${esc(guardianName())}: ` : ''}${esc(a.text)}</span></li>`).join('')}</ul>` : '<p class="muted">No alerts yet.</p>'}</section>
     <h2 class="sub-head">People</h2><div class="contacts">${people.map(card).join('')}</div>
     <p class="muted small add-person"><button class="text-btn" type="button" id="add-person">Add a new person with Star</button></p>
-    <h2 class="sub-head">Who sends you bills</h2><div class="contacts">${billers.map(card).join('')}</div>`;
+    ${OFF_SCREEN.has('bills') ? '' : `<h2 class="sub-head">Who sends you bills</h2><div class="contacts">${billers.map(card).join('')}</div>`}`;
   const after = async () => { await refresh(); renderPage(); };
   $('#g-invite') && ($('#g-invite').onclick = async () => {
     try{

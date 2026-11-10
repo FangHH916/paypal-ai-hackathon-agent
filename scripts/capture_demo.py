@@ -41,13 +41,13 @@ VIDEO = OUT / "video"
 IMAGES = ROOT / "docs" / "images"
 expect.set_options(timeout=30000)
 
-# Screenshot name -> name in docs/images, for --publish. Keep in step with README.md.
+# Screenshot name -> name in docs/images, for --publish. Keep in step with README.md. The standard-view stills
+# (send-card, paid-verified, scam-stopped, dashboard) come from scripts/capture_stills.py.
 PUBLISHED = {
     "01-landing": "landing.png",
     "02-care-home": "care-home.png",
     "05-purchase-card": "purchase-card.png",
     "06-simulator-checkout": "simulator-checkout.png",
-    "07-paid-verified": "paid-verified.png",
     "10-fake-invoice-stopped": "fake-invoice-stopped.png",
     "11-naive-comparison": "naive-comparison.png",
     "13-card-waits-for-family": "card-waits-for-family.png",
@@ -132,7 +132,7 @@ class Run:
 def demo(r: Run) -> None:
     page, gp = r.page, r.guardian
 
-    r.scene("Hook: home")
+    r.scene("Hook: the Dashboard")
     page.goto(r.base + "/")
     expect(page.locator(".page-head h1")).to_have_text("Dashboard")
     r.shot(page, "01-landing")
@@ -312,7 +312,7 @@ def demo(r: Run) -> None:
     time.sleep(2.5)
 
     r.scene("Close")
-    r.nav("Home")
+    r.nav("Home" if page.evaluate("document.body.classList.contains('care')") else "Dashboard")   # Home is Care mode's only
     time.sleep(1)
     r.shot(page, "21-close")
     time.sleep(9)

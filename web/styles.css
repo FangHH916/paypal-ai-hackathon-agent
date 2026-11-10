@@ -959,3 +959,43 @@ body.care :is(.choice,.suggestion){background:none;-webkit-backdrop-filter:none;
   .composer .mic,.composer .send{min-height:44px}
 }
 .dash-go{margin:0 0 18px}
+
+/* Refinement: content keeps a comfortable measure on wide screens, every card has real padding, and small controls
+   (switches, tags, lists inside cards) share the same soft shapes. */
+@media (min-width:901px){main#main>*{max-width:1240px;margin-inline:auto;width:100%}}
+.card.settings{padding:clamp(18px,2vw,26px) clamp(20px,2.2vw,30px)}
+.card.settings.page-gap{margin-top:16px}
+.card.settings .setting:first-child{padding-top:0}
+.card.settings .setting:last-child{padding-bottom:0}
+.levels{gap:12px;margin:.9em 0 0}
+.level{padding:1em 1.15em;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.level.on{border:1.5px solid var(--brand);background:var(--brand-soft);box-shadow:0 0 0 3px rgba(0,112,224,.10)}
+.level small{margin-top:.25em;line-height:1.45}
+.lvl-tag{border-radius:999px;padding:.12em .7em;font-weight:700;margin-left:.3em}
+.pending{border-radius:14px;margin-top:.9em}
+.switch{width:5.5rem}
+.switch::before{height:2.25rem;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);box-shadow:inset 0 1px 2px rgba(0,20,53,.10)}
+.switch::after{left:.3rem;width:1.65rem;height:1.65rem;border-radius:50%;background:var(--muted);box-shadow:0 1px 3px rgba(0,20,53,.3)}
+.switch span{right:.7rem}
+.switch[aria-checked="true"] span{left:.75rem;color:var(--brand-ink)}
+.switch[aria-checked="true"]::before{background:linear-gradient(180deg,rgba(255,255,255,.25),rgba(255,255,255,0) 60%),var(--brand);border-color:transparent}
+.switch[aria-checked="true"]::after{left:calc(100% - 1.95rem);background:#ffffff}
+.switch:focus-visible{outline:none}
+.switch:focus-visible::before{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--glow)}
+.alert-list{border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.alert-item{padding:.8em 1em}
+.alert-item:last-child{border-bottom:0}
+.grid-host{border-top:1px solid var(--line)}
+.grid-host .ag-header{border-bottom:1px solid var(--line)}
+.topbar{border-bottom:1px solid var(--line)}
+.page-head h1{letter-spacing:-.03em}
+.page-foot{border-top:1px solid var(--line)}
+.chips{gap:8px}
+.chip{border-radius:999px;padding:.3em 1.1em;border:1px solid rgba(0,48,135,.16);background:linear-gradient(180deg,rgba(255,255,255,.85),rgba(255,255,255,.55));box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 2px 8px -4px rgba(0,20,53,.14)}
+.chip:hover{border-color:var(--brand)}
+.chip[aria-pressed="true"]{background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0) 55%),var(--brand);border-color:transparent;color:var(--brand-ink);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 6px 16px -8px rgba(0,112,224,.6)}
+.contacts>*{border-radius:16px}
+:is(.stop-block,.stop-plate) h3{margin-right:clamp(9.5rem,26%,13rem)}
+@media (max-width:560px){:is(.stop-block,.stop-plate) h3{margin-right:0}}
+@media (max-width:900px){.chips{min-width:0;max-width:100%}}
+@media (max-width:560px){.alert-item{grid-template-columns:minmax(0,1fr);gap:.2em;padding:.7em .8em}}

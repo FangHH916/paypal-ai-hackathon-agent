@@ -1045,7 +1045,8 @@ def run(browser, base: str, args) -> None:
                 for w in (320, 390):
                     g.set_viewport_size({"width": w, "height": 844})
                     time.sleep(0.3)
-                    check(f"guardian {w}: the clear panel fits", overflow(g) <= 0, overflow(g))
+                    wide = g.evaluate("[...document.querySelectorAll('body *')].filter(e => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX === 'visible' && e.clientWidth > 0).slice(0, 6).map(e => e.tagName + '.' + e.className + ' ' + e.scrollWidth + '/' + e.clientWidth)")
+                    check(f"guardian {w}: the clear panel fits", overflow(g) <= 0, (overflow(g), wide))
                     shot(g, f"80-guardian-clear-{w}")
                 g.set_viewport_size({"width": 1440, "height": 900})
                 time.sleep(0.3)
