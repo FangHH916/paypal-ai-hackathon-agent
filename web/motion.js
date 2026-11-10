@@ -72,13 +72,13 @@ export function sealSvg(){
 // A field of light points behind the landing and the rail. They drift, join up when close, lean away from the pointer and
 // draw a thread to it; a click sends out a small burst. Decorative only: behind every word, no pointer events of its own,
 // paused when out of view or the tab is hidden, and never started for reduced motion or in Care mode.
-export function particles(host, {density = 14000, max = 110} = {}){
+export function particles(host, {density = 14000, max = 110, rgb = '111,227,255', listen = host} = {}){
   if(!host || calm() || document.body.classList.contains('care') || !window.HTMLCanvasElement) return () => {};
   const canvas = document.createElement('canvas');
   canvas.className = 'particles'; canvas.setAttribute('aria-hidden', 'true');
   host.prepend(canvas);
   const ctx = canvas.getContext('2d'); if(!ctx){ canvas.remove(); return () => {}; }
-  const LIGHT = '111,227,255', REACH = 120, PUSH = 140;
+  const LIGHT = rgb, REACH = 120, PUSH = 140;
   let w = 0, h = 0, dpr = 1, dots = [], frame = 0, visible = true, alive = true;
   const pointer = {x:-1e4, y:-1e4, on:false};
   const spawn = (x, y, burst) => {
@@ -133,14 +133,14 @@ export function particles(host, {density = 14000, max = 110} = {}){
   const click = e => { const [x, y] = at(e); if(y < 0 || y > h) return; for(let k = 0; k < 18; k++) dots.push(spawn(x, y, true)); go(); };
   const seen = new IntersectionObserver(([e]) => { visible = e.isIntersecting; go(); });
   const resized = new ResizeObserver(() => size());
-  host.addEventListener('pointermove', move, {passive:true});
-  host.addEventListener('pointerleave', leave);
-  host.addEventListener('pointerdown', click, {passive:true});
+  listen.addEventListener('pointermove', move, {passive:true});
+  (listen === window ? document.documentElement : listen).addEventListener('pointerleave', leave);
+  listen.addEventListener('pointerdown', click, {passive:true});
   document.addEventListener('visibilitychange', go);
   seen.observe(host); resized.observe(host); size(); go();
   return () => {
     alive = false; cancelAnimationFrame(frame); seen.disconnect(); resized.disconnect();
-    host.removeEventListener('pointermove', move); host.removeEventListener('pointerleave', leave); host.removeEventListener('pointerdown', click);
+    listen.removeEventListener('pointermove', move); (listen === window ? document.documentElement : listen).removeEventListener('pointerleave', leave); listen.removeEventListener('pointerdown', click);
     document.removeEventListener('visibilitychange', go); canvas.remove();
   };
 }

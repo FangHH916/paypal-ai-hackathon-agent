@@ -904,3 +904,58 @@ body{background:var(--bg)}
 .engraved::before{opacity:.10}
 .nav-btn[aria-current="page"]{box-shadow:none}
 .dash-tab[aria-selected="true"]{box-shadow:0 0 0 1px var(--brand)}
+/* One shape everywhere: every control is a pill, every field and card has soft corners. */
+.pill,.icon-btn,.care-toggle,.mic,.composer button,.suggestion,.choice,.level,.nav-btn,.dash-tab{border-radius:999px}
+.choice,.level{border-radius:16px}
+.nav-btn{border-radius:12px}
+.composer textarea,input[type="text"],input[type="email"],input[type="search"],select{border-radius:14px}
+.icon-btn,.pill.prot{border:1.5px solid var(--line);background:var(--surface)}
+.icon-btn:hover,.pill.prot:hover{border-color:var(--brand)}
+
+/* Behind the page: a faint field of blue points that leans away from the pointer (particles in web/motion.js). It sits
+   under the app and takes no clicks; the cards are opaque, so it only shows in the gaps. */
+.field{position:fixed;inset:0;z-index:0;pointer-events:none}
+#app{position:relative;z-index:1}
+
+/* Glass: translucent controls with a lit top edge and a soft shadow. Text colours are the palette's, so contrast holds. */
+.btn.primary,.mic,.care-toggle{background:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,0) 55%),var(--brand);border:1px solid rgba(255,255,255,.35);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -1px 0 rgba(0,20,53,.12),0 8px 20px -10px rgba(0,112,224,.65)}
+.btn.primary:hover:not(:disabled),.mic:hover{background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 55%),var(--rule);color:#ffffff;border-color:rgba(255,255,255,.25)}
+.btn.danger{background:linear-gradient(180deg,rgba(255,255,255,.26),rgba(255,255,255,0) 55%),var(--accent);border:1px solid rgba(255,255,255,.3);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 8px 20px -10px rgba(156,28,5,.6)}
+.btn.secondary,.icon-btn,.pill.prot,.send,.dash-tab,.choice,.suggestion{background:linear-gradient(180deg,rgba(255,255,255,.85),rgba(255,255,255,.55));
+  -webkit-backdrop-filter:blur(12px) saturate(1.4);backdrop-filter:blur(12px) saturate(1.4);border:1px solid rgba(0,48,135,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 2px 10px -4px rgba(0,20,53,.16);color:var(--ink)}
+.btn.secondary:hover:not(:disabled),.icon-btn:hover,.pill.prot:hover,.send:hover,.dash-tab:hover,.choice:hover,.suggestion:hover{background:linear-gradient(180deg,#ffffff,rgba(234,241,251,.9));border-color:var(--brand);color:var(--ink)}
+.sidebar .nav-btn[aria-current="page"]{background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,.08) 60%),var(--brand);box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 6px 18px -8px rgba(96,205,255,.7)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) :is(.btn.secondary,.icon-btn,.pill.prot,.send,.dash-tab,.choice,.suggestion){background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}}
+:root[data-theme="dark"] :is(.btn.secondary,.icon-btn,.pill.prot,.send,.dash-tab,.choice,.suggestion){background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+
+/* The conversation as a chat: Star on the left in white bubbles, her words on the right in blue. */
+.assistant.card{padding:0;overflow:hidden}
+body:not(.care) .stage{padding:20px clamp(16px,2vw,24px) 14px;gap:14px}
+.msg{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:0;border-top:0;max-width:min(80%,680px)}
+.msg .msg-side{flex-direction:row;align-items:center;gap:.5em;order:2;padding:0 .4em}
+.msg .msg-side .who{font-size:.85rem}
+.msg .msg-side time{font-size:.85rem}
+.msg .msg-body{order:1;background:var(--surface);border:1px solid var(--line);border-radius:20px 20px 20px 6px;padding:.75em 1.05em;box-shadow:0 2px 12px -6px rgba(0,20,53,.18)}
+.msg.user{align-self:flex-end;align-items:flex-end}
+.msg.user .msg-side{justify-content:flex-end}
+.msg.user .msg-body{background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0) 60%),var(--brand);color:var(--brand-ink);border-color:transparent;border-radius:20px 20px 6px 20px;
+  font:500 1.15rem/1.4 var(--body);box-shadow:0 8px 20px -12px rgba(0,112,224,.7)}
+.msg.user .demo-tag{color:inherit;opacity:.85}
+/* Options as cards in the standard view; Care mode keeps its compact list, sized for the dock above the navigation. */
+body:not(.care) :is(.choices,.suggestions){flex-direction:row;flex-wrap:wrap;gap:10px;border-top:0}
+body:not(.care) :is(.choice,.suggestion){flex:1 1 220px;border-radius:16px;padding:.75em 1.1em;min-height:56px}
+body:not(.care) :is(.choice,.suggestion):hover{padding-left:1.1em}
+body.care :is(.choice,.suggestion){background:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;border:0;border-bottom:1px solid var(--line);border-radius:0}
+.suggestion.danger{color:var(--bad)}
+.composer-wrap{background:var(--surface);border-top:1px solid var(--line);padding:12px clamp(16px,2vw,24px) 14px}
+@media (min-width:901px){
+  .composer{align-items:center;gap:6px;padding:6px;border:1px solid var(--line);border-radius:999px;background:var(--bg);box-shadow:inset 0 1px 2px rgba(0,20,53,.06)}
+  .composer:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+  .composer textarea{border:0;background:transparent;min-height:44px;resize:none;padding:.65em .5em;box-shadow:none}
+  .composer textarea:focus-visible{box-shadow:none;outline:none}
+  .composer .mic,.composer .send{min-height:44px}
+}
+.dash-go{margin:0 0 18px}

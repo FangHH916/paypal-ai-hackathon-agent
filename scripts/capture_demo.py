@@ -134,7 +134,7 @@ def demo(r: Run) -> None:
 
     r.scene("Hook: home")
     page.goto(r.base + "/")
-    expect(page.locator(".hero h1")).to_contain_text("Mrs. Lee")
+    expect(page.locator(".page-head h1")).to_have_text("Dashboard")
     r.shot(page, "01-landing")
     time.sleep(1.5)
     r.nav("Talk to Star")

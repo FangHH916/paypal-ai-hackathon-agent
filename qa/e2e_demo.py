@@ -64,7 +64,9 @@ def watch(page: Page, label: str) -> None:
     LAST.append(page)
 
     def on_console(m):
-        if m.type == "error" and not re.search(r"Failed to load resource.*(400|403|404|409)|ERR_CONNECTION_RESET|ERR_FAILED", m.text):   # the lost-reply and no-network stories cut connections on purpose
+        # The lost-reply and no-network stories cut connections on purpose. Without a licence in the test environment, AG Studio
+        # prints its trial banner (a box of asterisks) in the Dashboard frame; that is expected, not an error of ours.
+        if m.type == "error" and not re.search(r"Failed to load resource.*(400|403|404|409)|ERR_CONNECTION_RESET|ERR_FAILED|^\*+$|AG Studio Core License|License Key Not Found|unlocked for trial|hide the watermark", m.text.strip()):
             PROBLEMS.append(f"{label} console: {m.text[:600]}")
 
     page.on("console", on_console)
@@ -190,12 +192,12 @@ def run(browser, base: str, args) -> None:
 
     def landing():
         page.goto(base + "/")
-        expect(page.locator(".hero h1")).to_contain_text("Mrs. Lee")       # no landing: the app opens straight away
+        expect(page.locator(".page-head h1")).to_have_text("Dashboard")      # no landing and no Home: the app opens on the Dashboard
         check("the app says it isn't affiliated", "not affiliated" in page.locator(".page-foot").inner_text())
         shot(page, "01-landing")
         expect(page.locator(".band-sim")).to_contain_text("SIMULATED")
-        expect(page.locator("#last-pay")).to_contain_text("No payments yet")
-        check("no horizontal overflow on Home", overflow(page) <= 0, overflow(page))
+        check("Home is not in the standard navigation", page.locator(".nav-btn", has_text="Home").count() == 0)
+        check("no horizontal overflow on the Dashboard", overflow(page) <= 0, overflow(page))
         check("a wide screen shows every page and no More button", not page.locator("#nav-more").is_visible() and page.locator(".nav-btn", has_text="Settings").is_visible())
         check("the Security lab is off the navigation", page.locator(".nav-btn", has_text="Security lab").count() == 0)
         shot(page, "02-home")
@@ -324,7 +326,7 @@ def run(browser, base: str, args) -> None:
         page.locator("#s-reset").count()
         nav(page, "Settings")
         page.locator("#s-reset").click()
-        expect(page.locator(".hero h1")).to_be_visible()
+        expect(page.locator(".page-head h1")).to_have_text("Dashboard")
         nav(page, "Family")
         page.locator("#g-invite").click()
         page.locator(".mf-pad").click()
@@ -485,8 +487,8 @@ def run(browser, base: str, args) -> None:
         shot(pp, "40-phone-landing")
         check("phone landing fits", overflow(pp) <= 0, overflow(pp))
         pp.locator(".sidebar").wait_for()
-        expect(pp.locator(".hero h1")).to_be_visible()
-        for label in ("Home", "Talk to Star", "Shop", "Bills", "Family", "Activity", "Security lab", "Settings"):
+        expect(pp.locator(".page-head h1")).to_have_text("Dashboard")
+        for label in ("Dashboard", "Talk to Star", "Shop", "Bills", "Family", "Activity", "Security lab", "Settings"):
             nav(pp, label)
             time.sleep(1.2 if label == "Activity" else 0.25)
             check(f"phone: {label} has no sideways scroll", overflow(pp) <= 0, overflow(pp))
@@ -530,8 +532,8 @@ def run(browser, base: str, args) -> None:
 
         # Desktop Care mode, the same page at 200% browser zoom (a 680 px wide viewport is what that gives on 1360)
         page.set_viewport_size({"width": 680, "height": 450})
-        nav(page, "Home")
-        check("200% zoom: Home has no sideways scroll", overflow(page) <= 0, overflow(page))
+        nav(page, "Dashboard")
+        check("200% zoom: the Dashboard has no sideways scroll", overflow(page) <= 0, overflow(page))
         shot(page, "47-zoom-200")
         page.set_viewport_size({"width": 1360, "height": 900})
 
@@ -542,7 +544,7 @@ def run(browser, base: str, args) -> None:
         dp.goto(base + "/")
         shot(dp, "48-dark-landing")
         dp.locator(".sidebar").wait_for()
-        expect(dp.locator(".hero h1")).to_be_visible()
+        expect(dp.locator(".page-head h1")).to_have_text("Dashboard")
         shot(dp, "49-dark-home")
         dp.locator(".nav-btn", has_text="Activity").click()
         expect(dp.locator(".grid-host .ag-root").first).to_be_visible(timeout=20000)
@@ -632,7 +634,7 @@ def run(browser, base: str, args) -> None:
                 check("the landing page doesn't overclaim", "Built on the PayPal sandbox" not in q.locator("body").inner_text()
                       and "stop scams and mistakes" not in q.locator("body").inner_text())
                 q.locator(".sidebar").wait_for()
-                expect(q.locator(".hero h1")).to_be_visible()
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
 
                 def rect(selector):
                     return q.locator(selector).first.bounding_box()
@@ -651,7 +653,7 @@ def run(browser, base: str, args) -> None:
                 check("More shows you are inside it", q.locator("#nav-more").get_attribute("aria-current") == "page")
                 check("More closes after choosing", not q.locator("#nav-extra .nav-btn", has_text="Settings").is_visible())
                 # The back button stays inside the app, and a reload stays on the page
-                nav(q, "Home")
+                nav(q, "Dashboard")
                 nav(q, "Bills")
                 nav(q, "Family")
                 expect(q.locator(".page-head h1")).to_have_text("Family")
@@ -661,7 +663,7 @@ def run(browser, base: str, args) -> None:
                 q.reload()
                 expect(q.locator(".page-head h1")).to_have_text("Bills")
                 q.go_back()
-                expect(q.locator(".hero h1")).to_be_visible()
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                 # Dates and copy
                 nav(q, "Bills")
                 expect(q.locator(".inv").first).to_be_visible()
@@ -710,7 +712,7 @@ def run(browser, base: str, args) -> None:
                 q.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
                 q.goto(url + "/")
                 q.locator(".sidebar").wait_for()
-                expect(q.locator(".hero h1")).to_be_visible()
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                 # Waiting for family with nobody paired: say so and offer the way out
                 nav(q, "Talk to Star")
                 say(q, "My friend told me to buy a gift card for my grandson")
@@ -750,11 +752,11 @@ def run(browser, base: str, args) -> None:
                 check("an empty ledger is one plain line, without zero totals", "Nothing here yet" in grid_text and q.locator(".grid-host .row-total").count() == 0, grid_text[-200:])
                 grid_box = q.locator(".grid-host").bounding_box()
                 check("an empty ledger stays short", grid_box["height"] < 240, grid_box["height"])
-                # Freeze means freeze, one tap, from Home
-                nav(q, "Home")
-                q.locator("#home-freeze").click()
-                expect(q.locator(".stat-bad")).to_contain_text("Frozen")
-                check("Freeze now stays on Home", q.locator(".hero h1").is_visible())
+                # Freeze means freeze, one tap, from Family
+                nav(q, "Family")
+                q.locator("#f-on").click()
+                expect(q.locator("#f-on")).to_have_count(0)
+                check("Freeze stays on Family", q.locator(".page-head h1").inner_text() == "Family")
                 check("Freeze really froze", requests.get(url + "/api/state", params={"session_id": q.evaluate("JSON.parse(localStorage.getItem('sid'))")}, timeout=5).json()["frozen"]["on"])
                 # Care mode: the voice button is on screen, above the navigation, and the offer is gone
                 requests.post(url + "/api/reset", json={"world": True}, timeout=5)
@@ -795,7 +797,7 @@ def run(browser, base: str, args) -> None:
                 def fits(label):
                     check(f"320: {label} has no sideways scroll", overflow(q) <= 0, overflow(q))
                 q.goto(url + "/")
-                expect(q.locator(".hero h1")).to_be_visible()
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                 fits("Home")
                 # Larger text from the browser
                 q.evaluate("document.documentElement.style.fontSize = '200%'")
@@ -811,7 +813,7 @@ def run(browser, base: str, args) -> None:
                 expect(q.locator("#drill-out .lab-score")).to_contain_text("1 payout exists", timeout=60000)
                 fits("failure drill result")
                 # Care mode: the button she signs with, the dock, the stop
-                nav(q, "Home")
+                nav(q, "Dashboard")
                 q.locator("#care-toggle").click()
                 expect(q.locator(".care-hello h1")).to_be_visible()
                 time.sleep(0.4)
@@ -869,7 +871,7 @@ def run(browser, base: str, args) -> None:
                 check("a shared server has no anonymous customer", requests.get(url + "/api/state", timeout=5).status_code == 404)
                 q.goto(url + "/")
                 q.locator(".sidebar").wait_for()
-                expect(q.locator(".hero h1")).to_contain_text("Mrs. Lee")
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                 sid = q.evaluate("JSON.parse(localStorage.getItem('sid'))")
                 user = requests.get(url + "/api/state", params={"session_id": sid}, timeout=5).status_code
                 check("a visitor gets a session of their own", user == 200, user)
@@ -895,7 +897,7 @@ def run(browser, base: str, args) -> None:
             try:
                 q.goto(url + "/")
                 q.locator(".sidebar").wait_for()
-                expect(q.locator(".hero h1")).to_be_visible()
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                 nav(q, "Talk to Star")
                 # A request while the easier-version invite is open is a request; the invite waits for its own answer
                 expect(q.locator(".choice", has_text="Yes, make it easier")).to_be_visible()
@@ -962,11 +964,7 @@ def run(browser, base: str, args) -> None:
             try:
                 q.goto(f"http://localhost:{port}/")
                 q.locator(".sidebar").wait_for()
-                expect(q.locator(".hero h1")).to_be_visible()
-                hello = q.locator(".hero h1").inner_text()
-                h = datetime.now(ZoneInfo(day_zone)).hour
-                want = "Good morning" if h < 12 else "Good afternoon" if h < 18 else "Good evening"
-                check(f"the greeting follows the browser's clock ({day_zone}, {h}h)", hello.startswith(want), hello)
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                 nav(q, "Talk to Star")
                 q.locator(".choice", has_text="No, standard").click()
                 say(q, "Send 20 to my son")
@@ -992,7 +990,7 @@ def run(browser, base: str, args) -> None:
             try:
                 q.goto(url + "/")
                 q.locator(".sidebar").wait_for()
-                expect(q.locator(".hero h1")).to_be_visible()
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                 nav(q, "Talk to Star")
                 q.locator(".choice", has_text="No, standard").click()
                 expect(q.locator(".msg.bot").last).to_contain_text("standard view", timeout=10000)   # answered: not busy any more
@@ -1025,7 +1023,7 @@ def run(browser, base: str, args) -> None:
             try:
                 q.goto(url + "/")
                 q.locator(".sidebar").wait_for()
-                expect(q.locator(".hero h1")).to_be_visible()
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                 nav(q, "Family")
                 q.locator("#g-invite").click()
                 q.locator(".mf-pad").click()
@@ -1105,7 +1103,7 @@ def run(browser, base: str, args) -> None:
                 try:
                     q.goto(url + "/")
                     q.locator(".sidebar").wait_for()
-                    expect(q.locator(".hero h1")).to_be_visible()
+                    expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                     nav(q, "Talk to Star")
                     q.locator(".choice", has_text="Yes, make it easier").click()
                     expect(q.locator("body.care")).to_be_visible(timeout=15000)
@@ -1155,7 +1153,7 @@ def run(browser, base: str, args) -> None:
             try:
                 q.goto(url + "/")
                 q.locator(".sidebar").wait_for()
-                expect(q.locator(".hero h1")).to_be_visible()
+                expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                 nav(q, "Talk to Star")
                 q.locator(".choice", has_text="No, standard").click()
                 say(q, "Send 20 to my son")
@@ -1228,7 +1226,7 @@ def run(browser, base: str, args) -> None:
                     try:
                         q.goto(url + "/")
                         q.locator(".sidebar").wait_for()
-                        expect(q.locator(".hero h1")).to_be_visible()
+                        expect(q.locator(".page-head h1")).to_have_text("Dashboard")
                         q.locator("#care-toggle").click()
                         expect(q.locator("#toast.show")).to_contain_text("Care mode", timeout=5000)
                         time.sleep(0.2)

@@ -53,7 +53,7 @@ PayPal sandbox test accounts (sandbox money only, not real accounts). Log in to 
 
 Three steps:
 
-1. Open the demo (it opens on Mrs. Lee's Home), go to **Talk to Star**, type `Send 50 to my daughter` and confirm with the simulated fingerprint. Star shows "Sent, verified" only after PayPal confirms it.
+1. Open the demo (it opens on the Dashboard), press **Talk to Star**, type `Send 50 to my daughter` and confirm with the simulated fingerprint. Star shows "Sent, verified" only after PayPal confirms it.
    Then log in to the sandbox as **Anna**: the $50.00 payment is in her activity (the sandbox site can take a few minutes to show it; refresh the page).
 2. Type `The police say I must move my savings to a safe account`. Star stops it before any model sees the sentence, with 0 money-moving PayPal calls.
 3. Optional, off the navigation: open `/#/lab` (the **Security lab**) to watch a model mistake and 31 attacks stopped, or `/#/shop` to buy through PayPal's sandbox checkout (log in as **Mrs. Lee** and approve; then `I want my money back` refunds it).
@@ -73,10 +73,10 @@ pip install -r requirements.txt
 uvicorn app.server:app --port 8000
 ```
 
-Open http://localhost:8000 (use `localhost`, as passkeys don't work on an IP address). It opens on Mrs. Lee's Home.
+Open http://localhost:8000 (use `localhost`, as passkeys don't work on an IP address). It opens on the Dashboard.
 
-**With no keys you get the PayPal simulator and the offline rule engine, which is not an AI model.** The screen says so: every PayPal status is tagged SIMULATED and
-the header reads "Offline rule engine (no AI model connected)". To see Star with AI, [connect a model](#connect-an-ai-model). To see real PayPal calls,
+**With no keys you get the PayPal simulator and the offline rule engine, which is not an AI model.** The screen says so: every PayPal status is tagged SIMULATED, and
+the card says when its second reading of her words is the same offline parser rather than a separate model. To see Star with AI, [connect a model](#connect-an-ai-model). To see real PayPal calls,
 [add sandbox keys](#get-sandbox-keys).
 
 Type these, or press **Speak** in a browser with speech recognition:

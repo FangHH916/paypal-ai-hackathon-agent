@@ -23,13 +23,17 @@ const state = {
   calls: {calls: [], money_moving_this_task: 0, money_moving_total: 0}, payments: [], grid: null, gridTimer: null, invite: null,
 };
 
-const NAV = [['home', 'Home', 'home'], ['star', 'Talk to Star', 'spark'], ['bills', 'Bills', 'bolt'], ['family', 'Family', 'family'], ['shop', 'Shop', 'cart'],
-  ['activity', 'Activity & audit', 'audit'], ['dashboard', 'Dashboard', 'chart'], ['settings', 'Settings', 'settings'], ['lab', 'Security lab', 'lab']];
-const NAV_FIRST = new Set(['home', 'star', 'family', 'activity']);     // a phone shows these and More
+const NAV = [['home', 'Home', 'home'], ['dashboard', 'Dashboard', 'chart'], ['star', 'Talk to Star', 'spark'], ['bills', 'Bills', 'bolt'], ['family', 'Family', 'family'], ['shop', 'Shop', 'cart'],
+  ['activity', 'Activity & audit', 'audit'], ['settings', 'Settings', 'settings'], ['lab', 'Security lab', 'lab']];
+const NAV_FIRST = new Set(['home', 'dashboard', 'star', 'family', 'activity']);     // a phone shows these and More
 // One job, done well: sending money to family by voice. Bills and Shop still work (and are tested) but stay off the screen;
 // they can be reached at #/bills and #/shop. The Security lab is at #/lab.
 const OFF_SCREEN = new Set(['bills', 'shop', 'lab']);
 const CARE_HIDES = new Set(['star', 'lab', 'dashboard']);
+// The standard view opens on the Dashboard and has no Home; Care mode keeps its own one-button Home.
+const STANDARD_HIDES = new Set(['home']);
+const homeFor = () => state.care ? 'home' : 'dashboard';
+const landOn = p => (state.care ? CARE_HIDES : STANDARD_HIDES).has(p) ? homeFor() : p;
 const KIND = {user:'You', thought:'Thought', action:'Action', observation:'Observe', rule:'Rule', guard:'Guard', judge:'Judge',
   state:'State', sign:'Sign', exec:'Execute', plan:'Plan', asr:'Speech', fallback:'Fallback', handoff:'Handoff', evidence:'Evidence', ui:'UI',
   verify:'Verifier', gateway:'Gateway', model:'Model', api:'PayPal call', paypal:'PayPal call'};
@@ -183,7 +187,7 @@ function renderBand(){ const b = $('#band'); if(b) b.innerHTML = bandHtml(); }
 function render(){
   document.body.classList.toggle('care', state.care);
   document.body.classList.toggle('large', state.large && !state.care);
-  const items = NAV.filter(([id]) => !OFF_SCREEN.has(id) && !(state.care && CARE_HIDES.has(id)));
+  const items = NAV.filter(([id]) => !OFF_SCREEN.has(id) && !(state.care ? CARE_HIDES : STANDARD_HIDES).has(id));
   const navBtn = ([id, label, ic]) => `<button class="nav-btn" type="button" data-page="${id}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}<span class="nav-text">${label}</span></button>`;
   const extra = items.filter(([id]) => !NAV_FIRST.has(id));
   const navHtml = `${items.filter(([id]) => NAV_FIRST.has(id)).map(navBtn).join('')}
@@ -204,7 +208,7 @@ function render(){
       <div id="band">${bandHtml()}</div>
       <header class="topbar">
         <div class="top-title"><span class="brand mobile-brand"><img src="/logo.svg" alt="" width="28" height="28"><span>Star</span></span>
-          <span class="pill model-pill" title="The model behind Star"><span class="dot ${live() ? 'on' : ''}"></span>${esc(state.health.engine || (live() ? 'Live model' : 'Offline rules'))}</span></div>
+</div>
         <div class="top-actions">
           <button class="pill prot ${protLevel()}${protPending() ? ' queued' : ''}" id="prot-pill" type="button" aria-label="Account protection: ${protLevel()}. Open settings">${icon('shield')}${protLabel()}</button>
           <button class="icon-btn" id="trace-toggle" type="button" aria-pressed="${$('#trace').classList.contains('open')}">${icon('trace')}<span class="label">Agent trace</span></button>
@@ -231,7 +235,7 @@ document.addEventListener('keydown', e => { if(e.key === 'Escape') setMore(false
 // Each page is a history entry, so a phone's back button walks back through the app instead of leaving it.
 const pageFromHash = () => { const p = location.hash.replace(/^#\/?/, ''); return NAV.some(n => n[0] === p) ? p : null; };
 function go(page, push = true){
-  if(state.care && CARE_HIDES.has(page)) page = 'home';
+  page = landOn(page);
   state.page = page; try{ sessionStorage.setItem('page', page); }catch{}
   if(push && pageFromHash() !== page) history.pushState({page}, '', `#/${page}`);
   render(); $('#main')?.focus({preventScroll:true}); window.scrollTo(0, 0); pageIn($('#main'));
@@ -243,7 +247,7 @@ window.addEventListener('popstate', () => {
 });
 function setCare(on, quiet = false){
   state.care = on; store.set('care', on);
-  if(on && CARE_HIDES.has(state.page)) state.page = 'home';
+  state.page = landOn(state.page);
   state.messages.forEach(m => { if(m.type === 'choices' && m.care) m.done = true; });   // the switch answers the offer
   if(on) state.messages = state.messages.filter(m => !m.careOffer && !(m.type === 'choices' && m.care));
   if(state.sid) api('/api/care', {session_id: state.sid, on}).catch(() => {});   // Star talks to match the screen
@@ -388,6 +392,8 @@ function tickerHtml(compact = false){
 function renderTicker(){ document.querySelectorAll('.ticker-host').forEach(el => { el.innerHTML = tickerHtml(el.dataset.compact === '1'); }); }
 
 // "Behind your request": the checks behind the latest request, in plain words
+// Check details in plain words: the screen says what was checked, not which model did it.
+const checkWords = d => /^Verifier: /.test(d || '') ? (/offline/i.test(d) ? 'Your words were read again by the offline rules.' : 'Your words were read again, separately, and they match.') : d;
 const CHECK_LABELS = {intent:'Faithful to your words', plan:'Earlier steps completed', policy:'Safety rules', guardian_approval:'Family approval', authorization:'Your signature', execution:'Sent to PayPal'};
 function decisionPanel(record){
   const marks = {pass:'PASS', fail:'FAILED', pending:'PENDING', not_applicable:'NOT REQUIRED'};
@@ -398,8 +404,8 @@ function decisionPanel(record){
     <blockquote>${esc(record.raw_text || 'No transcript recorded')}</blockquote>
     <div class="evidence-compare"><div><b>AI draft</b><p>${esc(record.draft?.payee)}<br>${esc(cents(record.draft?.amount_cents))}</p></div>
     <div><b>Second reading</b><p>${esc(ex.payee || 'Not stated')}<br>${esc(ex.amount == null ? 'Not stated' : cash(Math.round(ex.amount * 100)))}</p></div></div>
-    <p class="muted small">${esc(record.verifier?.engine)}${record.verifier?.mode === 'offline_shared_parser' ? ' · Shared offline parser; not two independent models.' : ''}</p>
-    <ol class="contract-checks">${Object.entries(record.checks || {}).map(([key, c]) => `<li class="${esc(c.status)}"><b>${esc(CHECK_LABELS[key] || key)}</b><span>${esc(marks[c.status] || c.status)}</span><small>${esc(c.detail)}</small></li>`).join('')}</ol>
+    ${record.verifier?.mode === 'offline_shared_parser' ? '<p class="muted small">Shared offline parser; not two independent models.</p>' : ''}
+    <ol class="contract-checks">${Object.entries(record.checks || {}).map(([key, c]) => `<li class="${esc(c.status)}"><b>${esc(CHECK_LABELS[key] || key)}</b><span>${esc(marks[c.status] || c.status)}</span><small>${esc(checkWords(c.detail))}</small></li>`).join('')}</ol>
     <p class="muted small">Rules: ${esc((record.reason_codes || []).join(', ') || 'No risk flags')}<br>Still needed: ${esc((record.required_evidence || []).join(', ') || 'None')}</p>
     </details>`;
 }
@@ -424,7 +430,7 @@ function checksFromCard(card){
   if(!card.decision) return {title:`${card.amount} to ${card.payee_name}`, rows:[]};
   const r = card.decision;
   return {title:`${card.amount} to ${card.payee_name}`, decision:r,
-    rows:Object.entries(r.checks).map(([key, c]) => [c.status === 'not_applicable' ? 'idle' : c.status, CHECK_LABELS[key] || key, c.detail])};
+    rows:Object.entries(r.checks).map(([key, c]) => [c.status === 'not_applicable' ? 'idle' : c.status, CHECK_LABELS[key] || key, checkWords(c.detail)])};
 }
 
 // ---------------------------------------------------------------- Assistant
@@ -1280,7 +1286,9 @@ const auditWords = ev => (AUDIT_WORDS[ev] || 'A step was recorded').replace('{pp
 // style policy. The frame only reads this session's activity; nothing on it can move money.
 function dashboardPage(m){
   m.innerHTML = head('For the family', 'Dashboard', 'What she sent, whether PayPal confirmed it, and what Star stopped, from the same records as Activity &amp; audit. Edit dashboard rearranges it; your layout is kept on this browser.') +
+    `<p class="dash-go"><button class="btn primary" type="button" data-go="star">${icon('mic')}Talk to Star</button></p>` +
     '<iframe class="dash-frame-el" src="/dashboard-frame" title="Dashboard: payments and stops, built with AG Studio"></iframe>';
+  m.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
 }
 
 async function activityPage(m){
@@ -1723,7 +1731,8 @@ async function init(){
   await refresh();
   if(!state.data) throw new Error('The demo service is not ready. Please try again in a moment.');
   loadChat();
-  try{ const p = pageFromHash() || sessionStorage.getItem('page'); if(NAV.some(n => n[0] === p)) state.page = (state.care && CARE_HIDES.has(p)) ? 'home' : p; }catch{}
+  try{ const p = pageFromHash() || sessionStorage.getItem('page'); if(NAV.some(n => n[0] === p)) state.page = p; }catch{}
+  state.page = landOn(state.page);
   history.replaceState({page: state.page}, '', `#/${state.page}`);
   state.signMode = await detectSignMode();      // after refresh: an enrolled passkey keeps being used
   render();
@@ -1752,5 +1761,6 @@ let stopField = () => {};
     return;
   }
   stopField = particles($('.sidebar'), {density:9000, max:40});
+  particles($('.field'), {density:26000, max:60, rgb:'0,112,224', listen:window});    // a faint blue field behind the page
   await afterEnter();
 })();

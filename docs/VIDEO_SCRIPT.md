@@ -7,7 +7,7 @@ Speak slowly; every claim below is something on screen. Judges stop at 3:00, so 
 | Time | Screen | Voice-over |
 |---|---|---|
 | 0:00–0:15 | A scam call transcript on a black card: "The police say I must move my savings to a safe account." | "Older adults lose more to fraud than anyone. And now AI agents are getting the power to pay. What happens when someone talks the AI into it?" |
-| 0:15–0:25 | Star Home, Mrs. Lee. | "This is Star. Mrs. Lee is 74. She sends money to her family by just saying so, through PayPal." |
+| 0:15–0:25 | Star opens on the Dashboard (Mrs. Lee). | "This is Star. Mrs. Lee is 74. She sends money to her family by just saying so, through PayPal." |
 | 0:25–0:55 | Talk to Star: type or say "Send 50 to my daughter". The card appears (SANDBOX tag). Sign with the fingerprint. Tracker: PayPal is processing, then Sent, verified. | "The AI understands her and drafts a card. But it has no tool that moves money. She checks the card and signs it on her own device. Star calls PayPal Payouts, and says 'sent' only when PayPal confirms it." |
 | 0:55–1:00 | Anna's sandbox PayPal account, the $50 payment received. | "It really arrived, in the PayPal sandbox." |
 | 1:00–1:25 | Say "The police say I must move my savings to a safe account". The stop screen: hotline, 0 money-moving PayPal calls. | "Now the scam. Star stops it before any model even sees the sentence, gives her the fraud hotline, and nothing reaches PayPal." |
