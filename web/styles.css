@@ -11,36 +11,36 @@
 @font-face{font-family:'Plain Figures';src:local('Segoe UI Semibold'),local('SegoeUI-Semibold'),local('Segoe UI Bold'),local('SegoeUI-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Arial Bold'),local('Arial-BoldMT'),local('Roboto Bold'),local('Roboto-Bold'),local('Liberation Sans Bold'),local('LiberationSans-Bold'),local('DejaVu Sans Bold'),local('DejaVuSans-Bold');font-weight:550 900;unicode-range:U+30-39}
 :root{
   color-scheme:light dark;
-  --bg:#edf2f8; --surface:#f8fbfe; --surface-2:#dfe8f2; --ink:#07121f; --muted:#2f4359; --line:#a3b4c7; --rule:#07121f;
-  --brand:#0a1a2f; --brand-ink:#f8fbfe; --brand-soft:#d3e0ee; --accent:#9c1c05; --accent-ink:#ffffff;
-  --ok:#0b5430; --ok-bg:#dcefe4; --warn:#5e3f00; --warn-bg:#f5e9c9; --bad:#8a1703; --bad-bg:#f9e4dd; --pend:#123f6b; --pend-bg:#dce9f6; --neutral:#2f4359; --neutral-bg:#dfe8f2;
-  --engrave:#0a5a8a; --glow:#0a6fa8;
+  --bg:#f5f7fa; --surface:#ffffff; --surface-2:#eaf1fb; --ink:#001435; --muted:#3e4c66; --line:#d2dbe8; --rule:#001c64;
+  --brand:#0070e0; --brand-ink:#ffffff; --brand-soft:#dbe9fb; --accent:#9c1c05; --accent-ink:#ffffff;
+  --ok:#0b5430; --ok-bg:#dcefe4; --warn:#5e3f00; --warn-bg:#f7ecd0; --bad:#8a1703; --bad-bg:#fbe6df; --pend:#002f87; --pend-bg:#e1ecfb; --neutral:#3e4c66; --neutral-bg:#eaf1fb;
+  --engrave:#9fbde6; --glow:#0070e0;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#05090f; --surface:#0b1320; --surface-2:#13203a; --ink:#eaf4ff; --muted:#a9bdd3; --line:#2a3d57; --rule:#5b7896;
-  --brand:#6fe3ff; --brand-ink:#00131b; --brand-soft:#132a40; --accent:#ff9478; --accent-ink:#1a0500;
-  --ok:#8ff0c0; --ok-bg:#062418; --warn:#f6cf6e; --warn-bg:#231a04; --bad:#ff9b80; --bad-bg:#2a0f0b; --pend:#9fd4ff; --pend-bg:#0c2136; --neutral:#c5d3e3; --neutral-bg:#13203a;
-  --engrave:#6fe3ff; --glow:#6fe3ff;
+  --bg:#00122e; --surface:#001a40; --surface-2:#00285e; --ink:#f2f7ff; --muted:#b7c8e2; --line:#1f3d6e; --rule:#6f8fbf;
+  --brand:#60cdff; --brand-ink:#001435; --brand-soft:#00285e; --accent:#ff9478; --accent-ink:#1a0500;
+  --ok:#8ff0c0; --ok-bg:#062418; --warn:#f6cf6e; --warn-bg:#231a04; --bad:#ff9b80; --bad-bg:#2a0f0b; --pend:#9fd4ff; --pend-bg:#03224a; --neutral:#c8d6ea; --neutral-bg:#00285e;
+  --engrave:#60cdff; --glow:#60cdff;
 }}
 :root[data-theme="dark"]{
-  --bg:#05090f; --surface:#0b1320; --surface-2:#13203a; --ink:#eaf4ff; --muted:#a9bdd3; --line:#2a3d57; --rule:#5b7896;
-  --brand:#6fe3ff; --brand-ink:#00131b; --brand-soft:#132a40; --accent:#ff9478; --accent-ink:#1a0500;
-  --ok:#8ff0c0; --ok-bg:#062418; --warn:#f6cf6e; --warn-bg:#231a04; --bad:#ff9b80; --bad-bg:#2a0f0b; --pend:#9fd4ff; --pend-bg:#0c2136; --neutral:#c5d3e3; --neutral-bg:#13203a;
-  --engrave:#6fe3ff; --glow:#6fe3ff;
+  --bg:#00122e; --surface:#001a40; --surface-2:#00285e; --ink:#f2f7ff; --muted:#b7c8e2; --line:#1f3d6e; --rule:#6f8fbf;
+  --brand:#60cdff; --brand-ink:#001435; --brand-soft:#00285e; --accent:#ff9478; --accent-ink:#1a0500;
+  --ok:#8ff0c0; --ok-bg:#062418; --warn:#f6cf6e; --warn-bg:#231a04; --bad:#ff9b80; --bad-bg:#2a0f0b; --pend:#9fd4ff; --pend-bg:#03224a; --neutral:#c8d6ea; --neutral-bg:#00285e;
+  --engrave:#60cdff; --glow:#60cdff;
 }
 *{box-sizing:border-box}
-/* Two fixed materials. Ink: the rail and the landing, the same in both themes. Paper: the card she signs, always the brightest thing on screen. */
+/* Two fixed materials. Ink: the navigation rail, deep navy in both themes. Paper: the card she signs, always the brightest thing on screen. */
 .ink-plate,.welcome,.sidebar{
-  --bg:#05090f; --surface:#0b1320; --surface-2:#13203a; --ink:#eaf4ff; --muted:#a9bdd3; --line:#2a3d57; --rule:#5b7896;
-  --brand:#6fe3ff; --brand-ink:#00131b; --brand-soft:#132a40; --accent:#ff9478; --accent-ink:#1a0500;
-  --ok:#8ff0c0; --ok-bg:#062418; --warn:#f6cf6e; --warn-bg:#231a04; --bad:#ff9b80; --bad-bg:#2a0f0b; --pend:#9fd4ff; --pend-bg:#0c2136; --neutral:#c5d3e3; --neutral-bg:#13203a;
-  --engrave:#6fe3ff; --glow:#6fe3ff; color:var(--ink); color-scheme:dark;
+  --bg:#001c64; --surface:#001650; --surface-2:#002a78; --ink:#ffffff; --muted:#c3d3ef; --line:#1d3f8a; --rule:#7f9dd6;
+  --brand:#60cdff; --brand-ink:#001435; --brand-soft:#002a78; --accent:#ff9478; --accent-ink:#1a0500;
+  --ok:#8ff0c0; --ok-bg:#062418; --warn:#f6cf6e; --warn-bg:#231a04; --bad:#ff9b80; --bad-bg:#2a0f0b; --pend:#9fd4ff; --pend-bg:#03224a; --neutral:#c8d6ea; --neutral-bg:#002a78;
+  --engrave:#60cdff; --glow:#60cdff; color:var(--ink); color-scheme:dark;
 }
 .paper-plate,.confirm{
-  --bg:#edf2f8; --surface:#f8fbfe; --surface-2:#dfe8f2; --ink:#07121f; --muted:#2f4359; --line:#a3b4c7; --rule:#07121f;
-  --brand:#0a1a2f; --brand-ink:#f8fbfe; --brand-soft:#d3e0ee; --accent:#9c1c05; --accent-ink:#ffffff;
-  --ok:#0b5430; --ok-bg:#dcefe4; --warn:#5e3f00; --warn-bg:#f5e9c9; --bad:#8a1703; --bad-bg:#f9e4dd; --pend:#123f6b; --pend-bg:#dce9f6; --neutral:#2f4359; --neutral-bg:#dfe8f2;
-  --engrave:#0a5a8a; --glow:#0a6fa8; color:var(--ink); color-scheme:light;
+  --bg:#f5f7fa; --surface:#ffffff; --surface-2:#eaf1fb; --ink:#001435; --muted:#3e4c66; --line:#d2dbe8; --rule:#001c64;
+  --brand:#0070e0; --brand-ink:#ffffff; --brand-soft:#dbe9fb; --accent:#9c1c05; --accent-ink:#ffffff;
+  --ok:#0b5430; --ok-bg:#dcefe4; --warn:#5e3f00; --warn-bg:#f7ecd0; --bad:#8a1703; --bad-bg:#fbe6df; --pend:#002f87; --pend-bg:#e1ecfb; --neutral:#3e4c66; --neutral-bg:#eaf1fb;
+  --engrave:#9fbde6; --glow:#0070e0; color:var(--ink); color-scheme:light;
 }
 :root{
   --head:'Plain Figures','Atkinson Next','Segoe UI','Helvetica Neue',Arial,sans-serif; --body:'Plain Figures','Atkinson Next','Segoe UI','Helvetica Neue',Arial,sans-serif;
@@ -193,7 +193,7 @@ main#main{flex:1;padding:clamp(20px,3.4vw,52px) clamp(16px,4vw,56px);outline:non
 .hero .eyebrow{font:600 .95rem var(--body)}
 .stats{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr);gap:0;margin-bottom:clamp(28px,4vw,56px);border-top:2px solid var(--ink);border-bottom:2px solid var(--ink)}
 .stat{display:flex;flex-direction:column;gap:.3em;padding:clamp(14px,1.6vw,24px);background:none;border:0;border-left:1px solid var(--line);border-radius:0;text-align:left;align-items:flex-start;min-width:0;color:inherit;transition:background-color .14s}
-.stat:first-child{border-left:0}
+.stat:first-child{border-left:0;padding-left:clamp(14px,1.6vw,24px)}
 .stat-main{padding-left:0}
 .stat-main .muted{color:var(--muted)}
 .stat-btn:hover{background:var(--surface-2)}
@@ -389,7 +389,7 @@ body.care .mic{font-size:1.05em;padding:.4em 1em}
 
 /* The signed card: a bright sheet of paper, engraved top edge, exact terms, one serial */
 dialog{color:var(--ink);background:var(--surface);border:0;border-radius:var(--radius);padding:0}
-dialog::backdrop{background:rgba(5,9,8,.76)}
+dialog::backdrop{background:rgba(0,20,53,.62)}
 .confirm{width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 24px);box-shadow:0 40px 90px -20px rgba(0,0,0,.75)}
 .confirm::before{content:"";display:block;height:30px;background:var(--engrave);opacity:.62;-webkit-mask:url(/band.svg) repeat-x center/150px 30px;mask:url(/band.svg) repeat-x center/150px 30px;margin-top:8px}
 .cbody{padding:14px clamp(14px,3vw,30px) 10px}
@@ -841,15 +841,15 @@ body.not-found{min-height:100dvh}
 .caught-zero{box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
 .nav-btn[aria-current="page"]{box-shadow:inset 3px 0 0 var(--glow),0 0 20px -10px var(--glow)}
 .composer textarea:focus-visible,.btn:focus-visible{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--glow)}
-.cheque,.confirm{box-shadow:0 0 0 1px rgba(111,227,255,.35),0 40px 90px -24px rgba(0,0,0,.8),0 0 60px -30px rgba(111,227,255,.6)}
+.cheque,.confirm{box-shadow:0 0 0 1px rgba(0,112,224,.28),0 30px 70px -28px rgba(0,20,53,.45)}
 .cheque{transform:none}
 h1,.welcome h1,.hero h1{letter-spacing:-.035em;font-weight:500}
 .stat-value,.plate .fig,.counter b,.stop-count b,.caught-zero b,.plate .zero .num,.crow.amount .amt,.tracker-amt,.offer-price{font-variant-numeric:tabular-nums;letter-spacing:-.03em}
 .eyebrow,.plate .k,.plate-scam .k,.nav-label{letter-spacing:.08em;text-transform:uppercase;font-size:max(1rem,.86em)}
 /* A faint cool light from the top of dark surfaces; flat colour in the light theme and on paper. */
-.welcome,.sidebar{background:radial-gradient(1100px 520px at 85% -12%,rgba(111,227,255,.10),transparent 70%),var(--bg)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body{background:radial-gradient(1200px 600px at 90% -15%,rgba(111,227,255,.07),transparent 70%) fixed,var(--bg)}}
-:root[data-theme="dark"] body{background:radial-gradient(1200px 600px at 90% -15%,rgba(111,227,255,.07),transparent 70%) fixed,var(--bg)}
+.welcome,.sidebar{background:radial-gradient(1100px 520px at 85% -12%,rgba(96,205,255,.14),transparent 70%),var(--bg)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body{background:radial-gradient(1200px 600px at 90% -15%,rgba(96,205,255,.06),transparent 70%) fixed,var(--bg)}}
+:root[data-theme="dark"] body{background:radial-gradient(1200px 600px at 90% -15%,rgba(96,205,255,.06),transparent 70%) fixed,var(--bg)}
 /* One slow scan across the landing plate, purely decorative, never over text for long and gone for reduced motion. */
 @media (prefers-reduced-motion:no-preference){
   @keyframes scan{from{background-position:-40% 0}to{background-position:140% 0}}
@@ -888,3 +888,19 @@ body.dash-frame{background:transparent;margin:0;padding:2px}
 .sp-branch .sp-k,.sp-branch .sp-n{color:var(--bad)}
 .sp-zero b{color:var(--ink)}
 @media (max-width:900px){.sp{flex-direction:column}.sp-path{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:8px}.sp-path::before{display:none}}
+
+/* PayPal-inspired skin: a light page, white cards, navy text and rail, blue pill buttons. Star keeps its own name, star and
+   shield, and says on every page that it isn't affiliated with PayPal; it uses no PayPal logo or typeface. */
+body{background:var(--bg)}
+.btn,.btn.big,.btn.small{border-radius:999px}
+.btn.primary{box-shadow:0 1px 2px rgba(0,20,53,.12)}
+.btn.primary:hover:not(:disabled){background:var(--rule);border-color:var(--rule);color:#ffffff;box-shadow:0 1px 2px rgba(0,20,53,.12)}
+.sidebar .btn.primary:hover:not(:disabled),.mic:hover{color:var(--brand-ink)}
+.card,.stats{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,20,53,.06)}
+.card.pad{padding:clamp(18px,2vw,26px)}
+.stats{overflow:hidden}
+.stat:first-child{border-left:0;padding-left:clamp(14px,1.6vw,24px)}
+@media (max-width:900px){.stat{border-left:0;border-top:1px solid var(--line)}.stat:first-child{border-top:0}}
+.engraved::before{opacity:.10}
+.nav-btn[aria-current="page"]{box-shadow:none}
+.dash-tab[aria-selected="true"]{box-shadow:0 0 0 1px var(--brand)}

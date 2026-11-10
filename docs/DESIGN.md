@@ -98,11 +98,18 @@ Base rules are in `app/kernel/rules.py`: unknown payee, allowance, limits, new p
 
 **Not doing, on purpose:** live PayPal mode, Subscriptions, Vault, JS SDK v6, an MCP server, real email or SMS, purchases with no human approval, accepting or fighting disputes, onboarding merchants.
 
-## Art direction: quiet future
+## Art direction: PayPal-inspired, still Star
 
-Star is the check that sits between an AI model and her money, so it looks like a calm instrument panel: night blue, cool light, fine grid lines, level readouts. Restrained on purpose, because the person reading it is older.
+Star moves money through PayPal, so it borrows PayPal's colour language: a light page, white cards with soft corners,
+deep navy text, a navy navigation rail and blue pill buttons. It stays Star: its own name, star and shield, no PayPal
+logo or typeface, and every page says it isn't affiliated with PayPal, because a payment tool for older people must
+never be mistaken for the payment company itself.
 
-- **Dark by default.** The app and the guardian page use the night palette whatever the system says (`data-theme="dark"`); the simulator page stays plain and unbranded. Paper is still the card she signs, the brightest thing on screen, because it is the thing to read.
+- **Light by default.** The app, the guardian page and the Dashboard open in the light palette (`data-theme="light"`);
+  a navy night palette remains for `data-theme="dark"`. The rail is deep navy in both. The simulator page stays plain
+  and striped, so nobody takes it for PayPal.
+- **Blue for what can be pressed, red only for danger.** Primary buttons are PayPal-style blue pills; the stop, the
+  readout and the zero keep the one owned red, always with a word beside it.
 - **Line work.** A fine grid drawn in CSS, fading out from one corner, background only. It never carries information. The old engraving files (`scripts/build_guilloche.py`) are kept for the verified seal and the fingerprint pad's ring has become a conic light.
 - **A field that answers the pointer.** On the rail, faint points of light drift and join up when close; they lean away from the pointer and draw a thread to it, and a click sends out a small burst (`particles` in `web/motion.js`, one canvas, behind every word, no clicks of its own). It pauses out of view, and never starts for `prefers-reduced-motion` or in Care mode.
 - **Lit edges.** Cyan light marks what can be pressed: the primary button, the mic, the current page. One soft glow, no neon gradients behind text.
