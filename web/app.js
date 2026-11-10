@@ -210,7 +210,7 @@ function render(){
         <div class="top-title"><span class="brand mobile-brand"><img src="/logo.svg" alt="" width="28" height="28"><span>Star</span></span>
 </div>
         <div class="top-actions">
-          <button class="pill prot ${protLevel()}${protPending() ? ' queued' : ''}" id="prot-pill" type="button" aria-label="Account protection: ${protLevel()}. Open settings">${icon('shield')}${protLabel()}</button>
+
           <button class="icon-btn" id="trace-toggle" type="button" aria-pressed="${$('#trace').classList.contains('open')}">${icon('trace')}<span class="label">Agent trace</span></button>
           <button class="care-toggle" id="care-toggle" type="button" aria-pressed="${state.care}">${icon('care')}<span>${state.care ? 'Standard<span class="care-more"> view</span>' : 'Care mode'}</span></button>
         </div>
@@ -223,7 +223,7 @@ function render(){
   $('#nav-more').onclick = e => { e.stopPropagation(); setMore(!$('#nav-extra').classList.contains('open')); };
   $('#care-toggle').onclick = () => setCare(!state.care);
   $('#trace-toggle').onclick = () => toggleTrace();
-  $('#prot-pill').onclick = () => go('settings');
+  $('#prot-pill') && ($('#prot-pill').onclick = () => go('settings'));
   renderPage(); protCountdown();
 }
 function setMore(open){
@@ -255,7 +255,9 @@ function setCare(on, quiet = false){
 }
 // When the customer arrives, Star asks once whether they'd like the easier version (answer by tapping, typing or voice)
 async function offerCare(){
-  if(state.care || state.messages.length) return;
+  // Asked once per browser: after that the switch is in the header and in Settings, and a conversation starts straight away.
+  if(state.care || state.messages.length || store.get('careOffered', false)) return;
+  store.set('careOffered', true);
   try{
     const r = await api('/api/care/offer', {session_id: state.sid});
     if(r.offer){ state.messages.push({role:'bot', text: r.offer, careOffer: true}, {type:'choices', options: r.options, care: true}); renderStage(); saveChat(); }
@@ -376,10 +378,11 @@ function careHome(m){
 // ---------------------------------------------------------------- Star page: the assistant, what's behind it, the PayPal ticker
 function starPage(m){
   m.innerHTML = `<h1 class="sr">Talk to Star</h1><div class="star-grid">${assistantHtml()}
-    <div class="star-side">
-      <section class="card pad ticker-card" aria-labelledby="tick-h"><h2 id="tick-h">PayPal calls</h2><div class="ticker-host"></div></section>
-      <section class="card pad safety" id="safety" aria-live="polite"></section>
-    </div></div>`;
+    <details class="card star-how"><summary>How Star checked this</summary>
+      <div class="star-side">
+        <section class="ticker-card" aria-labelledby="tick-h"><h2 id="tick-h">PayPal calls</h2><div class="ticker-host"></div></section>
+        <section class="safety" id="safety" aria-live="polite"></section>
+      </div></details></div>`;
   bindAssistant(); renderSafety(); renderTicker(); loadCalls();
 }
 function tickerHtml(compact = false){
@@ -596,7 +599,9 @@ function trackerHtml(m, i){
   return `<div class="tracker tone-${statusInfo(s, p.verified, mode()).tone}" data-fx="${i}">
     ${p.verified && !BAD_END.has(s) ? sealSvg() : ''}<header><h3>${esc(p.what)}</h3><span class="tracker-amt">${esc(p.amount)}</span></header>
     <p class="tracker-status">${ppBadge(s, p.mode_label, p.verified)}<span class="muted small">${p.what === p.to ? '' : esc(p.to)}${p.handle ? ` ${p.what === p.to ? '' : '· '}${esc(p.handle)}` : ''}</span></p>
-    <ol class="steps">${items}${verified}${end ? `<li class="stopped"><span aria-hidden="true">✕</span>${esc(statusInfo(s, false, mode()).word)}</li>` : ''}</ol>
+    <div class="tracker-bar" role="presentation"><span class="w${Math.round(10 * (steps.filter(x => x[1]).length + (p.verified ? 1 : 0)) / (steps.length + 1)) * 10}"></span></div>
+    ${m.note ? `<p class="tracker-note">${esc(m.note)}</p>` : ''}
+    <details class="tracker-steps"><summary>Steps</summary><ol class="steps">${items}${verified}${end ? `<li class="stopped"><span aria-hidden="true">✕</span>${esc(statusInfo(s, false, mode()).word)}</li>` : ''}</ol></details>
     ${s === 'UNKNOWN' ? '<p class="warn-text">Please don\'t pay again. Star is asking PayPal about this same payment, with the same key, so it can\'t go out twice.</p>' : ''}
     <div class="acts">
       ${redirect ? `<button class="btn primary tr-go" type="button" data-i="${i}">${icon('transfer')}${isSim() ? 'Open the simulated approval page' : 'Continue on PayPal'}</button>` : ''}
@@ -621,7 +626,7 @@ function liveTracker(m){
       spoken = true; m.announced = true;
       try{
         const r = await api(`/api/transaction/${encodeURIComponent(state.sid)}/${encodeURIComponent(m.pay.draft_id)}`);
-        state.queueSpeech = true; push({role:'bot', text:r.reply}); speak(r.speak);
+        state.queueSpeech = true; m.note = r.reply; renderStage(); saveChat(); speak(r.speak);
       }catch{}
       return;
     }
@@ -881,7 +886,7 @@ function renderConfirm(){
     <div class="cbody">
       <p class="card-mode">${modeTag(c.paypal_mode || mode())}</p>
       <h2 id="c-title" tabindex="-1">${esc(c.title)}</h2>
-      <p class="review-intro">${state.care && c.readback ? esc(c.readback) : 'Check who it goes to and how much. Nothing is sent until you confirm. You can cancel below.'}</p>
+      <p class="review-intro">${state.care && c.readback ? esc(c.readback) : 'Nothing is sent until you confirm.'}</p>
       ${c.you_said ? `<div class="said"><span class="k">Based on what you said</span><q>${esc(c.you_said)}</q>${(c.you_said_audio || []).length ? `
         <span class="said-audio">${icon('mic')}From your voice recording ${esc(c.you_said_audio[0].slice(0, 8))}…, signed with this card
           <button type="button" class="text-btn" id="c-play">Play</button></span>` : ''}</div>` : ''}
@@ -892,7 +897,6 @@ function renderConfirm(){
       <div class="crow amount ${c.amount_from_user === false ? 'unsaid' : ''}"><span class="k">Amount</span>
         <div class="amt">${esc(c.amount)}</div><div class="words">${esc(c.amount_words)}${c.amount_note ? `, ${esc(c.amount_note)}` : ''}</div>
         ${c.amount_from_user === false && !['catalogue', 'bill', 'payment'].includes(c.amount_source) ? '<span class="flag">You didn\'t say this amount. Please check it</span>' : ''}</div>
-      ${['refund', 'money_request'].includes(c.kind) ? '' : `<div class="crow"><span class="k">Counts against</span><span class="v">${esc(c.from_account)}</span></div>`}
       ${off.length ? `<details class="offers" ${c.kind === 'purchase' ? 'open' : ''}><summary>Star checked ${off.length} offer${off.length === 1 ? '' : 's'}</summary><ul>${off.map(o => `<li class="offer-line verdict-${esc(o.verdict)}"><span><b>${esc(o.merchant)}</b> ${esc(o.price)}</span><span class="verdict">${esc(verdictWord(o.verdict))}</span>${o.reasons?.length ? `<small>${esc(o.reasons[0])}</small>` : ''}</li>`).join('')}</ul></details>` : ''}
       ${trust.length ? `<div class="risk ${c.trust.level === 'BLOCK' ? 'BLOCK' : 'MEDIUM'}"><b>Seller check</b><ul>${trust.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
       ${c.risk_level !== 'LOW' ? `<div class="risk ${esc(c.risk_level)}"><b>${c.risk_level === 'MEDIUM' ? 'Please take a second look' : "For your safety, let's wait a little"}</b><ul>${c.reasons.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
@@ -906,19 +910,23 @@ function renderConfirm(){
       ${cooling ? `<div class="cool" role="timer">Please wait <span id="c-cool-left">${coolWords(c.cooldown_left)}</span><small>A good moment to call your family and check.</small></div>` : ''}
       ${state.uvFail ? `<div class="uvhelp">${icon('fingerprint')}<div><b>Your fingerprint wasn't checked</b><small>A password manager signed without asking for your fingerprint, face or PIN, so Star refused it. Set it up again and choose <b>Windows Hello / this device</b> when asked where to save it.</small>
         <button type="button" class="btn secondary" id="c-repk">Set up fingerprint again</button></div></div>` : ''}
+      <details class="cdetails"><summary>Details</summary>
+      ${['refund', 'money_request'].includes(c.kind) ? '' : `<div class="crow"><span class="k">Counts against</span><span class="v">${esc(c.from_account)}</span></div>`}
       <div class="next-step">${icon('transfer')}<span>${esc(c.next_step_words)}</span></div>
       ${c.verification?.status === 'match' ? (c.verification.independent ? `<div class="vcheck">${icon('shield')}<span>A separate model re-read your words and agrees.</span></div>`
         : `<div class="vcheck plain">${icon('alert')}<span>Star read your words again with the same offline rules that prepared this card. That's not a second opinion, so please check it yourself.</span></div>`) : ''}
       ${c.decision ? decisionPanel(c.decision) : ''}
       ${state.care ? '<details class="decision-panel"><summary>Calls to PayPal</summary><div class="ticker-host compact" data-compact="1"></div></details>' : '<div class="ticker-host compact" data-compact="1"></div>'}
+      <p class="signnote">${state.signMode === 'none' ? esc(NO_SIGNER) : state.signMode === 'device'
+        ? "Demo: the fingerprint sensor is simulated. Your tap unlocks this browser's private key, which signs exactly this card. Star and its payment gateway each verify that signature."
+        : 'Your device checks your fingerprint or face, then signs exactly this card. Star and its payment gateway each verify the signature.'}</p>
+      </details>
     </div>
     <div class="cfoot">
       <button type="button" class="btn secondary" id="c-cancel">Cancel</button>
       <button type="button" class="btn primary${toQuestion ? ' to-question' : ''}" id="c-go" ${canGo || toQuestion ? '' : 'disabled'} ${toQuestion ? 'aria-describedby="c-q"' : ''}>${goIcon}${goLabel}</button>
     </div>
-    <div class="signnote">Confirmation code ${esc(c.digest.slice(0, 8))}…${esc(c.digest.slice(-4))}. ${state.signMode === 'none' ? esc(NO_SIGNER) : state.signMode === 'device'
-      ? "Demo: the fingerprint sensor is simulated. Your tap unlocks this browser's private key, which signs exactly this card. Star and its payment gateway each verify that signature."
-      : 'Your device checks your fingerprint or face, then signs exactly this card. Star and its payment gateway each verify the signature.'}</div>`;
+    <div class="signnote">Confirmation code ${esc(c.digest.slice(0, 8))}…${esc(c.digest.slice(-4))}${state.signMode === 'none' ? `. ${esc(NO_SIGNER)}` : ''}</div>`;
   renderTicker();
   $('#confirm').querySelectorAll('.yesno button').forEach(b => b.onclick = () => {
     state.verify = b.dataset.v === 'yes';
@@ -978,7 +986,7 @@ async function confirmCard(){
     submitted = true; store.set('pendingPayment', {sid:state.sid, card:c});
     const r = await api('/api/confirm', {session_id: state.sid, draft_id: c.draft_id, digest: c.digest, assertion, verify_answer});
     store.set('pendingPayment', null); closeConfirm(); addTrace(r.trace);
-    push({role:'bot', text:r.reply}); speak(r.speak);
+    speak(r.speak);                                   // said aloud; on screen the tracker is the one record of it
     pushTracker(r.payment);
     state.check = checksFromCard({...c, decision:r.receipt?.verifiable?.decision || c.decision}); renderSafety();
     if(r.next_task) continueWith(r.next_task);      // multi-step request: go straight on to the next step
@@ -1703,7 +1711,7 @@ async function handleReturn(){
     else if(back) r = await api('/api/paypal/orders/return', {session_id: state.sid, payment_id: id});
     else r = await api(`/api/payments/${encodeURIComponent(state.sid)}/${encodeURIComponent(id)}`);
     m.pay = r.payment; renderStage();
-    if(r.reply){ state.messages.splice(state.messages.indexOf(m), 0, {role:'bot', text:r.reply}); renderStage(); saveChat(); speak(r.speak); }
+    if(r.reply){ m.note = r.reply; renderStage(); saveChat(); speak(r.speak); }    // the same one-tracker record as a transfer
     addTrace([{kind:'gateway', label:`Back from the approval page: PayPal says ${m.pay.state}`}]);
     if(SETTLED.has(m.pay.state) && m.pay.verified){ m.announced = true; }
     liveTracker(m); await refresh(); loadCalls();

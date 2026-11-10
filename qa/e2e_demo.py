@@ -236,7 +236,7 @@ def run(browser, base: str, args) -> None:
         expect(last_tracker(page)).to_contain_text("Verified by")
         expect(page.locator(".counter b").first).to_have_text("1")
         expect(page.locator(".ticker").first).to_contain_text("POST /v1/payments/payouts")
-        expect(page.locator(".msg.bot").last).to_contain_text("The simulator confirms")
+        expect(last_tracker(page).locator(".tracker-note")).to_contain_text("The simulator confirms")   # one tracker, no extra bubble
         shot(page, "10-tracker-verified")
 
     def double_payment():
@@ -264,7 +264,7 @@ def run(browser, base: str, args) -> None:
         page.locator("#sim-yes").click()
         expect(last_tracker(page)).to_contain_text("Paid, verified", timeout=30000)
         check("query string is cleaned after the return", "pp_return" not in page.url, page.url)
-        expect(page.locator(".msg.bot", has_text="simulator confirms").last).to_be_visible()
+        expect(last_tracker(page).locator(".tracker-note")).to_contain_text("simulator confirms")
         expect(page.locator(".ticker").first).to_contain_text("/capture")
         shot(page, "15-paid-verified")
         page.locator(".tr-refund").click()
@@ -282,7 +282,7 @@ def run(browser, base: str, args) -> None:
         page.wait_for_url("**/simulator/checkout**")
         page.locator("#sim-no").click()
         expect(last_tracker(page)).to_contain_text("You cancelled it", timeout=20000)
-        expect(page.locator(".msg.bot", has_text="No money moved").last).to_be_visible()
+        expect(last_tracker(page).locator(".tracker-note")).to_contain_text("No money moved")
         check("a cancel never reads as paid", "verified" not in last_tracker(page).inner_text().lower())
         shot(page, "18-buyer-cancelled")
 
@@ -313,7 +313,8 @@ def run(browser, base: str, args) -> None:
         expect(page.locator(".stop-block").last).to_contain_text("stopped this")
         expect(page.locator(".stop-block .stop-count b").last).to_have_text("0")
         expect(page.locator(".stop-block a.btn.danger").last).to_contain_text("833-FRAUD-11")
-        expect(page.locator(".ticker-host .counter.zero").first).to_be_visible()
+        page.locator(".star-how > summary").click()                  # the checks are folded under the conversation
+        expect(page.locator(".star-how .ticker-host .counter.zero")).to_be_visible()
         shot(page, "23-scam-stopped")
 
     def spoken_scam():
@@ -692,7 +693,7 @@ def run(browser, base: str, args) -> None:
                 check("Enter on the simulated sensor doesn't sign", q.locator(".mockfp").count() == 1 and q.locator(".tracker").count() == 0)
                 q.locator(".mf-pad").click()
                 expect(last_tracker(q)).to_contain_text("Sent, verified", timeout=30000)
-                check("simulator mode doesn't say PayPal confirmed", "PayPal confirms" not in q.locator(".msg.bot").last.inner_text(), q.locator(".msg.bot").last.inner_text())
+                check("simulator mode doesn't say PayPal confirmed", "PayPal confirms" not in q.locator(".tracker").last.inner_text(), q.locator(".tracker").last.inner_text())
                 time.sleep(0.5)
                 nav_top = rect(".sidebar")["y"]
                 composer = rect("#composer")
@@ -700,6 +701,7 @@ def run(browser, base: str, args) -> None:
                 # Natural speech
                 say(q, "Send two hundred to my son for 3 months")
                 expect(q.locator("#confirm .amt")).to_have_text("$200.00")
+                q.locator("#confirm .cdetails > summary").click()       # the checks are under Details on the card
                 check("the offline check says what it is", "second opinion" in q.locator("#confirm .vcheck").inner_text(), q.locator("#confirm .vcheck").inner_text())
                 q.locator("#c-cancel").click()
                 expect(q.locator("#confirm")).to_be_hidden()

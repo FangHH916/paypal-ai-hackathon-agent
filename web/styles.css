@@ -999,3 +999,31 @@ body.care :is(.choice,.suggestion){background:none;-webkit-backdrop-filter:none;
 @media (max-width:560px){:is(.stop-block,.stop-plate) h3{margin-right:0}}
 @media (max-width:900px){.chips{min-width:0;max-width:100%}}
 @media (max-width:560px){.alert-item{grid-template-columns:minmax(0,1fr);gap:.2em;padding:.7em .8em}}
+
+/* One short path: a card she can read without scrolling, one tracker per payment, and the checks folded away. */
+.cdetails{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.cdetails>summary{cursor:pointer;font-weight:650;color:var(--muted);min-height:44px;display:flex;align-items:center;gap:.4em}
+.cdetails[open]>summary{color:var(--ink)}
+.cdetails>*:not(summary){margin-top:10px}
+.cdetails .signnote{font-size:.92rem;color:var(--muted)}
+.review-intro{margin:.2em 0 .6em;color:var(--muted)}
+.tracker{padding:16px 18px;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:0 2px 12px -6px rgba(0,20,53,.18);position:relative}
+.tracker .vseal{width:56px;height:56px;position:absolute;right:14px;top:14px}
+.tracker header{padding-right:64px}
+.tracker-bar{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin:12px 0 4px}
+.tracker-bar span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--brand),var(--ok));transition:width .5s ease}
+.tracker-bar .w0{width:0%}.tracker-bar .w10{width:10%}.tracker-bar .w20{width:20%}.tracker-bar .w30{width:30%}.tracker-bar .w40{width:40%}.tracker-bar .w50{width:50%}.tracker-bar .w60{width:60%}.tracker-bar .w70{width:70%}.tracker-bar .w80{width:80%}.tracker-bar .w90{width:90%}.tracker-bar .w100{width:100%}
+.tracker-note{margin:.6em 0 0;font-weight:560}
+.tracker-steps>summary{cursor:pointer;color:var(--muted);font-size:.95rem;min-height:40px;display:flex;align-items:center}
+.tracker .acts{margin:.4em 0 0}
+@media (min-width:901px){
+  .star-grid{grid-template-columns:minmax(0,1fr);max-width:900px;margin-inline:auto}
+}
+.star-how{padding:0}
+.star-how>summary{cursor:pointer;padding:16px 22px;font-weight:650;min-height:52px;display:flex;align-items:center;gap:.4em}
+.star-how[open]>summary{border-bottom:1px solid var(--line)}
+.star-how .star-side{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;padding:18px 22px 22px}
+:is(.cdetails,.tracker-steps,.star-how)>summary{list-style:none}
+:is(.cdetails,.tracker-steps,.star-how)>summary::-webkit-details-marker{display:none}
+:is(.cdetails,.tracker-steps,.star-how)>summary::before{content:"";width:.5em;height:.5em;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);margin-right:.35em;transition:transform .15s}
+:is(.cdetails,.tracker-steps,.star-how)[open]>summary::before{transform:rotate(45deg)}
