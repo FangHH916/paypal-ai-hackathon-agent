@@ -91,7 +91,7 @@ ag-grid, webauthn, web-crypto, sqlite, vite, playwright, render, postman
 ## AI and sponsor tools
 
 Claude Code and OpenAI Codex assisted with code, tests, review and materials under the team's direction. Runtime AI:
-`[TEAM: the model behind LLM_MODEL on the hosted demo, its provider, and the date it was tested]`. Offline rules are
+a DeepSeek model, provided through the team's university AI service and called through its OpenAI-compatible Chat Completions API (seen working on the hosted demo on Nov 9 and 10, 2026). Offline rules are
 not an AI model. Sponsor tools: PayPal (Payouts, webhooks), AG Studio and AG Grid (Dashboard, Activity), Render
 (hosting), Postman (collection in `postman/`).
 
