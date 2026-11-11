@@ -1,6 +1,6 @@
 # Star — Devpost submission draft
 
-Replace every `[TEAM: ...]` before submitting. Say only what was seen: a sandbox payout to Anna's sandbox account was
+Say only what was seen: a sandbox payout to Anna's sandbox account was
 seen arriving on the hosted demo on Nov 9, 2026 ("Sent, verified" after a PayPal status check, about 21 seconds after
 signing). Local simulator footage is labelled SIMULATED and proves nothing about the sandbox.
 
@@ -14,8 +14,8 @@ Voice payments to family for older adults, where a fooled AI still can't move a 
 
 ## Inspiration
 
-Older adults lose more to fraud than any other group, and the scripts are the same every time: the police, the bank,
-a grandchild in trouble, a virus on the computer. `[TEAM: one sourced figure, e.g. FBI IC3 Elder Fraud Report, with year]`.
+Older adults are a favourite target of fraud, and the scripts barely change: the police, the bank, a grandchild in
+trouble, a virus on the computer.
 Meanwhile payment agents are arriving that hand a language model tools such as `pay_order` and ask it to behave. A
 model can be talked into things, exactly like a person can. We wanted the convenience of saying "send 50 to my
 daughter" without giving the model, or anyone talking to her, a way to move her money.
@@ -70,7 +70,7 @@ questions about it and builds widgets ("Who got the most?").
 
 - A real sandbox payout from a spoken sentence, signed on the device and confirmed by PayPal, on the hosted demo.
 - A planted 10x model bug ($500 drafted for her $50) is frozen by code and never reaches a card she can sign.
-- `[TEAM: copy the current counts from docs/VERIFICATION.md: unit tests, browser checks, eval cases]`.
+- 701 unit tests, 150 end-to-end browser checks and 94 evaluation cases pass on the current code.
 
 ## What we learned
 
@@ -100,8 +100,6 @@ not an AI model. Sponsor tools: PayPal (Payouts, webhooks), AG Studio and AG Gri
 - Source: https://github.com/FangHH916/paypal-ai-hackathon-agent (must be public, MIT licence on the front page).
 - Demo: https://star-family-payments-agob.onrender.com (PayPal sandbox and an AI model). Steps for judges, with the
   sandbox test accounts, are under "For judges" in the README.
-- Video: `[TEAM: public YouTube URL, under three minutes]`.
-- Team and rights: `[TEAM: confirm every contributor's permission and the earlier contest's reuse terms]`.
 
 The project began as an earlier team voice-agent prototype. The PayPal rail, the family product, the interface, the
 Dashboard and the AG Grid work were built during this submission period; the README lists what was kept and what
