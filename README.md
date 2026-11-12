@@ -48,24 +48,38 @@ It runs on Render's free plan: the first visit after a quiet spell can take abou
 
 PayPal sandbox test accounts (sandbox money only, not real accounts). Log in to them at **https://www.sandbox.paypal.com**, ideally in a private window:
 
-| Role | Email | Password | Use it to |
+Family members who **receive** money from Star:
+
+| Who | Email | Password | Try |
 | --- | --- | --- | --- |
-| Mrs. Lee, the buyer | `sb-hiclw53793433@personal.example.com` | `QZaw&,W3` | Approve purchases on PayPal's checkout page |
-| Anna Lee, her daughter | `sb-cnlf053772453-1@personal.example.com` | `12345678` | See the money Star sent arrive in her account |
-| David Lee, her son | `sb-kg2yh53771140@personal.example.com` | `0To^#/ir` | The same, for `Send 20 to my son` |
-| Ben Lee, her grandson | `sb-2aq3k53793441@personal.example.com` | `VmN%^5/r` | The same, for `Send 10 to Ben` |
-| Sam Lee, her grandson | `sb-6ub6a53791865@personal.example.com` | `w.K3l^c0` | The same, for `Send 10 to Sam` |
+| Anna Lee, her daughter | `sb-cnlf053772453-1@personal.example.com` | `12345678` | `Send 50 to my daughter` |
+| David Lee, her son | `sb-kg2yh53771140@personal.example.com` | `0To^#/ir` | `Send 20 to my son` |
+| Ben Lee, her grandson | `sb-2aq3k53793441@personal.example.com` | `VmN%^5/r` | `Send 10 to Ben` |
+| Sam Lee, her grandson | `sb-6ub6a53791865@personal.example.com` | `w.K3l^c0` | `Send 10 to Sam` |
 
-Payments to someone she adds also go through PayPal's sandbox, but show as waiting to be claimed, since no sandbox account belongs to them.
+Mrs. Lee, who **pays** when shopping: `sb-hiclw53793433@personal.example.com`, password `QZaw&,W3`.
 
-Three steps:
+**Test 1: send money to family by voice (the main feature, about 2 minutes)**
 
-1. Open the demo (it opens on the Dashboard), press **Talk to Star**, type `Send 50 to my daughter` and confirm with the simulated fingerprint. Star shows "Sent, verified" only after PayPal confirms it.
-   Then log in to the sandbox as **Anna**: the $50.00 payment is in her activity (the sandbox site can take a few minutes to show it; refresh the page).
-2. Type `The police say I must move my savings to a safe account`. Star stops it before any model sees the sentence, with 0 money-moving PayPal calls.
-3. Optional, off the navigation: open `/#/lab` (the **Security lab**) to watch a model mistake and 31 attacks stopped, or `/#/shop` to buy through PayPal's sandbox checkout (log in as **Mrs. Lee** and approve; then `I want my money back` refunds it).
+1. Open the demo and press **Talk to Star**.
+2. Press **Speak** and say `Send 50 to my daughter` (voice works best in Chrome or Edge), or type it and press **Send**.
+3. Star reads it back in plain words and shows one card: $50.00 to Anna Lee.
+4. Confirm with the fingerprint button. On a computer without a passkey, it is a clearly labelled simulated fingerprint.
+5. Star sends the money with PayPal Payouts and shows "Sent, verified" only after PayPal confirms it.
+6. Log in to the sandbox as **Anna**: the $50.00 payment is in her activity. The sandbox site can take a few minutes to show it, so refresh the page.
 
-**Activity & audit** lists each payment with its PayPal reference, which matches the transaction in the sandbox account.
+The same works for her son and grandsons in the table: log in as the person you paid to see it arrive.
+
+**Test 2: scam protection (30 seconds).** Type `The police say I must move my savings to a safe account`. Star stops it before any model sees the sentence, shows a fraud hotline, and makes 0 money-moving PayPal calls.
+
+**Test 3 (optional): shop and get a refund.** Open `/#/shop` and buy an item. On PayPal's sandbox checkout page, log in as **Mrs. Lee** and approve. Back in Star, the order is captured and verified. Then `I want my money back` refunds it to Mrs. Lee's sandbox account.
+
+**Test 4 (optional): Security lab.** Open `/#/lab` to see a planted model mistake ($500 drafted when she said $50) and 31 attacks, all stopped with 0 money-moving PayPal calls.
+
+Good to know:
+
+- **Activity & audit** lists every payment with its PayPal reference, which matches the transaction ID in the sandbox account.
+- A payment to a new person she adds also goes through PayPal's sandbox, but shows as waiting to be claimed, since no sandbox account belongs to them.
 
 ## Try it in 60 seconds, no keys
 
