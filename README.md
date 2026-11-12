@@ -51,7 +51,11 @@ PayPal sandbox test accounts (sandbox money only, not real accounts). Log in to 
 | Role | Email | Password | Use it to |
 | --- | --- | --- | --- |
 | Mrs. Lee, the buyer | `sb-hiclw53793433@personal.example.com` | `QZaw&,W3` | Approve purchases on PayPal's checkout page |
-| Anna Lee, the family | `sb-cnlf053772453-1@personal.example.com` | `12345678` | See the money Star sent arrive in her account |
+| Anna Lee, her daughter | `sb-cnlf053772453-1@personal.example.com` | `12345678` | See the money Star sent arrive in her account |
+| David Lee, her son | `sb-kg2yh53771140@personal.example.com` | `0To^#/ir` | The same, for `Send 20 to my son` |
+| Ben Lee, her grandson | `sb-2aq3k53793441@personal.example.com` | `VmN%^5/r` | The same, for `Send 10 to Ben` |
+
+Payments to anyone else (her grandson Sam, or someone she adds) also go through PayPal's sandbox, but show as waiting to be claimed, since no sandbox account belongs to them.
 
 Three steps:
 
